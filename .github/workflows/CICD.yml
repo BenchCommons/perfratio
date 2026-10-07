@@ -386,7 +386,7 @@ jobs:
     # submission of UnitedOpenSource.joulex.
     if: startsWith(github.ref, 'refs/tags/v') && vars.WINGET_ENABLED == 'true'
     steps:
-      - uses: vedantmgoyal2009/winget-releaser@4ffc7888bffd451b357355dc214d43bb9f23917e # v2
+      - uses: vedantmgoyal2009/winget-releaser@8e1180065275ff8d815d981788ee8592c8735b8c # v2
         with:
           identifier: UnitedOpenSource.joulex
           installers-regex: '-pc-windows-msvc\.zip$'
