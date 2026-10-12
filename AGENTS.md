@@ -12,4 +12,4 @@ Tool: the measurement engine, a Rust fork of hyperfine. It owns the **measuremen
 
 ## Rules
 - Energy (RAPL) needs bare-metal Linux with readable `energy_uj`. CI covers time and memory only.
-- Changing the JSON export changes a contract that benchmark-tool consumes: version it and note it in the spec.
+- Changing the JSON export changes a contract that tools-benchmark consumes: version it and note it in the spec.
