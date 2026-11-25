@@ -12,6 +12,7 @@ use crate::output::format::{format_duration, format_duration_unit};
 use crate::output::progress_bar::{
     format_progress_estimate, get_progress_bar, replace_message_template,
 };
+use crate::stats::significance::Significance;
 
 use anyhow::Result;
 
@@ -573,10 +574,11 @@ impl<'a> Scheduler<'a> {
                             ),
                         };
                         crate::outln!(
-                            "{} {} {}",
+                            "{} {} {}{}",
                             comparator,
                             colors::magenta(&item.result.command_with_unused_parameters),
-                            absolute.dimmed()
+                            absolute.dimmed(),
+                            significance_suffix(reference.result, item.result)
                         );
 
                         if self.options.deep_stats {
@@ -674,6 +676,14 @@ impl<'a> Scheduler<'a> {
                         );
                     }
 
+                    let Some(reference_result) = annotated_results
+                        .iter()
+                        .find(|r| r.is_reference)
+                        .map(|r| r.result)
+                    else {
+                        return;
+                    };
+
                     let max_cmd_len = annotated_results
                         .iter()
                         .map(|r| r.result.command_with_unused_parameters.len())
@@ -721,11 +731,16 @@ impl<'a> Scheduler<'a> {
                         };
 
                         crate::outln!(
-                            "  {}{}  {:<width$}{}",
+                            "  {}{}  {:<width$}{}{}",
                             colors::green(format!("{:10.2}", item.relative_speed)).bold(),
                             stddev_suffix,
                             item.result.command_with_unused_parameters,
                             reference_annotation,
+                            if item.is_reference {
+                                String::new()
+                            } else {
+                                significance_suffix(reference_result, item.result)
+                            },
                             width = max_cmd_len,
                         );
                     }
@@ -926,6 +941,25 @@ fn scheduler_round_robin() -> Result<()> {
 /// "(12.3 ms, +4.5 ms)": the mean of `item` and its difference to the
 /// reference, plus energy when both results have it. Positive differences mean
 /// `item` is slower (or uses more energy) than the reference.
+/// Significance marker of `item` against `reference` for the summary
+/// (`  [+] significant speedup (p < 0.001)`), empty if it cannot be assessed.
+/// Symbols are used only where colors are (not for `NO_COLOR`, pipes or dumb terminals).
+fn significance_suffix(reference: &BenchmarkResult, item: &BenchmarkResult) -> String {
+    let fancy = colored::control::SHOULD_COLORIZE.should_colorize();
+    match crate::stats::significance::assess(reference, item) {
+        Some(assessment) => {
+            let text = assessment.label(fancy);
+            let text = match assessment.significance {
+                Significance::SignificantSpeedup => colors::green(text),
+                Significance::SignificantRegression => colors::red(text),
+                Significance::Noise => text.dimmed(),
+            };
+            format!("  {text}")
+        }
+        None => String::new(),
+    }
+}
+
 fn absolute_difference(
     reference: &BenchmarkResult,
     item: &BenchmarkResult,
