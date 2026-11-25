@@ -6,21 +6,9 @@ use common::hyperfine;
 use predicates::prelude::*;
 
 #[test]
-fn conflicts_with_show_output_and_output_and_until() {
+fn conflicts_with_show_output_and_until() {
     hyperfine()
         .args(["--output-metric", "lat=([0-9]+)", "--show-output", "echo 1"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("cannot be used with"));
-
-    hyperfine()
-        .args([
-            "--output-metric",
-            "lat=([0-9]+)",
-            "--output",
-            "pipe",
-            "echo 1",
-        ])
         .assert()
         .failure()
         .stderr(predicate::str::contains("cannot be used with"));
@@ -36,6 +24,112 @@ fn conflicts_with_show_output_and_output_and_until() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("cannot be used with"));
+
+    hyperfine()
+        .args([
+            "--output-metric",
+            "lat=([0-9]+)",
+            "--output",
+            "inherit",
+            "echo 1",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("cannot be combined with"));
+}
+
+#[test]
+fn output_pipe_is_compatible() {
+    hyperfine()
+        .args([
+            "--runs",
+            "2",
+            "--output-metric",
+            "lat=time=([0-9.]+)ms",
+            "--output",
+            "pipe",
+            "echo 'time=7.5ms'",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("7.500"));
+}
+
+#[test]
+fn output_metric_stderr_extracts_from_stderr() {
+    hyperfine()
+        .args([
+            "--runs",
+            "2",
+            "--output-metric",
+            "lat=time=([0-9.]+)ms",
+            "--output-metric-stderr",
+            "echo 'time=7.5ms' >&2",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("7.500"));
+
+    // The metric is on stdout only, so reading stderr must not find it
+    hyperfine()
+        .args([
+            "--runs",
+            "2",
+            "--output-metric",
+            "lat=time=([0-9.]+)ms",
+            "--output-metric-stderr",
+            "echo 'time=7.5ms'",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Metric 'lat' could not be extracted",
+        ));
+}
+
+#[test]
+fn output_metric_stderr_requires_output_metric() {
+    hyperfine()
+        .args(["--output-metric-stderr", "echo 1"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--output-metric"));
+}
+
+// The command uses POSIX shell syntax (`if [ ... ]`, `$((...))`), which cmd.exe cannot run.
+#[cfg(unix)]
+#[test]
+fn ignored_missing_metric_stays_aligned_with_times() {
+    let dir = tempfile::tempdir().unwrap();
+    let json_path = dir.path().join("results.json");
+
+    hyperfine()
+        .args([
+            "--runs",
+            "3",
+            "--warmup",
+            "0",
+            "-i",
+            "--output-metric",
+            "x=x=([0-9]+)",
+            "--export-json",
+            json_path.to_str().unwrap(),
+            "if [ \"$PERFRATIO_ITERATION\" != 1 ]; then echo x=$((PERFRATIO_ITERATION + 10)); fi",
+        ])
+        .assert()
+        .success();
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&json_path).unwrap()).unwrap();
+    let result = &parsed["results"][0];
+    assert_eq!(result["times"].as_array().unwrap().len(), 3);
+    let xs = result["custom_metrics"]["x"].as_array().unwrap();
+    assert_eq!(xs.len(), 3);
+    assert_eq!(xs[0].as_f64(), Some(10.0));
+    assert!(xs[1].is_null());
+    assert_eq!(xs[2].as_f64(), Some(12.0));
+    // The summary covers only the runs that have a value
+    assert_eq!(result["custom_metrics_summary"]["x"]["mean"], 11.0);
 }
 
 #[test]

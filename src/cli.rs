@@ -517,6 +517,18 @@ pub fn build_command() -> Command {
                        that was reached."),
         )
         .arg(
+            Arg::new("duration")
+                .long("duration")
+                .action(ArgAction::Set)
+                .value_name("DURATION")
+                .conflicts_with_all(["runs", "target-precision"])
+                .help("Sample each command repeatedly until the summed run time reaches \
+                       DURATION (e.g. 5s, 5000ms, 1m), with at least 3 runs ('--min-runs' \
+                       and '--max-runs' override the floor and cap). Warmup, '--prepare' \
+                       and '--conclude' time is not counted. Conflicts with '--runs' and \
+                       '--target-precision'."),
+        )
+        .arg(
             Arg::new("timeout")
                 .long("timeout")
                 .action(ArgAction::Set)
@@ -549,11 +561,20 @@ pub fn build_command() -> Command {
                 .long("output-metric")
                 .action(ArgAction::Append)
                 .value_name("NAME=REGEX")
-                .conflicts_with_all(["show-output", "output", "until"])
+                .conflicts_with_all(["show-output", "until"])
                 .help("Extract a custom numeric metric from the command's standard output using \
                        the regular expression REGEX, which must contain at least one capture group. \
                        The value is extracted from the first capture group of the last match in the output. \
-                       Can be specified multiple times for different metrics."),
+                       Can be specified multiple times for different metrics. Works with the default \
+                       '--output=null' and with '--output=pipe'. A run where an ignored \
+                       failure ('-i') left the metric out is exported as null."),
+        )
+        .arg(
+            Arg::new("output-metric-stderr")
+                .long("output-metric-stderr")
+                .action(ArgAction::SetTrue)
+                .requires("output-metric")
+                .help("Extract the --output-metric values from stderr instead of stdout."),
         )
         .arg(
             Arg::new("precision")
