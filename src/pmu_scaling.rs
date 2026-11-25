@@ -28,9 +28,10 @@ pub struct RawReading {
 impl RawReading {
     pub const SIZE: usize = 24;
 
-    /// Decodes a native-endian `read(2)` buffer. `None` if it is too short.
+    /// Decodes a native-endian `read(2)` buffer. `None` unless it is exactly
+    /// `SIZE` bytes, so a group or `PERF_FORMAT_ID` layout is not mis-decoded.
     pub fn from_bytes(buf: &[u8]) -> Option<Self> {
-        if buf.len() < Self::SIZE {
+        if buf.len() != Self::SIZE {
             return None;
         }
         let word = |i: usize| u64::from_ne_bytes(buf[i * 8..i * 8 + 8].try_into().unwrap());
@@ -230,6 +231,9 @@ mod tests {
         }
         assert_eq!(RawReading::from_bytes(&buf), Some(raw(7, 20, 10)));
         assert_eq!(RawReading::from_bytes(&buf[..23]), None);
+        let mut longer = buf.to_vec();
+        longer.extend_from_slice(&[0; 8]);
+        assert_eq!(RawReading::from_bytes(&longer), None);
         assert_eq!(READ_FORMAT, 3);
     }
 

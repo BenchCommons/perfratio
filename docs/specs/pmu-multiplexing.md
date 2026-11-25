@@ -1,7 +1,7 @@
 # Spec: PMU counter multiplexing detection and scaling (#219)
 
 ## Problem / Motivation
-References: #219, #49, #217, `perf-stat(1)`, `perf_event_open(2)`, `andrewrk/poop`.
+References: #219, #49, #213, #217, `hardware-counters.md`, `perf-stat(1)`, `perf_event_open(2)`, `andrewrk/poop`.
 
 When more hardware events are requested than the PMU has counters, the kernel
 time-shares them (multiplexing). A raw read then only covers the time the event
@@ -22,20 +22,26 @@ was on the PMU and silently undercounts. `perf stat` avoids this by reading
   and the terminal shows `[not counted: event never scheduled on the PMU]`.
 - Terminal: scaled counters get `[scaled: counted 74.2% of the time]`, and one
   warning per benchmark lists the lowest coverage per affected counter.
-- JSON (additive, per exported counter object): `time_enabled` (ns),
-  `time_running` (ns), `scaled` (bool), `coverage` (0..1). Existing fields keep
-  their meaning; `value` fields hold the scaled count. This is an additive
-  change: bump the `schemaVersion` minor (see `output-schema-contract.md`) when
-  the counter export from #49 lands.
+- JSON: the export shape is the one in `hardware-counters.md` (per-run `u64` arrays
+  aligned with `times`, `counters_summary`, `counters_multiplexed_runs`). This module
+  supplies the values for it: a per-run entry holds `value_scaled`; a run counts in
+  `counters_multiplexed_runs` when any of its counters was scaled; a counter that was
+  never scheduled on the PMU (`time_running == 0`) is `null` in that run, matching the
+  failed-counter rule there. `CounterScaling` (`time_enabled`, `time_running`, `scaled`,
+  `coverage`) is internal for now. Exporting per-run coverage would be a MINOR
+  `schemaVersion` 1.x addition and must be added to `hardware-counters.md` and
+  `output-schema-contract.md` in the same PR.
 
 ## Implementation
 `src/pmu_scaling.rs` holds the pure math, the annotation/warning text and the
 `CounterScaling` serializable fields, with unit tests using synthetic records.
 
 ## Status / not covered
-- `--counters` (#49) is not on `master`, so this change adds the building block
-  only. Wiring (setting `read_format` in `perf_event_attr`, reading the fd, adding
-  `CounterScaling` to the export and the terminal line) belongs with #49.
+- The `--counters` flag and the `perf_event_open` reader (#49) are not on `master`.
+  `master` has `src/counters.rs` (derived metrics, #213) and `src/pmu.rs` (preflight);
+  `hardware-counters.md` plans the reader and multiplex scaling in
+  `src/counters/linux.rs`, which should call this module (set `READ_FORMAT` in
+  `perf_event_attr`, decode with `RawReading::from_bytes`, scale with `ScaledCounter`).
 - Nothing here was run against a real PMU; the machine used was macOS.
   Multiplexing on hardware (e.g. `--counters` with more events than counters) is
   unverified.
