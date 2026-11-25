@@ -5,7 +5,7 @@ use crate::benchmark::benchmark_result::BenchmarkResult;
 use crate::util::sanitize::escape_control_chars;
 
 #[derive(Deserialize, Debug)]
-struct HyperfineSummary {
+struct PerfratioSummary {
     /// Primary metric the file was exported with (absent in older files)
     #[serde(default)]
     metric: Option<crate::metric::Metric>,
@@ -26,7 +26,7 @@ pub fn import_json_for_metric(
     let file = std::fs::File::open(path)
         .with_context(|| format!("Could not open import file '{path}'"))?;
     let reader = std::io::BufReader::new(file);
-    let mut summary: HyperfineSummary = serde_json::from_reader(reader)
+    let mut summary: PerfratioSummary = serde_json::from_reader(reader)
         .with_context(|| format!("Failed to parse import JSON '{path}'"))?;
     if let (Some(file_metric), Some(cli_metric)) = (summary.metric, expected) {
         if file_metric != cli_metric {

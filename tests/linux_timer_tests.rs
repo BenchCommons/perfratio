@@ -1,12 +1,12 @@
 #![cfg(target_os = "linux")]
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 #[test]
 fn linux_microbenchmark_reports_positive_nonzero_time() {
     // Fast command executed without shell
-    let assert = hyperfine()
+    let assert = perfratio()
         .arg("--shell=none")
         .arg("--runs=5")
         .arg("true")
@@ -20,7 +20,7 @@ fn linux_microbenchmark_reports_positive_nonzero_time() {
 
 #[test]
 fn linux_fast_command_with_until() {
-    hyperfine()
+    perfratio()
         .arg("--shell=none")
         .arg("--runs=3")
         .arg("--until=READY")
@@ -31,7 +31,7 @@ fn linux_fast_command_with_until() {
 
 #[test]
 fn linux_command_with_priority_and_affinity() {
-    hyperfine()
+    perfratio()
         .arg("--shell=none")
         .arg("--runs=3")
         .arg("--priority=normal")

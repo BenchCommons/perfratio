@@ -2,14 +2,14 @@
 //! summed run times (and thus the run counts) are deterministic.
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
 fn export(args: &[&str]) -> serde_json::Value {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("out.json");
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--style=basic", "--export-json"])
         .arg(&file)
         .args(args)
@@ -82,7 +82,7 @@ fn conflicting_and_invalid_options_are_rejected() {
         &["--duration=0s"][..],
         &["--duration=abc"][..],
     ] {
-        hyperfine()
+        perfratio()
             .arg("--debug-mode")
             .args(args)
             .arg("sleep 0.1")
@@ -96,7 +96,7 @@ fn conflicting_and_invalid_options_are_rejected() {
 
 #[test]
 fn timeout_is_compatible() {
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--duration=1s", "--timeout=2s", "sleep 0.5"])
         .assert()
         .success();

@@ -3,12 +3,12 @@
 #![cfg(unix)]
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 fn exported_memory(args: &[&str]) -> Vec<Vec<u64>> {
     let tempdir = tempfile::tempdir().unwrap();
     let export = tempdir.path().join("out.json");
-    hyperfine()
+    perfratio()
         .args(args)
         .arg("--export-json")
         .arg(&export)
@@ -77,7 +77,7 @@ fn peak_memory_includes_children_of_the_intermediate_shell() {
 fn export_json(args: &[&str]) -> serde_json::Value {
     let tempdir = tempfile::tempdir().unwrap();
     let export = tempdir.path().join("out.json");
-    hyperfine()
+    perfratio()
         .args(args)
         .arg("--export-json")
         .arg(&export)
@@ -88,7 +88,7 @@ fn export_json(args: &[&str]) -> serde_json::Value {
 
 #[test]
 fn resource_usage_line_is_printed() {
-    hyperfine()
+    perfratio()
         .args([
             "-N",
             "--runs=3",
@@ -150,7 +150,7 @@ fn resource_counters_stay_aligned_with_omitted_runs() {
         "--ignore-failure",
         "--omit-failed-runs",
         "--resource-usage",
-        "sh -c '[ \"$JOULEX_ITERATION\" = 2 ] && exit 1; true'",
+        "sh -c '[ \"$PERFRATIO_ITERATION\" = 2 ] && exit 1; true'",
     ]);
     let result = &json["results"][0];
     let runs = result["times"].as_array().unwrap().len();

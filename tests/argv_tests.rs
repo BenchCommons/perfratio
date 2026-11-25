@@ -1,10 +1,10 @@
 mod common;
-use common::hyperfine;
+use common::perfratio;
 use predicates::prelude::*;
 
 #[test]
 fn command_after_double_dash_is_benchmarked() {
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=2", "--", "sleep", "0.3"])
         .assert()
         .success()
@@ -14,7 +14,7 @@ fn command_after_double_dash_is_benchmarked() {
 
 #[test]
 fn command_after_double_dash_conflicts_with_positional_commands() {
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "sleep 0.1", "--", "sleep", "0.2"])
         .assert()
         .failure()
@@ -23,7 +23,7 @@ fn command_after_double_dash_conflicts_with_positional_commands() {
 
 #[test]
 fn command_after_double_dash_conflicts_with_shell() {
-    hyperfine()
+    perfratio()
         .args(["--shell", "bash", "--", "echo"])
         .assert()
         .failure()
@@ -32,7 +32,7 @@ fn command_after_double_dash_conflicts_with_shell() {
 
 #[test]
 fn command_after_double_dash_accepts_hyphen_arguments_and_parameters() {
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=1", "-L", "t", "0.1,0.2"])
         .args(["--", "sleep", "{t}"])
         .assert()
@@ -44,7 +44,7 @@ fn command_after_double_dash_accepts_hyphen_arguments_and_parameters() {
 #[cfg(unix)]
 #[test]
 fn command_after_double_dash_runs_without_shell_or_resplitting() {
-    hyperfine()
+    perfratio()
         .args(["--runs=1", "--show-output", "--"])
         .args(["printf", "[%s]\\n", "a b", "it's", "$HOME", "-x"])
         .assert()

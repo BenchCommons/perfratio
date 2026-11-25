@@ -3,7 +3,7 @@
 #![cfg(unix)]
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
@@ -14,7 +14,7 @@ fn slow_in(iterations: &str) -> String {
 fn run_json(args: &[&str]) -> (serde_json::Value, String) {
     let dir = tempfile::tempdir().unwrap();
     let export = dir.path().join("out.json");
-    let out = hyperfine()
+    let out = perfratio()
         .args(args)
         .arg("--export-json")
         .arg(&export)
@@ -99,7 +99,7 @@ fn suppress_flag_hides_the_counts() {
     if common::is_rosetta() {
         return;
     }
-    hyperfine()
+    perfratio()
         .args([
             "-N",
             "--runs=20",
@@ -113,7 +113,7 @@ fn suppress_flag_hides_the_counts() {
 
 #[test]
 fn rejects_unknown_method() {
-    hyperfine()
+    perfratio()
         .args(["--outlier-method=foo", "true"])
         .assert()
         .failure();

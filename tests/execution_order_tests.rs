@@ -3,7 +3,7 @@ use std::{fs::File, io::Read, path::PathBuf};
 use tempfile::{tempdir, TempDir};
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 struct ExecutionOrderTest {
     cmd: assert_cmd::Command,
@@ -19,7 +19,7 @@ impl ExecutionOrderTest {
         let logfile_path = tempdir.path().join("output.log");
 
         ExecutionOrderTest {
-            cmd: hyperfine(),
+            cmd: perfratio(),
             expected_content: String::new(),
             logfile_path,
             tempdir,
@@ -685,31 +685,19 @@ fn prepare_and_conclude_see_the_current_perfratio_iteration() {
         .run();
 }
 
+#[cfg(unix)]
 #[test]
-fn prepare_and_conclude_see_the_current_joulex_and_hyperfine_iteration() {
-    #[cfg(unix)]
-    let var = "${JOULEX_ITERATION}";
-    #[cfg(windows)]
-    let var = "%JOULEX_ITERATION%";
-
-    ExecutionOrderTest::new()
-        .arg("--warmup=1")
-        .arg("--runs=2")
-        .prepare(&format!("prep={var}"))
-        .command(&format!("main={var}"))
-        .conclude(&format!("conc={var}"))
-        // warmup
-        .expect_output("prep=warmup-0")
-        .expect_output("main=warmup-0")
-        .expect_output("conc=warmup-0")
-        // benchmark
-        .expect_output("prep=0")
-        .expect_output("main=0")
-        .expect_output("conc=0")
-        .expect_output("prep=1")
-        .expect_output("main=1")
-        .expect_output("conc=1")
-        .run();
+fn legacy_iteration_variables_still_work_but_warn() {
+    for var in ["JOULEX_ITERATION", "HYPERFINE_ITERATION"] {
+        let command = format!("test \"${{{var}}}\" = \"${{PERFRATIO_ITERATION}}\"");
+        perfratio()
+            .args(["--runs=2", "--style=basic", &command])
+            .assert()
+            .success()
+            .stderr(predicates::str::contains(format!(
+                "${var} is deprecated and will be removed in the next release; use $PERFRATIO_ITERATION"
+            )));
+    }
 }
 
 #[test]

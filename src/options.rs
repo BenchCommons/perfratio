@@ -259,7 +259,7 @@ pub struct UntilSettings {
     pub match_stderr: bool,
 }
 
-/// The main settings for a hyperfine benchmark session
+/// The main settings for a perfratio benchmark session
 pub struct Options {
     /// Upper and lower bound for the number of benchmark runs
     pub run_bounds: RunBounds,
@@ -341,6 +341,9 @@ pub struct Options {
     /// Measure energy consumption in Joules and display Performance per Watt
     pub measure_energy: bool,
 
+    /// Which energy backend to use (`--energy-backend`)
+    pub energy_backend: crate::energy::BackendPreference,
+
     /// Calculate deep statistics (confidence intervals, bootstrapping)
     pub deep_stats: bool,
 
@@ -421,6 +424,7 @@ impl Default for Options {
             command_input_policy: CommandInputPolicy::Null,
             metric: crate::metric::Metric::Wall,
             measure_energy: false,
+            energy_backend: crate::energy::BackendPreference::Auto,
             deep_stats: false,
             filter_failed: false,
             suppress_outlier_warnings: false,
@@ -752,6 +756,19 @@ impl Options {
         if options.metric == crate::metric::Metric::Energy {
             options.measure_energy = true;
         }
+        // Only look at the backend choice (and its environment variable) when
+        // energy is requested, so a bad value cannot break runs without --energy.
+        if options.measure_energy {
+            options.energy_backend = crate::energy::BackendPreference::resolve(
+                matches
+                    .get_one::<String>("energy-backend")
+                    .map(String::as_str),
+                std::env::var(crate::energy::ENERGY_BACKEND_ENV)
+                    .ok()
+                    .as_deref(),
+            )
+            .map_err(OptionsError::InvalidEnergyBackend)?;
+        }
         options.deep_stats = matches.get_flag("deep-stats");
         options.filter_failed = matches.get_flag("filter-failed");
         options.suppress_outlier_warnings = matches.get_flag("suppress-outlier-warnings");
@@ -919,7 +936,7 @@ impl Options {
 
         if self.metric == crate::metric::Metric::Energy
             && !matches!(self.executor_kind, ExecutorKind::Mock(_))
-            && !crate::energy::get_energy_sampler().is_available()
+            && !crate::energy::get_energy_sampler(self.energy_backend).is_available()
         {
             bail!(
                 "Energy measurement is unavailable or unprivileged on this platform. Cannot use '--metric energy'."

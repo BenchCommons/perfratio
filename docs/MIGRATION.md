@@ -11,6 +11,8 @@ Items marked **(pending)** are in open pull requests at the time of writing and 
 | `hyperfine`, `joulex` binary | `perfratio` |
 | `joulex` crate, `joulex.1` man page | `perfratio` crate, `perfratio.1` ([#224](https://github.com/BenchCommons/perfratio/pull/224)) |
 | `joulex` shell completions | removed; generate with `perfratio --generate-completions SHELL` **(pending, #263)** |
+| `doc/joulex.1` (second man page copy) | removed immediately, use `perfratio.1` **(pending, #263)** |
+| `joulex_eta` progress template key (internal) | removed immediately; only matters if you patched the progress template **(pending, #263)** |
 
 ## Environment variables
 

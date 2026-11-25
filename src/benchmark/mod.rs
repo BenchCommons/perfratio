@@ -131,7 +131,7 @@ impl<'a> BenchmarkRunner<'a> {
             if matches!(options.executor_kind, ExecutorKind::Mock(_)) {
                 Some(Box::new(crate::energy::MockEnergySampler::new()) as Box<dyn EnergySampler>)
             } else {
-                Some(get_energy_sampler())
+                Some(get_energy_sampler(options.energy_backend))
             }
         } else {
             None
@@ -1520,7 +1520,7 @@ pub fn measure_baseline(
         if matches!(options.executor_kind, ExecutorKind::Mock(_)) {
             Some(Box::new(crate::energy::MockEnergySampler::new()) as Box<dyn EnergySampler>)
         } else {
-            Some(get_energy_sampler())
+            Some(get_energy_sampler(options.energy_backend))
         }
     } else {
         None

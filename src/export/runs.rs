@@ -15,7 +15,7 @@ pub struct RunsExporter<M: MarkupExporter> {
     markup: M,
 }
 
-/// The iteration numbers (as in `JOULEX_ITERATION`) of the runs that are
+/// The iteration numbers (as in `PERFRATIO_ITERATION`) of the runs that are
 /// still present in `result`, i.e. without runs removed by
 /// `--omit-failed-runs` or `--discard-outliers`.
 fn iteration_numbers(result: &BenchmarkResult, kept: usize) -> Vec<usize> {

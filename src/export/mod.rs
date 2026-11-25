@@ -112,18 +112,33 @@ impl ExportManager {
                 .flatten()
                 .map(String::as_str),
         )?;
+        let energy = if matches.get_flag("energy") || metric == Metric::Energy {
+            let pref = crate::energy::BackendPreference::resolve(
+                matches
+                    .get_one::<String>("energy-backend")
+                    .map(String::as_str),
+                std::env::var(crate::energy::ENERGY_BACKEND_ENV)
+                    .ok()
+                    .as_deref(),
+            )
+            .map_err(|v| {
+                anyhow::anyhow!("Invalid energy backend '{v}': expected auto, sysfs or perf")
+            })?;
+            Some(crate::energy::select_sampler_detailed(pref).map(|(_, backend)| backend))
+        } else {
+            None
+        };
+        let mut metadata = ExportMetadata::new(
+            labels,
+            Measurements::new(energy, matches.get_flag("resource-usage")),
+        );
+        metadata.energy_backend = energy.and_then(Result::ok).map(|b| b.as_str());
         let mut export_manager = Self {
             exporters: vec![],
             time_unit,
             sort_order,
             metric,
-            metadata: ExportMetadata::new(
-                labels,
-                Measurements::new(
-                    matches.get_flag("energy"),
-                    matches.get_flag("resource-usage"),
-                ),
-            ),
+            metadata,
         };
 
         if let Some(args) = matches.get_many::<String>("export") {

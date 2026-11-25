@@ -1,11 +1,11 @@
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
 #[test]
 fn metric_rejects_invalid_value() {
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--metric=invalid", "sleep 0.1"])
         .assert()
         .failure()
@@ -26,7 +26,7 @@ fn metric_accepts_all_valid_variants_and_aliases() {
         "rss",
         "peak-memory",
     ] {
-        hyperfine()
+        perfratio()
             .args([
                 "--debug-mode",
                 "--runs=2",
@@ -40,7 +40,7 @@ fn metric_accepts_all_valid_variants_and_aliases() {
 
 #[test]
 fn metric_cpu_displays_cpu_header_and_time_secondary() {
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--runs=2",
@@ -58,7 +58,7 @@ fn metric_cpu_displays_cpu_header_and_time_secondary() {
 
 #[test]
 fn metric_memory_displays_memory_header_and_used_less_memory() {
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--runs=2",
@@ -76,7 +76,7 @@ fn metric_memory_displays_memory_header_and_used_less_memory() {
 
 #[test]
 fn metric_energy_in_debug_mode_displays_energy_header_and_used_less_energy() {
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--runs=2",
@@ -94,13 +94,13 @@ fn metric_energy_in_debug_mode_displays_energy_header_and_used_less_energy() {
 
 #[test]
 fn metric_user_and_system_display_headers() {
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=2", "--metric=user", "sleep 0.01"])
         .assert()
         .success()
         .stdout(predicate::str::contains("User Time (mean ± σ):"));
 
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=2", "--metric=system", "sleep 0.01"])
         .assert()
         .success()
@@ -112,7 +112,7 @@ fn metric_json_export_contains_top_level_metric_and_primary_metric() {
     let temp_file = tempfile::NamedTempFile::new().unwrap();
     let path = temp_file.path().to_str().unwrap();
 
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--runs=2",
@@ -145,7 +145,7 @@ fn metric_wall_json_export_has_no_primary_metric_field() {
     let temp_file = tempfile::NamedTempFile::new().unwrap();
     let path = temp_file.path().to_str().unwrap();
 
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--runs=2",
@@ -169,7 +169,7 @@ fn metric_energy_without_debug_mode_fails_if_unsupported() {
     // When run natively on an unprivileged/unsupported system (such as macOS or Windows without root RAPL),
     // '--metric energy' should fail immediately with an explanatory message.
     if cfg!(target_os = "macos") || cfg!(target_os = "windows") {
-        hyperfine()
+        perfratio()
             .args(["--metric=energy", "echo 1"])
             .assert()
             .failure()
@@ -182,7 +182,7 @@ fn metric_energy_without_debug_mode_fails_if_unsupported() {
 
 #[test]
 fn metric_user_and_system_relative_speed() {
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--runs=2",
@@ -196,7 +196,7 @@ fn metric_user_and_system_relative_speed() {
         .stdout(predicate::str::contains("ran"))
         .stdout(predicate::str::contains("faster than"));
 
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--runs=2",
@@ -216,7 +216,7 @@ fn metric_markdown_export_uses_primary_metric_for_relative_speed() {
     let temp_file = tempfile::NamedTempFile::new().unwrap();
     let path = temp_file.path().to_str().unwrap();
 
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--runs=2",
@@ -241,7 +241,7 @@ fn metric_csv_export_uses_primary_metric_for_relative_speed() {
     let temp_file = tempfile::NamedTempFile::new().unwrap();
     let path = temp_file.path().to_str().unwrap();
 
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--runs=2",
@@ -268,7 +268,7 @@ fn metric_memory_sorting_selects_least_memory_as_reference() {
     // Command B: sleep 0.1s, 9000 bytes memory
     // Even though Command B has shorter wall time (0.1s vs 0.5s), Command A uses less memory (1000 vs 9000).
     // With '--metric=memory', Command A must be chosen as the reference/winner.
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--runs=2",
@@ -303,7 +303,7 @@ fn import_json_rejects_metric_mismatch() {
         "wall.json",
         &format!(r#"{{"metric":"wall","results":[{}]}}"#, result_json("")),
     );
-    hyperfine()
+    perfratio()
         .args(["--metric=cpu", "--import-json", &file])
         .assert()
         .failure()
@@ -319,7 +319,7 @@ fn import_json_accepts_matching_metric() {
         "cpu.json",
         &format!(r#"{{"metric":"cpu","results":[{}]}}"#, result_json("")),
     );
-    hyperfine()
+    perfratio()
         .args(["--metric=cpu", "--import-json", &file])
         .assert()
         .success();
@@ -333,7 +333,7 @@ fn metric_energy_rejects_imported_result_without_energy() {
         "noenergy.json",
         &format!(r#"{{"results":[{}]}}"#, result_json("")),
     );
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--metric=energy", "--import-json", &file])
         .assert()
         .failure()
@@ -351,7 +351,7 @@ fn metric_energy_accepts_imported_result_with_energy() {
             result_json(r#","mean_energy_joules":2.0,"energy_joules":[2.0]"#)
         ),
     );
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--metric=energy", "--import-json", &file])
         .assert()
         .success();

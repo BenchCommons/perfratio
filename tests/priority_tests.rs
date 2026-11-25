@@ -1,13 +1,13 @@
 //! Tests for --priority.
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
 #[test]
 fn invalid_priority_is_rejected() {
-    hyperfine()
+    perfratio()
         .args(["--priority=fast", "echo"])
         .assert()
         .failure()
@@ -16,7 +16,7 @@ fn invalid_priority_is_rejected() {
 
 #[test]
 fn normal_priority_is_accepted() {
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=1", "--priority=normal", "sleep 0.1"])
         .assert()
         .success();
@@ -44,7 +44,7 @@ mod unix {
         } else {
             "nice=19"
         };
-        hyperfine()
+        perfratio()
             .args(["--runs=1", "--show-output", "--priority=idle", probe()])
             .assert()
             .success()
@@ -65,7 +65,7 @@ mod unix {
             assert!(output.status.success());
             format!("nice={}", String::from_utf8_lossy(&output.stdout).trim())
         };
-        hyperfine()
+        perfratio()
             .args(["--runs=1", "--show-output", probe()])
             .assert()
             .success()
@@ -77,7 +77,7 @@ mod unix {
         // Whether raising the priority is allowed depends on the environment
         // (root, CAP_SYS_NICE; root in a container usually lacks the latter),
         // so accept both outcomes, but a failure must explain itself.
-        let output = hyperfine()
+        let output = perfratio()
             .args(["--runs=1", "-N", "--priority=high", "true"])
             .output()
             .unwrap();
@@ -93,7 +93,7 @@ mod unix {
     #[cfg(not(target_os = "linux"))]
     #[test]
     fn realtime_is_rejected_where_unsupported() {
-        hyperfine()
+        perfratio()
             .args(["--priority=realtime", "true"])
             .assert()
             .failure()
