@@ -561,11 +561,20 @@ pub fn build_command() -> Command {
                 .long("output-metric")
                 .action(ArgAction::Append)
                 .value_name("NAME=REGEX")
-                .conflicts_with_all(["show-output", "output", "until"])
+                .conflicts_with_all(["show-output", "until"])
                 .help("Extract a custom numeric metric from the command's standard output using \
                        the regular expression REGEX, which must contain at least one capture group. \
                        The value is extracted from the first capture group of the last match in the output. \
-                       Can be specified multiple times for different metrics."),
+                       Can be specified multiple times for different metrics. Works with the default \
+                       '--output=null' and with '--output=pipe'. A run where an ignored \
+                       failure ('-i') left the metric out is exported as null."),
+        )
+        .arg(
+            Arg::new("output-metric-stderr")
+                .long("output-metric-stderr")
+                .action(ArgAction::SetTrue)
+                .requires("output-metric")
+                .help("Extract the --output-metric values from stderr instead of stdout."),
         )
         .arg(
             Arg::new("precision")
