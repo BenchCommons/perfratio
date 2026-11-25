@@ -1,13 +1,13 @@
 //! Tests for the terminal report format.
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
 #[test]
 fn range_line_shows_the_median() {
-    hyperfine()
+    perfratio()
         .arg("--debug-mode")
         .arg("--runs=3")
         .arg("--style=basic")
@@ -20,7 +20,7 @@ fn range_line_shows_the_median() {
 
 #[test]
 fn deep_stats_show_percentiles_and_geometric_mean() {
-    hyperfine()
+    perfratio()
         .arg("--debug-mode")
         .arg("--runs=5")
         .arg("--style=basic")
@@ -35,7 +35,7 @@ fn deep_stats_show_percentiles_and_geometric_mean() {
 
 #[test]
 fn percentiles_are_not_shown_without_deep_stats() {
-    hyperfine()
+    perfratio()
         .arg("--debug-mode")
         .arg("--runs=5")
         .arg("--style=basic")
@@ -47,7 +47,7 @@ fn percentiles_are_not_shown_without_deep_stats() {
 
 #[test]
 fn summary_shows_absolute_means_and_differences() {
-    hyperfine()
+    perfratio()
         .arg("--debug-mode")
         .arg("--style=basic")
         .arg("sleep 2")
@@ -62,7 +62,7 @@ fn summary_shows_absolute_means_and_differences() {
 
 #[test]
 fn summary_differences_are_negative_for_commands_faster_than_the_reference() {
-    hyperfine()
+    perfratio()
         .arg("--debug-mode")
         .arg("--style=basic")
         .arg("--reference=sleep 2")
@@ -76,7 +76,7 @@ fn summary_differences_are_negative_for_commands_faster_than_the_reference() {
 
 #[test]
 fn style_none_suppresses_progress_and_terminal_output() {
-    hyperfine()
+    perfratio()
         .arg("--debug-mode")
         .arg("--runs=2")
         .arg("--style=none")
@@ -89,7 +89,7 @@ fn style_none_suppresses_progress_and_terminal_output() {
 
 #[test]
 fn style_basic_and_color_suppress_interactive_progress_bar() {
-    hyperfine()
+    perfratio()
         .arg("--debug-mode")
         .arg("--runs=2")
         .arg("--style=basic")
@@ -99,7 +99,7 @@ fn style_basic_and_color_suppress_interactive_progress_bar() {
         .stderr(predicate::str::contains("ETA").not())
         .stdout(predicate::str::contains("Benchmark 1: sleep 0.1"));
 
-    hyperfine()
+    perfratio()
         .arg("--debug-mode")
         .arg("--runs=2")
         .arg("--style=color")
@@ -112,7 +112,7 @@ fn style_basic_and_color_suppress_interactive_progress_bar() {
 
 #[test]
 fn style_full_executes_benchmarks_cleanly() {
-    hyperfine()
+    perfratio()
         .arg("--debug-mode")
         .arg("--runs=2")
         .arg("--style=full")

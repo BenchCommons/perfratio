@@ -2,13 +2,13 @@
 //! outlier-inflated variance warnings, and the `diagnostics` JSON block.
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
 #[test]
 fn stable_benchmarks_have_no_diagnostic_warnings() {
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=40", "sleep 0.1"])
         .assert()
         .success()
@@ -23,12 +23,12 @@ mod unix {
 
     /// Sleeps 20 ms + 3 ms per run: a clear upward trend. Run with '-N' (an
     /// explicit 'sh -c') so that no noisy shell spawning time is subtracted.
-    const RAMP: &str = "sh -c 'sleep $(printf 0.%03d $((20 + 3 * JOULEX_ITERATION)))'";
+    const RAMP: &str = "sh -c 'sleep $(printf 0.%03d $((20 + 3 * PERFRATIO_ITERATION)))'";
     /// Alternates between 50 ms and 150 ms: two separated groups. Run with
     /// '-N' (an explicit 'sh -c'), so that no shell spawning time is
     /// subtracted: under CPU load, that subtraction is the main noise source.
     const TWO_GROUPS: &str =
-        "sh -c 'if [ $((JOULEX_ITERATION % 2)) = 0 ]; then sleep 0.05; else sleep 0.15; fi'";
+        "sh -c 'if [ $((PERFRATIO_ITERATION % 2)) = 0 ]; then sleep 0.05; else sleep 0.15; fi'";
 
     #[test]
     fn a_ramp_triggers_the_trend_warning_and_is_exported() {
@@ -37,7 +37,7 @@ mod unix {
         }
         let dir = tempfile::tempdir().unwrap();
         let json = dir.path().join("out.json");
-        hyperfine()
+        perfratio()
             .args(["--runs=30", "-N", "--export-json"])
             .arg(&json)
             .arg(RAMP)
@@ -57,7 +57,7 @@ mod unix {
         if common::is_rosetta() {
             return;
         }
-        hyperfine()
+        perfratio()
             .args(["--runs=40", "-N", "--first-run=discard", TWO_GROUPS])
             .assert()
             .success()
@@ -71,7 +71,7 @@ mod unix {
         if common::is_rosetta() {
             return;
         }
-        hyperfine()
+        perfratio()
             .args(["--runs=30", "-N", "--suppress-outlier-warnings", RAMP])
             .assert()
             .success()

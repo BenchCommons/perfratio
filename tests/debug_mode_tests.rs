@@ -1,13 +1,13 @@
 //! `--debug-mode` must reject commands it can't simulate instead of panicking.
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
 #[test]
 fn debug_mode_rejects_commands_other_than_sleep() {
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=2", "echo hi"])
         .assert()
         .failure()
@@ -20,7 +20,7 @@ fn debug_mode_rejects_commands_other_than_sleep() {
 
 #[test]
 fn debug_mode_rejects_an_invalid_simulated_shell() {
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=2", "--shell=bash", "sleep 0.1"])
         .assert()
         .failure()
@@ -30,7 +30,7 @@ fn debug_mode_rejects_an_invalid_simulated_shell() {
 
 #[test]
 fn debug_mode_accepts_a_simulated_shell() {
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--runs=2",

@@ -41,8 +41,8 @@ Console, with a baseline:
 Energy (mean):  1.284 ± 0.041 J   net 0.902 J    [Power: 10.40 W, idle 3.10 W]
 ```
 
-JSON (additive, optional fields, omitted when absent; a minor `schemaVersion` bump under the
-#240 contract, which is not yet implemented on `master`; the new fields go in the 1.x set):
+JSON (additive, optional fields, omitted when absent; part of `schemaVersion` 1.1, listed in
+`output-schema-contract.md`):
 
 | Field | Unit | Present when |
 |---|---|---|

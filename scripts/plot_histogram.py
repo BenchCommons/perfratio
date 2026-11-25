@@ -8,7 +8,7 @@
 # ]
 # ///
 
-"""This program shows `hyperfine` benchmark results as a histogram."""
+"""This program shows `perfratio` benchmark results as a histogram."""
 
 import argparse
 import json

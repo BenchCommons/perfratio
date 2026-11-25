@@ -5,20 +5,33 @@ use super::metadata::ExportMetadata;
 use super::Exporter;
 use crate::benchmark::benchmark_result::BenchmarkResult;
 use crate::benchmark::relative_speed;
+use crate::metric::Metric;
 use crate::options::SortOrder;
 use crate::stats::significance::{self, Significance};
 use crate::util::units::Unit;
 
 use anyhow::Result;
 
+#[derive(Serialize, Debug, Clone, PartialEq)]
+pub struct PrimaryMetricStats {
+    pub metric: Metric,
+    pub mean: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stddev: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub samples: Option<Vec<f64>>,
+}
+
 /// Version of the JSON output contract (`docs/specs/output-schema-contract.md`).
-pub const SCHEMA_VERSION: &str = "1.0";
+pub const SCHEMA_VERSION: &str = "1.1";
 
 #[derive(Serialize, Debug)]
 struct PerfratioSummary<'a> {
     /// Version of the output contract; must stay the first key
     #[serde(rename = "schemaVersion")]
     schema_version: &'static str,
+    /// Metric used for ranking and relative speed (`wall` unless `--metric` is set)
+    metric: Metric,
     /// Information about the perfratio run (version, command line, date, labels, system)
     #[serde(skip_serializing_if = "Option::is_none")]
     perfratio: Option<&'a ExportMetadata>,
@@ -31,6 +44,8 @@ struct PerfratioSummary<'a> {
 struct ResultEntry<'a> {
     #[serde(flatten)]
     result: &'a BenchmarkResult,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    primary_metric: Option<PrimaryMetricStats>,
     /// Mean relative to the fastest result (1.0 = fastest), as in the Markdown export.
     /// Omitted if it cannot be computed (e.g. a mean of zero).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -58,12 +73,18 @@ impl Exporter for JsonExporter {
         reference: Option<&BenchmarkResult>,
         _unit: Option<Unit>,
         _sort_order: SortOrder,
+        metric: Metric,
     ) -> Result<Vec<u8>> {
         let relative = if results.is_empty() {
             None
         } else {
-            let baseline = reference.unwrap_or_else(|| relative_speed::fastest_of(results));
-            relative_speed::compute_with_check_from_reference(results, baseline, SortOrder::Command)
+            let baseline = reference.unwrap_or_else(|| relative_speed::best_of(results, metric));
+            relative_speed::compute_with_check_from_reference(
+                results,
+                baseline,
+                SortOrder::Command,
+                metric,
+            )
         };
         let reference_result = reference
             .or_else(|| (!results.is_empty()).then(|| relative_speed::fastest_of(results)));
@@ -72,11 +93,23 @@ impl Exporter for JsonExporter {
             .enumerate()
             .map(|(i, result)| {
                 let entry = relative.as_ref().map(|r| &r[i]);
+                // omitted when the result has no data for the metric
+                let primary_metric = if metric != Metric::Wall {
+                    result.primary_mean(metric).map(|mean| PrimaryMetricStats {
+                        metric,
+                        mean,
+                        stddev: result.primary_stddev(metric),
+                        samples: result.primary_samples(metric),
+                    })
+                } else {
+                    None
+                };
                 let assessment = reference_result
                     .filter(|r| !std::ptr::eq(*r, result))
                     .and_then(|r| significance::assess(r, result));
                 ResultEntry {
                     result,
+                    primary_metric,
                     relative_speed: entry.map(|e| e.relative_speed).filter(|r| r.is_finite()),
                     // the baseline has no spread relative to itself
                     relative_speed_stddev: entry
@@ -90,6 +123,7 @@ impl Exporter for JsonExporter {
 
         let mut output = to_vec_pretty(&PerfratioSummary {
             schema_version: SCHEMA_VERSION,
+            metric,
             perfratio: self.metadata.as_ref(),
             interrupted: crate::util::interrupt::interrupted(),
             results,

@@ -1,25 +1,25 @@
 //! Tests for --until and --until-stderr (#79).
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
 #[test]
 fn conflicts_with_show_output_and_output() {
-    hyperfine()
+    perfratio()
         .args(["--until", "READY", "--show-output", "echo 1"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("cannot be used with"));
 
-    hyperfine()
+    perfratio()
         .args(["--until", "READY", "--show-output-on-failure", "echo 1"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("cannot be used with"));
 
-    hyperfine()
+    perfratio()
         .args(["--until", "READY", "--output", "pipe", "echo 1"])
         .assert()
         .failure()
@@ -28,7 +28,7 @@ fn conflicts_with_show_output_and_output() {
 
 #[test]
 fn empty_until_pattern_rejected() {
-    hyperfine()
+    perfratio()
         .args(["--until", "", "echo 1"])
         .assert()
         .failure()
@@ -39,7 +39,7 @@ fn empty_until_pattern_rejected() {
 
 #[test]
 fn until_stderr_without_until_rejected() {
-    hyperfine()
+    perfratio()
         .args(["--until-stderr", "echo 1"])
         .assert()
         .failure()
@@ -55,7 +55,7 @@ mod unix {
     #[test]
     fn fast_readiness_stops_timer_and_kills_process() {
         let start = std::time::Instant::now();
-        hyperfine()
+        perfratio()
             .args([
                 "--until",
                 "READY",
@@ -77,7 +77,7 @@ mod unix {
     #[test]
     fn until_stderr_matches_stderr() {
         let start = std::time::Instant::now();
-        hyperfine()
+        perfratio()
             .args([
                 "--until",
                 "READY_ERR",
@@ -99,7 +99,7 @@ mod unix {
 
     #[test]
     fn exiting_without_pattern_fails() {
-        hyperfine()
+        perfratio()
             .args([
                 "--until",
                 "EXPECTED_READY",
@@ -117,7 +117,7 @@ mod unix {
 
     #[test]
     fn ignoring_failure_with_until() {
-        hyperfine()
+        perfratio()
             .args([
                 "--until",
                 "EXPECTED_READY",
@@ -134,7 +134,7 @@ mod unix {
     #[test]
     fn alias_ready_when_works() {
         let start = std::time::Instant::now();
-        hyperfine()
+        perfratio()
             .args([
                 "--ready-when",
                 "SERVER_LISTENING",
@@ -180,7 +180,7 @@ mod unix {
         );
 
         let start = std::time::Instant::now();
-        hyperfine()
+        perfratio()
             .args(["--until", "READY", "-N", "-r", "1", &script_cmd])
             .assert()
             .success();

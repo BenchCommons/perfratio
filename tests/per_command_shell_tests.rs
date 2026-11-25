@@ -1,7 +1,7 @@
 //! Tests for --shell given once per command (#67).
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 use serde_json::Value;
@@ -9,7 +9,7 @@ use serde_json::Value;
 fn shells_in_json(args: &[&str]) -> Vec<Option<String>> {
     let dir = tempfile::tempdir().unwrap();
     let json = dir.path().join("out.json");
-    hyperfine()
+    perfratio()
         .args(["--style=basic", "--export-json"])
         .arg(&json)
         .args(args)
@@ -60,7 +60,7 @@ fn shells_per_command_are_recorded() {
 
 #[test]
 fn the_reference_counts_as_the_first_command() {
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=2", "--reference", "sleep 0.1"])
         .args(["-S", "sleep 0.01", "-S", "sleep 0.02", "sleep 0.3"])
         .assert()
@@ -69,7 +69,7 @@ fn the_reference_counts_as_the_first_command() {
 
 #[test]
 fn a_wrong_number_of_shells_is_rejected() {
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "-S", "sleep 0.01", "-S", "sleep 0.02"])
         .args(["sleep 0.1", "sleep 0.2", "sleep 0.3"])
         .assert()
@@ -83,7 +83,7 @@ fn a_wrong_number_of_shells_is_rejected() {
 #[test]
 fn each_command_runs_in_its_own_shell() {
     // `$0` is the shell's name; without a shell, `echo` prints '$0' literally
-    hyperfine()
+    perfratio()
         .args(["--runs=1", "--show-output"])
         .args(["-S", "sh", "echo shell=$0", "-S", "none", "echo shell=$0"])
         .assert()

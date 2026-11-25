@@ -3,7 +3,7 @@
 #![cfg(unix)]
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
@@ -13,7 +13,7 @@ fn each_command_runs_its_own_setup_and_cleanup() {
     let log = dir.path().join("log");
     let log = log.to_str().unwrap();
 
-    hyperfine()
+    perfratio()
         .args(["--runs=2", "-N"])
         .arg(format!("--setup=sh -c 'echo setup-a >> {log}'"))
         .arg(format!("--setup=sh -c 'echo setup-b >> {log}'"))
@@ -49,7 +49,7 @@ fn setup_given_once_applies_to_all_commands() {
     let log = dir.path().join("log");
     let log = log.to_str().unwrap();
 
-    hyperfine()
+    perfratio()
         .args(["--runs=1", "-N"])
         .arg(format!("--setup=sh -c 'echo setup >> {log}'"))
         .arg("true")
@@ -69,7 +69,7 @@ fn setup_given_once_applies_to_all_commands() {
 #[test]
 fn wrong_number_of_setup_or_cleanup_options_is_rejected() {
     for flag in ["--setup", "--cleanup"] {
-        hyperfine()
+        perfratio()
             .args(["--runs=1", "-N"])
             .arg(format!("{flag}=true"))
             .arg(format!("{flag}=true"))
@@ -84,7 +84,7 @@ fn wrong_number_of_setup_or_cleanup_options_is_rejected() {
 
 #[test]
 fn round_robin_rejects_different_per_command_setups() {
-    hyperfine()
+    perfratio()
         .args(["--runs=1", "-N", "--schedule=round-robin"])
         .args(["--setup=echo a", "--setup=echo b"])
         .args(["true", "true"])
@@ -97,7 +97,7 @@ fn round_robin_rejects_different_per_command_setups() {
 
 #[test]
 fn round_robin_allows_identical_per_command_setups() {
-    hyperfine()
+    perfratio()
         .args(["--runs=1", "-N", "--schedule=round-robin"])
         .args(["--setup=true", "--setup=true"])
         .args(["true", "true"])

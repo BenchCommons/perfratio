@@ -3,14 +3,14 @@
 #![cfg(unix)]
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
 fn run_json(args: &[&str]) -> serde_json::Value {
     let dir = tempfile::tempdir().unwrap();
     let export = dir.path().join("out.json");
-    hyperfine()
+    perfratio()
         .args(args)
         .arg("--export-json")
         .arg(&export)
@@ -23,7 +23,7 @@ fn run_json(args: &[&str]) -> serde_json::Value {
 
 /// Sleeps 0.5 s in the given iterations, otherwise returns immediately.
 fn slow_in(iterations: &str) -> String {
-    format!("sh -c 'case $JOULEX_ITERATION in {iterations}) sleep 0.5;; esac; true'")
+    format!("sh -c 'case $PERFRATIO_ITERATION in {iterations}) sleep 0.5;; esac; true'")
 }
 
 #[test]
@@ -44,7 +44,7 @@ fn prints_the_number_of_discarded_outliers() {
     if common::is_rosetta() {
         return;
     }
-    hyperfine()
+    perfratio()
         .args([
             "-N",
             "--runs=20",
@@ -61,7 +61,7 @@ fn prints_the_number_of_discarded_outliers() {
 fn refuses_to_discard_more_than_five_percent() {
     let dir = tempfile::tempdir().unwrap();
     let export = dir.path().join("out.json");
-    hyperfine()
+    perfratio()
         .args(["-N", "--runs=20", "--discard-outliers", &slow_in("3|7|11")])
         .arg("--export-json")
         .arg(&export)
@@ -83,7 +83,7 @@ fn reports_original_run_numbers_together_with_omitted_failed_runs() {
     }
     // Run 2 fails and is omitted first; run 7 is slow. The discarded run must be
     // reported as 7 (its original number), not 6 (its position after omission).
-    let command = "sh -c 'case $JOULEX_ITERATION in 2) exit 1;; 7) sleep 0.5;; esac; true'";
+    let command = "sh -c 'case $PERFRATIO_ITERATION in 2) exit 1;; 7) sleep 0.5;; esac; true'";
     let result = run_json(&[
         "-N",
         "--runs=20",
@@ -101,7 +101,7 @@ fn reports_original_run_numbers_together_with_omitted_failed_runs() {
 #[test]
 fn rejects_invalid_thresholds() {
     for value in ["-3", "0", "abc"] {
-        hyperfine()
+        perfratio()
             .arg(format!("--discard-outliers={value}"))
             .arg("true")
             .assert()

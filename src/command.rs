@@ -18,7 +18,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use rust_decimal::Decimal;
 
 /// Name of the built-in placeholder `{iteration}`, which expands to the same
-/// value as the `JOULEX_ITERATION` environment variable (e.g. `0`, `1`, or
+/// value as the `PERFRATIO_ITERATION` environment variable (e.g. `0`, `1`, or
 /// `warmup-0`). Unlike the environment variable, it also works with
 /// `--shell=none`.
 pub const ITERATION_PLACEHOLDER: &str = "iteration";
@@ -584,7 +584,7 @@ impl<'a> Commands<'a> {
             {
                 bail!(
                     "The parameter name '{ITERATION_PLACEHOLDER}' is reserved: '{{{ITERATION_PLACEHOLDER}}}' \
-                     always expands to the current iteration (like $JOULEX_ITERATION)"
+                     always expands to the current iteration (like $PERFRATIO_ITERATION)"
                 );
             }
 

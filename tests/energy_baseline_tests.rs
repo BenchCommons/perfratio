@@ -1,13 +1,13 @@
 //! CLI-level checks for `--energy-baseline` (debug mode, no RAPL needed).
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
 #[test]
 fn energy_baseline_requires_energy() {
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--runs=2",
@@ -21,7 +21,7 @@ fn energy_baseline_requires_energy() {
 
 #[test]
 fn energy_baseline_rejects_an_invalid_duration() {
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--runs=2",
@@ -38,7 +38,7 @@ fn energy_baseline_rejects_an_invalid_duration() {
 
 #[test]
 fn energy_baseline_zero_disables_the_baseline() {
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--runs=2",
@@ -59,7 +59,7 @@ fn energy_baseline_warns_when_idle_power_is_unavailable() {
     {
         return;
     }
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--runs=2",

@@ -72,9 +72,13 @@ pub fn run_checks() -> Vec<Check> {
     let cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1);
-    if let Some(root) =
-        std::env::var_os(FAKE_ROOT_ENV).or_else(|| std::env::var_os(LEGACY_FAKE_ROOT_ENV))
-    {
+    let legacy_root = std::env::var_os(LEGACY_FAKE_ROOT_ENV);
+    if legacy_root.is_some() {
+        eprintln!(
+            "Warning: ${LEGACY_FAKE_ROOT_ENV} is deprecated and will be removed in the next release; use ${FAKE_ROOT_ENV}."
+        );
+    }
+    if let Some(root) = std::env::var_os(FAKE_ROOT_ENV).or(legacy_root) {
         return linux_checks(Path::new(&root), cpus);
     }
     #[cfg(target_os = "linux")]

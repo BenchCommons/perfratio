@@ -1,7 +1,7 @@
 //! Tests for `--warmup auto`.
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
@@ -9,7 +9,7 @@ use predicates::prelude::*;
 fn auto_warmup_stops_as_soon_as_timings_are_stable() {
     let dir = tempfile::tempdir().unwrap();
     let export = dir.path().join("out.json");
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=2", "--style=basic", "--warmup=auto"])
         .arg("--export-json")
         .arg(&export)
@@ -29,7 +29,7 @@ fn auto_warmup_stops_as_soon_as_timings_are_stable() {
 fn fixed_warmup_is_unchanged() {
     let dir = tempfile::tempdir().unwrap();
     let export = dir.path().join("out.json");
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=2", "--style=basic", "--warmup=3"])
         .arg("--export-json")
         .arg(&export)
@@ -45,7 +45,7 @@ fn fixed_warmup_is_unchanged() {
 
 #[test]
 fn auto_warmup_works_with_round_robin() {
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=2", "--style=basic", "--warmup=auto"])
         .args(["--schedule=round-robin", "sleep 0.1", "sleep 0.2"])
         .assert()
@@ -57,9 +57,9 @@ fn auto_warmup_works_with_round_robin() {
 #[test]
 fn auto_warmup_gives_up_after_100_runs_with_a_warning() {
     // Alternates between ~1 ms and ~15 ms, so the timings never stabilize.
-    hyperfine()
+    perfratio()
         .args(["-N", "--runs=2", "--style=basic", "--warmup=auto"])
-        .arg("sh -c 'case $JOULEX_ITERATION in *[13579]) sleep 0.015;; esac; true'")
+        .arg("sh -c 'case $PERFRATIO_ITERATION in *[13579]) sleep 0.015;; esac; true'")
         .assert()
         .success()
         .stdout(predicate::str::contains("100 runs"))
@@ -71,7 +71,7 @@ fn auto_warmup_gives_up_after_100_runs_with_a_warning() {
 
 #[test]
 fn invalid_warmup_values_are_rejected() {
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--warmup=abc", "sleep 0.1"])
         .assert()
         .failure()

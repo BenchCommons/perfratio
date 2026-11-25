@@ -16,7 +16,6 @@ pub const SHELLS: [&str; 5] = ["bash", "zsh", "fish", "powershell", "elvish"];
 pub const FISH_COMMAND_COMPLETION: &str = "
 # Complete executables from $PATH for the benchmarked command (hyperfine#872)
 complete -c perfratio -n \"__fish_use_subcommand\" -x -a \"(__fish_complete_command)\"
-complete -c joulex -n \"__fish_use_subcommand\" -x -a \"(__fish_complete_command)\"
 ";
 
 pub fn get_cli_arguments<'a, I, T>(args: I) -> ArgMatches
@@ -81,7 +80,7 @@ pub fn build_command() -> Command {
                 .long("import-json")
                 .action(ArgAction::Append)
                 .value_name("FILE")
-                .help("Import timing results from a JSON file previously exported by perfratio/joulex/hyperfine. \
+                .help("Import timing results from a JSON file previously exported by perfratio (or hyperfine, for the shared result format). \
                        Multiple files can be specified. Can be combined with commands to benchmark or used \
                        on its own to re-export existing results to another format.\n\n\
                        Example:  perfratio --import-json baseline.json 'sleep 1'\n"),
@@ -470,10 +469,51 @@ pub fn build_command() -> Command {
                        report net energy = measured - idle power x run time. Off by default."),
         )
         .arg(
+            Arg::new("energy-backend")
+                .long("energy-backend")
+                .value_name("BACKEND")
+                .value_parser(["auto", "sysfs", "perf"])
+                .help(
+                    "Energy backend for '--energy' (Linux): 'auto' (default) uses sysfs powercap \
+                     and falls back to the perf power PMU when energy_uj is unreadable, 'sysfs' \
+                     and 'perf' force one. Can also be set with PERFRATIO_ENERGY_BACKEND.",
+                ),
+        )
+        .arg(
             Arg::new("deep-stats")
                 .long("deep-stats")
                 .action(ArgAction::SetTrue)
                 .help("Perform deep statistical analysis (bootstrapped confidence intervals for mean, median, and stddev, plus hypothesis testing)."),
+        )
+        .arg(
+            Arg::new("metric")
+                .long("metric")
+                .action(ArgAction::Set)
+                .value_name("METRIC")
+                .value_parser([
+                    "wall",
+                    "wall-clock",
+                    "time",
+                    "cpu",
+                    "total-cpu",
+                    "user",
+                    "system",
+                    "energy",
+                    "memory",
+                    "rss",
+                    "peak-memory",
+                ])
+                .default_value("wall")
+                .hide_default_value(true)
+                .help(
+                    "Primary metric used for statistics, outlier detection, comparison, and sorting:\n  \
+                       * 'wall' (default, aliases: 'wall-clock', 'time'): wall-clock time\n  \
+                       * 'cpu' (alias: 'total-cpu'): total CPU time (user + system)\n  \
+                       * 'user': user CPU time\n  \
+                       * 'system': system / kernel CPU time\n  \
+                       * 'energy': energy consumed in Joules (auto-enables '--energy')\n  \
+                       * 'memory' (aliases: 'rss', 'peak-memory'): peak resident set size (RSS)\n"
+                ),
         )
         .arg(
             Arg::new("sort")
@@ -784,7 +824,7 @@ pub fn build_command() -> Command {
                        <FILE>:   Write the output to the given file.\n\n\
                     This option can be specified once for all commands or multiple times, once for \
                     each command. Note: If you want to log the output of each and every iteration, \
-                    you can use a shell redirection and the '$PERFRATIO_ITERATION' (or '$JOULEX_ITERATION', '$HYPERFINE_ITERATION') environment variable:\n    \
+                    you can use a shell redirection and the '$PERFRATIO_ITERATION' environment variable:\n    \
                     perfratio 'my-command > output-${PERFRATIO_ITERATION}.log'\n\n",
                 ),
         )
