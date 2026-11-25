@@ -11,12 +11,12 @@ contract (no JSON export change).
 | Area | Result |
 |---|---|
 | SCA: `cargo deny check` (advisories, licenses, bans, sources) | passes; `unmaintained = "all"`, `yanked = "deny"`, no ignores |
-| SCA: `cargo audit` | one warning: rustix 1.1.2, RUSTSEC-2026-0486 (xattr, unsound). We call no xattr API. Fixed here by locking rustix 1.1.6 |
+| SCA: `cargo audit` | clean after this PR (re-run after merging `master`, which locks rustix 1.1.5). RUSTSEC-2026-0486 (rustix xattr, unsound; we call no xattr API) is fixed here by locking rustix 1.1.6 |
 | SAST: `unsafe` | about 70 sites in `src/util`, `src/timer`. Each has a `// SAFETY:` comment, except the `unsafe impl Sync for SendHandle` (Windows), fixed here. Child-side code between fork and exec only calls async-signal-safe functions. `kill(-pid)` is guarded (`pid <= 1` returns early in `terminate_process_group`; PIDs come from `Child::id()`) |
 | Command execution | Commands run as `shell -c <command line>` or, with `--shell=none`, via `shell_words` split and `Command::new` without a shell. Parameter values are substituted verbatim into the shell command line; this is documented in the README (#37) and `--shell=none` is the safe mode |
 | Export paths | Written atomically via a `create_new` temp file in the target directory and `rename`; symlinks are replaced, not followed (#36). `--export-diff-markdown` still uses `std::fs::write` (truncates, follows symlinks); it is a user-chosen path, low risk |
 | `--until`, timeout, Ctrl-C | Each child is its own process group (`process_group(0)`); watchdog and Ctrl-C paths SIGTERM then SIGKILL the group; Windows uses a Job Object. Not fuzzed in this review |
-| Workflows (zizmor-style) | top-level `permissions: contents: read`; `contents: write` only on the `build` job; no `pull_request_target`; all actions pinned to SHAs; `persist-credentials: false`; no `${{ }}` interpolation of untrusted input in `run:`; Dependabot cooldown set; `security.yml` runs cargo-deny, zizmor and gitleaks weekly and on PRs |
+| Workflows (zizmor-style) | top-level `permissions: contents: read`; in the current `master` workflow (`CICD.yml`), `contents: write` only on the `build` job (the release workflow in #273 adds a `checksums` job that also has `contents: write`); no `pull_request_target`; all actions pinned to SHAs; `persist-credentials: false`; no `${{ }}` interpolation of untrusted input in `run:`; Dependabot cooldown set; `security.yml` runs cargo-deny, zizmor and gitleaks weekly and on PRs |
 | Secrets | gitleaks runs in CI over the full history with a digest-pinned image and the default ruleset. There is no `.gitleaks.toml`, so there are no allowlists to audit |
 
 ## Left open
