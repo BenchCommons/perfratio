@@ -145,9 +145,10 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<Second>,
 
-    /// Custom metrics extracted via --output-metric
+    /// Custom metrics extracted via --output-metric, one entry per run
+    /// (`null` where an ignored failure left the metric out)
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub custom_metrics: Option<BTreeMap<String, Vec<f64>>>,
+    pub custom_metrics: Option<BTreeMap<String, Vec<Option<f64>>>>,
 
     /// Statistical summary of custom metrics
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -73,7 +73,7 @@ pub struct BenchmarkRunner<'a> {
     /// Whether this runner timed out (--timeout <DURATION>)
     pub timed_out: bool,
     /// Extracted custom metrics per run
-    pub custom_metrics: std::collections::BTreeMap<String, Vec<f64>>,
+    pub custom_metrics: std::collections::BTreeMap<String, Vec<Option<f64>>>,
 }
 
 /// "1%", "0.5%"
@@ -499,9 +499,7 @@ impl<'a> BenchmarkRunner<'a> {
             self.command
                 .per_run_values(&BenchmarkIteration::Benchmark(0)),
         );
-        for (name, val) in res.custom_metrics {
-            self.custom_metrics.entry(name).or_default().push(val);
-        }
+        self.push_custom_metrics(&res.custom_metrics);
         self.all_succeeded = self.all_succeeded && success;
 
         Ok(())
@@ -541,9 +539,7 @@ impl<'a> BenchmarkRunner<'a> {
             self.command
                 .per_run_values(&BenchmarkIteration::Benchmark(iteration)),
         );
-        for (name, val) in res.custom_metrics {
-            self.custom_metrics.entry(name).or_default().push(val);
-        }
+        self.push_custom_metrics(&res.custom_metrics);
         self.all_succeeded = self.all_succeeded && success;
 
         self.run_conclusion(BenchmarkIteration::Benchmark(iteration))?;
@@ -575,6 +571,18 @@ impl<'a> BenchmarkRunner<'a> {
             mean_of(|c| c.block_input_ops),
             mean_of(|c| c.block_output_ops),
         ))
+    }
+
+    /// Record one entry per configured `--output-metric` for this run: the
+    /// extracted value, or `None` (JSON `null`) if an ignored failure left it
+    /// out, so that every list stays aligned with `times`.
+    fn push_custom_metrics(&mut self, extracted: &std::collections::BTreeMap<String, f64>) {
+        for metric in &self.options.output_metrics {
+            self.custom_metrics
+                .entry(metric.name.clone())
+                .or_default()
+                .push(extracted.get(&metric.name).copied());
+        }
     }
 
     /// Keep only the runs at `keep` (ascending indices) in every per-run vector.
@@ -779,7 +787,8 @@ impl<'a> BenchmarkRunner<'a> {
         let (custom_metrics, custom_metrics_summary) = if !self.custom_metrics.is_empty() {
             let mut summary_map = std::collections::BTreeMap::new();
             for (name, values) in &self.custom_metrics {
-                if let Some(summary) = benchmark_result::MetricSummary::from_values(values) {
+                let present: Vec<f64> = values.iter().flatten().copied().collect();
+                if let Some(summary) = benchmark_result::MetricSummary::from_values(&present) {
                     summary_map.insert(name.clone(), summary);
                 }
             }

@@ -378,6 +378,9 @@ pub struct Options {
 
     /// `--output-metric`: custom metrics to extract from command output
     pub output_metrics: Vec<crate::output_metric::OutputMetric>,
+
+    /// Extract `--output-metric` values from stderr instead of stdout
+    pub output_metrics_stderr: bool,
 }
 
 impl Default for Options {
@@ -421,6 +424,7 @@ impl Default for Options {
             timeout: None,
             until: None,
             output_metrics: Vec::new(),
+            output_metrics_stderr: false,
         }
     }
 }
@@ -682,6 +686,21 @@ impl Options {
                 }
                 options.output_metrics.push(parsed);
             }
+        }
+
+        options.output_metrics_stderr = matches.get_flag("output-metric-stderr");
+        if !options.output_metrics.is_empty()
+            && options.command_output_policies.iter().any(|p| {
+                matches!(
+                    p,
+                    CommandOutputPolicy::File(_) | CommandOutputPolicy::Inherit
+                )
+            })
+        {
+            return Err(OptionsError::InvalidOutputMetric(
+                "--output-metric cannot be combined with '--output=inherit' or an output file"
+                    .into(),
+            ));
         }
 
         options.command_input_policy = if let Some(path_str) = matches.get_one::<String>("input") {

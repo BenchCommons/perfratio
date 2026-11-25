@@ -16,6 +16,8 @@ Currently, users can only benchmark wall-clock time (and OS rusage/energy). To m
                                The metric value is parsed as a float from the first
                                capture group of the last match in the output.
                                Can be specified multiple times for different metrics.
+--output-metric-stderr         Read the metrics from stderr instead of stdout
+                               (requires --output-metric; applies to all metrics).
 ```
 
 ### 1. CLI Validation & Format
@@ -23,16 +25,21 @@ Currently, users can only benchmark wall-clock time (and OS rusage/energy). To m
   - `NAME`: non-empty, ASCII alphanumeric and underscores only (`[a-zA-Z0-9_]+`).
   - `REGEX`: valid regular expression containing at least one capturing group (`captures_len() >= 2`).
 - Invalid name, missing `=`, invalid regex, or missing capture group causes `OptionsError::InvalidOutputMetric(String)` with an actionable explanation.
-- Conflicts with `--show-output` (`-d`) because stdout cannot be both displayed in real time and captured safely.
+- Conflicts with `--show-output` (`-d`) and `--until` because the stream cannot be both displayed/consumed and captured safely.
+- Compatible with `--output=null` (default) and `--output=pipe`: the captured stream is piped to perfratio either way. `--output=inherit` and `--output=<file>` are rejected with `OptionsError::InvalidOutputMetric` (checked after option parsing, so it also covers per-command lists).
+- `--output-metric-stderr` requires `--output-metric`. The other stream keeps its `--output` policy.
 
 ### 2. Execution & Extraction
-- When `--output-metric` is specified, the benchmark runner captures stdout (bounded up to 1 MiB tail buffer to protect against unbounded memory growth).
+- When `--output-metric` is specified, the benchmark runner captures stdout, or stderr with `--output-metric-stderr` (bounded up to 1 MiB tail buffer to protect against unbounded memory growth).
 - For each metric, the regular expression is executed against the captured output:
   - If multiple matches occur, the **last** match in the stream is selected.
   - The value of capture group 1 is parsed as an `f64`.
   - If no match occurs, or the capture cannot be parsed as a float:
     - The run fails with error: `Metric '<NAME>' could not be extracted from output in <when>`.
-    - If `-i` / `--ignore-failure` is active, the failure is ignored according to standard failure handling policies.
+    - If `-i` / `--ignore-failure` is active, the failure is ignored according to standard failure handling policies: a warning is printed and the run is kept. Its metric value is **missing** (see "Alignment").
+
+#### Alignment of `times` and `custom_metrics`
+Every list in `custom_metrics` has exactly one entry per recorded run, in the same order as `times` (#90). A run whose metric was not extracted (only possible with `-i`) contributes `null`. Statistics (`custom_metrics_summary`, terminal, CSV) are computed over the non-null values only; a metric with no value at all has no summary entry. Example, 3 runs with the metric missing in run 2: `"times": [t0, t1, t2]`, `"custom_metrics": {"x": [10.0, null, 12.0]}`, summary mean `11.0`. When the first run is excluded from the statistics (first-run policy), its entry is dropped from every list together.
 
 ### 3. Statistics & Reporting
 - For each metric across successful runs:
@@ -47,10 +54,16 @@ Currently, users can only benchmark wall-clock time (and OS rusage/energy). To m
   ```
 - JSON Export:
   Each benchmark entry in `"results"` includes:
-  `"custom_metrics": { "<name>": [<val1>, <val2>, ...] }`
+  `"custom_metrics": { "<name>": [<val1>, null, <val3>, ...] }` (`number | null` per run, aligned with `times`).
 - CSV Export:
   For each metric, columns are appended:
   `mean_<name>`, `stddev_<name>`, `median_<name>`, `min_<name>`, `max_<name>`.
+
+## Contract version
+`custom_metrics` elements changed from `f64` to `f64 | null` and the lists are now aligned with `times`. `schemaVersion` is not emitted yet (see `output-schema-contract.md`), so this is part of the shape that `1.0` will freeze: consumers (tools-benchmark) must accept `null` elements. `output-schema-contract.md` is updated accordingly.
+
+## Future: `--metric custom:<name>` (hook point, not implemented)
+Using a custom metric as the primary metric (ranking, ratios, `--metric`) depends on the `--metric` selector from PR #226. Hook point: wherever #226 resolves the selected metric to a per-run `Vec<f64>`, `custom:<name>` should read `BenchmarkRunner::custom_metrics[<name>]` (`src/benchmark/mod.rs`) and use the non-null entries, with the same alignment rule as above. An unknown `<name>` must be an options error. Tracked in #90.
 
 ## Verification Plan
 - Unit tests:
@@ -60,7 +73,9 @@ Currently, users can only benchmark wall-clock time (and OS rusage/energy). To m
   - Single `--output-metric` with command printing metric.
   - Multiple `--output-metric` flags extracting independent metrics.
   - Missing metric causing command failure.
-  - Missing metric ignored with `-i`.
+  - Missing metric ignored with `-i`, including JSON alignment (`[10, null, 12]` vs 3 `times`, summary over non-null values).
+  - `--output=pipe` works; `--output=inherit` is rejected.
+  - `--output-metric-stderr` reads stderr and fails when the metric is only on stdout; requires `--output-metric`.
   - JSON export contains `"custom_metrics"`.
   - CSV export contains `mean_<name>` columns.
   - Conflicts with `--show-output`.
