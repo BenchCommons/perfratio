@@ -59,6 +59,8 @@ Not yet available **(pending)**: `--metric` (#226), `--duration` (#269), `--ener
 
 ## JSON export
 
+> **BREAKING CHANGE for consumers (#262, #240).** perfratio no longer writes the top-level `"joulex"` key. It was removed in one step, with no deprecation period, together with the introduction of `"schemaVersion": "1.0"`. Any tool that reads `json["joulex"]` must read `json["perfratio"]` instead. The content is identical. `--import-json` still reads old files that contain only `"joulex"`.
+
 perfratio writes run metadata under a top-level `perfratio` key, with `version`, `command_line`, `started_at`, `labels` and `system`. Files from hyperfine have no such key. `--import-json` reads hyperfine, joulex and perfratio files.
 
 | Change | Status |

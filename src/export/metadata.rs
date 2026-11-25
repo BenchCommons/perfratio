@@ -16,6 +16,67 @@ pub struct ExportMetadata {
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub labels: BTreeMap<String, String>,
     pub system: SystemInfo,
+    /// Which measurement groups were measured, unavailable or not requested
+    pub measurements: Measurements,
+}
+
+/// Status of one measurement group (`schemaVersion` 1.0, open enum).
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MeasurementStatus {
+    /// Requested and the backend works
+    Measured,
+    /// Requested, but the backend could not be used
+    Unavailable,
+    /// The flag was not given
+    NotRequested,
+}
+
+/// Host-level status per measurement group, identical for every result.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct Measurements {
+    pub time: MeasurementStatus,
+    pub memory: MeasurementStatus,
+    pub energy: MeasurementStatus,
+    /// Why energy is `unavailable`; an open enum (see `EnergyUnavailable::as_str`)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub energy_unavailable_reason: Option<&'static str>,
+    pub resources: MeasurementStatus,
+}
+
+impl Measurements {
+    pub fn new(energy_requested: bool, resources_requested: bool) -> Self {
+        Self::with_energy_probe(energy_requested, resources_requested, || {
+            crate::energy::probe()
+        })
+    }
+
+    pub fn with_energy_probe(
+        energy_requested: bool,
+        resources_requested: bool,
+        probe: impl FnOnce() -> Result<(), crate::energy::EnergyUnavailable>,
+    ) -> Self {
+        use MeasurementStatus::*;
+        let (energy, reason) = if !energy_requested {
+            (NotRequested, None)
+        } else {
+            match probe() {
+                Ok(()) => (Measured, None),
+                Err(reason) => (Unavailable, Some(reason.as_str())),
+            }
+        };
+        Measurements {
+            time: Measured,
+            memory: Measured,
+            energy,
+            energy_unavailable_reason: reason,
+            resources: if resources_requested {
+                Measured
+            } else {
+                NotRequested
+            },
+        }
+    }
 }
 
 /// Environment the benchmarks ran in. Deliberately no hostname or user name.
@@ -33,7 +94,7 @@ pub struct SystemInfo {
 }
 
 impl ExportMetadata {
-    pub fn new(labels: BTreeMap<String, String>) -> Self {
+    pub fn new(labels: BTreeMap<String, String>, measurements: Measurements) -> Self {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -52,6 +113,7 @@ impl ExportMetadata {
                 cpu_model: cpu_model(),
                 kernel: kernel_release(),
             },
+            measurements,
         }
     }
 }
@@ -265,6 +327,30 @@ mod tests {
         let args =
             ["/home/alice/.cargo/bin/perfratio", "-N", "sleep 0.1"].map(std::ffi::OsString::from);
         assert_eq!(command_line(args), vec!["perfratio", "-N", "sleep 0.1"]);
+    }
+
+    #[test]
+    fn measurements_reflect_requests_and_energy_availability() {
+        use MeasurementStatus::*;
+        let m = Measurements::with_energy_probe(false, false, || panic!("not probed"));
+        assert_eq!(
+            (m.energy, m.energy_unavailable_reason),
+            (NotRequested, None)
+        );
+        assert_eq!(
+            (m.time, m.memory, m.resources),
+            (Measured, Measured, NotRequested)
+        );
+
+        let m = Measurements::with_energy_probe(true, true, || Ok(()));
+        assert_eq!((m.energy, m.energy_unavailable_reason), (Measured, None));
+        assert_eq!(m.resources, Measured);
+
+        let m = Measurements::with_energy_probe(true, false, || {
+            Err(crate::energy::EnergyUnavailable::RaplUnreadable)
+        });
+        assert_eq!(m.energy, Unavailable);
+        assert_eq!(m.energy_unavailable_reason, Some("rapl_unreadable"));
     }
 
     #[test]
