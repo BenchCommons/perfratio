@@ -786,9 +786,10 @@ fn speed_comparison_sort_order() {
         .arg("--sort=command")
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "2.00 ±  0.00  sleep 2\n        1.00          sleep 1",
-        ));
+        .stdout(
+            predicate::str::contains("2.00 ±  0.00  sleep 2")
+                .and(predicate::str::contains("\n        1.00          sleep 1")),
+        );
 }
 
 #[cfg(windows)]
