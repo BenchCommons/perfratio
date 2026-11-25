@@ -347,6 +347,9 @@ pub struct Options {
     /// Suppress statistical outlier warnings
     pub suppress_outlier_warnings: bool,
 
+    /// Method for the outlier report and warning (--outlier-method)
+    pub outlier_method: crate::outlier_detection::OutlierMethod,
+
     /// Suppress off-CPU time warnings
     pub suppress_off_cpu_warnings: bool,
 
@@ -417,6 +420,7 @@ impl Default for Options {
             deep_stats: false,
             filter_failed: false,
             suppress_outlier_warnings: false,
+            outlier_method: Default::default(),
             suppress_off_cpu_warnings: false,
             schedule: ScheduleMode::Grouped,
             omit_failed_runs: false,
@@ -740,6 +744,12 @@ impl Options {
         options.filter_failed = matches.get_flag("filter-failed");
         options.suppress_outlier_warnings = matches.get_flag("suppress-outlier-warnings");
         options.suppress_off_cpu_warnings = matches.get_flag("no-off-cpu-warning");
+        if let Some(method) = matches.get_one::<String>("outlier-method") {
+            options.outlier_method = match method.as_str() {
+                "iqr" => crate::outlier_detection::OutlierMethod::Iqr,
+                _ => crate::outlier_detection::OutlierMethod::ModifiedZ,
+            };
+        }
 
         if let Some(suppress_list) = matches.get_many::<String>("suppress-warnings") {
             for kind in suppress_list {

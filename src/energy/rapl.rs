@@ -19,6 +19,19 @@ struct RaplDomain {
     max_range: Option<u64>,
 }
 
+/// Classify why (or whether) RAPL can be used under `base`.
+#[cfg(any(target_os = "linux", test))]
+pub fn probe_at(base: &Path) -> Result<(), super::EnergyUnavailable> {
+    use super::EnergyUnavailable;
+    if !base.exists() {
+        return Err(EnergyUnavailable::RaplNotFound);
+    }
+    match LinuxRaplSampler::try_new_at(base) {
+        Some(_) => Ok(()),
+        None => Err(EnergyUnavailable::RaplUnreadable),
+    }
+}
+
 impl LinuxRaplSampler {
     pub fn try_new() -> Option<Self> {
         Self::try_new_at(Path::new("/sys/class/powercap/intel-rapl"))
@@ -311,6 +324,20 @@ mod tests {
         sampler.start();
         fs::write(pkg0.join("energy_uj"), "200000\n").unwrap();
         assert_eq!(sampler.stop(), None);
+    }
+
+    #[test]
+    fn test_probe_classifies_failures() {
+        use crate::energy::EnergyUnavailable;
+        let dir = tempdir().unwrap();
+        assert_eq!(
+            probe_at(&dir.path().join("missing")),
+            Err(EnergyUnavailable::RaplNotFound)
+        );
+        // powercap exists but no readable domain
+        assert_eq!(probe_at(dir.path()), Err(EnergyUnavailable::RaplUnreadable));
+        create_fake_rapl_domain(dir.path(), "intel-rapl:0", "package-0", 1000, None);
+        assert_eq!(probe_at(dir.path()), Ok(()));
     }
 
     #[test]

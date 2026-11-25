@@ -11,6 +11,37 @@ pub trait EnergySampler: Send + Sync {
     fn is_available(&self) -> bool;
 }
 
+/// Why energy measurement cannot be used on this host.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnergyUnavailable {
+    UnsupportedPlatform,
+    RaplNotFound,
+    RaplUnreadable,
+}
+
+impl EnergyUnavailable {
+    /// Value of `perfratio.measurements.energy_unavailable_reason` in the JSON export.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::UnsupportedPlatform => "unsupported_platform",
+            Self::RaplNotFound => "rapl_not_found",
+            Self::RaplUnreadable => "rapl_unreadable",
+        }
+    }
+}
+
+/// Check whether `get_energy_sampler` would return a working sampler.
+pub fn probe() -> Result<(), EnergyUnavailable> {
+    #[cfg(target_os = "linux")]
+    {
+        rapl::probe_at(std::path::Path::new("/sys/class/powercap/intel-rapl"))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err(EnergyUnavailable::UnsupportedPlatform)
+    }
+}
+
 pub fn get_energy_sampler() -> Box<dyn EnergySampler> {
     #[cfg(target_os = "linux")]
     {
