@@ -1,7 +1,7 @@
 //! Tests for --target-precision / --max-benchmarking-time.
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 use serde_json::Value;
@@ -9,7 +9,7 @@ use serde_json::Value;
 fn result(args: &[&str]) -> Value {
     let dir = tempfile::tempdir().unwrap();
     let json = dir.path().join("out.json");
-    hyperfine()
+    perfratio()
         .args(["--style=basic", "--export-json"])
         .arg(&json)
         .args(args)
@@ -57,7 +57,7 @@ fn a_precise_command_stops_at_the_minimum_number_of_runs() {
 
 #[test]
 fn the_precision_reached_is_reported() {
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--target-precision=1%", "sleep 0.1"])
         .assert()
         .success()
@@ -83,19 +83,19 @@ fn aggregated_runs_stop_only_after_whole_cycles() {
 #[test]
 fn invalid_values_are_rejected() {
     for value in ["0%", "-1", "fast"] {
-        hyperfine()
+        perfratio()
             .arg(format!("--target-precision={value}"))
             .arg("echo")
             .assert()
             .failure()
             .stderr(predicate::str::contains("Invalid '--target-precision'"));
     }
-    hyperfine()
+    perfratio()
         .args(["--target-precision=1%", "--runs=5", "echo"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("cannot be used with"));
-    hyperfine()
+    perfratio()
         .args(["--max-benchmarking-time=5", "echo"])
         .assert()
         .failure()
@@ -111,7 +111,7 @@ mod unix {
 
     #[test]
     fn max_runs_bounds_the_runs_and_warns() {
-        hyperfine()
+        perfratio()
             .args([
                 "--target-precision=0.1%",
                 "--max-runs=12",
@@ -137,7 +137,7 @@ mod unix {
     #[test]
     fn the_time_budget_bounds_the_runs() {
         let started = std::time::Instant::now();
-        hyperfine()
+        perfratio()
             .args(["--target-precision=0.01%", "--max-benchmarking-time=1"])
             .args(["--style=basic", NOISY])
             .assert()
@@ -164,7 +164,7 @@ mod unix {
         let dir = tempfile::tempdir().unwrap();
         let a = alternating(&dir.path().join("a"));
         let b = alternating(&dir.path().join("b"));
-        hyperfine()
+        perfratio()
             .args([
                 "--target-precision=0.1%",
                 "--max-runs=11",

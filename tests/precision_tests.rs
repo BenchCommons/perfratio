@@ -1,7 +1,7 @@
 //! Tests for --precision.
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
@@ -16,7 +16,7 @@ fn markdown(precision: Option<&str>) -> String {
             "times":[118.76,120.1,121.9],"exit_codes":[0,0,0]}]}"#,
     )
     .unwrap();
-    let mut cmd = hyperfine();
+    let mut cmd = perfratio();
     cmd.arg("--import-json")
         .arg(&input)
         .args(["--export-markdown", "-", "--style=none"]);
@@ -46,7 +46,7 @@ fn auto_precision_uses_two_significant_digits_of_stddev() {
 
 #[test]
 fn machine_formats_keep_full_precision() {
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--runs=2",
@@ -63,7 +63,7 @@ fn machine_formats_keep_full_precision() {
 #[test]
 fn invalid_precision_is_rejected() {
     for value in ["10", "-1", "fast"] {
-        hyperfine()
+        perfratio()
             .arg(format!("--precision={value}"))
             .arg("echo")
             .assert()
@@ -77,7 +77,7 @@ fn invalid_precision_is_rejected() {
 #[test]
 fn columns_stay_aligned_with_more_decimals() {
     for precision in ["1", "3", "5"] {
-        let output = hyperfine()
+        let output = perfratio()
             .args([
                 "--debug-mode",
                 "--runs=3",

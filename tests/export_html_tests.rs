@@ -1,10 +1,10 @@
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 fn html_report(args: &[&str], file_name: &str) -> String {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join(file_name);
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=5"])
         .args(args)
         .arg(&path)

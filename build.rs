@@ -20,13 +20,11 @@ fn main() {
         Shell::PowerShell,
         Shell::Elvish,
     ] {
-        for bin_name in ["perfratio", "joulex"] {
-            let path = generate_to(shell, &mut command, bin_name, &outdir).unwrap();
-            if shell == Shell::Fish {
-                let mut script = fs::read_to_string(&path).unwrap();
-                script.push_str(FISH_COMMAND_COMPLETION);
-                fs::write(&path, script).unwrap();
-            }
+        let path = generate_to(shell, &mut command, "perfratio", &outdir).unwrap();
+        if shell == Shell::Fish {
+            let mut script = fs::read_to_string(&path).unwrap();
+            script.push_str(FISH_COMMAND_COMPLETION);
+            fs::write(&path, script).unwrap();
         }
     }
 }
