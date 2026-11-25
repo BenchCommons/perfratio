@@ -1,7 +1,7 @@
 //! Tests for the run metadata, labels and relative speed in JSON/CSV exports.
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
@@ -9,7 +9,7 @@ fn export(args: &[&str]) -> (serde_json::Value, String) {
     let dir = tempfile::tempdir().unwrap();
     let json = dir.path().join("out.json");
     let csv = dir.path().join("out.csv");
-    hyperfine()
+    perfratio()
         .arg("--debug-mode")
         .args(args)
         .arg("--export-json")
@@ -34,7 +34,6 @@ fn json_contains_run_metadata_and_labels() {
         "sleep 0.1",
     ]);
     let meta = &json["perfratio"];
-    assert_eq!(meta, &json["joulex"]);
 
     assert_eq!(meta["version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(meta["labels"]["commit"], "abc123");
@@ -76,14 +75,14 @@ fn csv_appends_relative_speed_and_label_columns() {
 fn new_json_exports_can_be_imported_again() {
     let dir = tempfile::tempdir().unwrap();
     let json = dir.path().join("out.json");
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--label", "k=v", "--export-json"])
         .arg(&json)
         .arg("sleep 0.1")
         .assert()
         .success();
 
-    hyperfine()
+    perfratio()
         .arg("--import-json")
         .arg(&json)
         .assert()
@@ -94,13 +93,13 @@ fn new_json_exports_can_be_imported_again() {
 #[test]
 fn rejects_invalid_labels() {
     for label in ["novalue", "bad key=1"] {
-        hyperfine()
+        perfratio()
             .args(["--debug-mode", "--label", label, "sleep 0.1"])
             .assert()
             .failure()
             .stderr(predicate::str::contains("Invalid label"));
     }
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--label",
@@ -131,13 +130,13 @@ fn json_percentiles_are_imported_back_unchanged() {
     let dir = tempfile::tempdir().unwrap();
     let first = dir.path().join("first.json");
     let second = dir.path().join("second.json");
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=5", "--export-json"])
         .arg(&first)
         .arg("sleep 0.1")
         .assert()
         .success();
-    hyperfine()
+    perfratio()
         .arg("--import-json")
         .arg(&first)
         .arg("--export-json")

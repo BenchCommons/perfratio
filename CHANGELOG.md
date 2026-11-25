@@ -1,3 +1,13 @@
+# Unreleased
+
+## Deprecations
+
+- `$JOULEX_ITERATION` and `$HYPERFINE_ITERATION` are deprecated in favour of `$PERFRATIO_ITERATION`, and `$JOULEX_SYSTEM_CHECK_ROOT` in favour of `$PERFRATIO_SYSTEM_CHECK_ROOT`. They still work and print a warning; they will be removed in the next release, see #225.
+
+## Other changes
+
+- Removed the `joulex` shell completions, the `joulex` man page and the `joulex_eta` progress key.
+
 # v1.20.0
 
 ## Features

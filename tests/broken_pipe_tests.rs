@@ -12,7 +12,7 @@ fn closed_stdout_neither_panics_nor_loses_exports() {
 
     let dir = tempfile::tempdir().unwrap();
     let json = dir.path().join("out.json");
-    let mut child = common::hyperfine_raw_command()
+    let mut child = common::perfratio_raw_command()
         .args(["--debug-mode", "--runs=3", "--style=basic", "--export-json"])
         .arg(&json)
         .args(["sleep 0.1", "sleep 0.2"])

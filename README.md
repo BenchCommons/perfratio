@@ -1,5 +1,5 @@
 # perfratio
-[![CICD](https://github.com/UnitedOpen-Source/joulex/actions/workflows/CICD.yml/badge.svg)](https://github.com/UnitedOpen-Source/joulex/actions/workflows/CICD.yml)
+[![CICD](https://github.com/BenchCommons/perfratio/actions/workflows/CICD.yml/badge.svg)](https://github.com/BenchCommons/perfratio/actions/workflows/CICD.yml)
 [![Version info](https://img.shields.io/crates/v/perfratio.svg)](https://crates.io/crates/perfratio)
 
 A multi-dimensional command-line benchmarking tool with **Hardware Performance Counters & Energy (RAPL)** and **Deep Statistics (Criterion-rs)**.
@@ -12,7 +12,7 @@ A multi-dimensional command-line benchmarking tool with **Hardware Performance C
 * **🔬 Deep Statistical Rigor (`--deep-stats`)**: Direct integration with `criterion-stats` (Criterion.rs) computing 95% bootstrapped confidence intervals for mean and median, plus two-sample hypothesis testing ($p$-value significance) against reference commands.
 * **🧠 Peak Memory Usage Display**: Real-time process peak memory (RSS) formatted in `B`, `KB`, `MB`, `GB` and displayed in terminal output.
 * **🛡️ Hardened Robustness & Security**: Protection against CSV formula injection (CWE-1236), safe integer range iteration avoiding overflows near `i32::MAX`, and input validation preventing zero-run crashes.
-* **🔄 Environment Iteration Forwarding**: `$PERFRATIO_ITERATION`, `$JOULEX_ITERATION`, and `$HYPERFINE_ITERATION` forwarded to `--prepare` and `--conclude` commands.
+* **🔄 Environment Iteration Forwarding**: `$PERFRATIO_ITERATION` forwarded to `--prepare` and `--conclude` commands.
 * **⚙️ Modern CLI & Completions**: Unified `-e, --export <FILE>` auto-detecting formats by file extension, `--filter-failed` for parameter scans, and built-in `--generate-completions <SHELL>`.
 * **Statistical analysis across multiple runs**: Mean, median, stddev, min, max, user, and kernel CPU time.
 * **Support for arbitrary shell commands**: Raw or custom shells.
@@ -26,7 +26,7 @@ A multi-dimensional command-line benchmarking tool with **Hardware Performance C
 
 ### Basic benchmarks
 
-To run a benchmark, you can simply call `perfratio <command>...` (or `hyperfine <command>...`). The argument(s) can be any
+To run a benchmark, you can simply call `perfratio <command>...`. The argument(s) can be any
 shell command. For example:
 ```sh
 perfratio 'sleep 0.3'
@@ -59,7 +59,7 @@ by disk caches and whether they are cold or warm.
 If you want to run the benchmark on a warm cache, you can use the `-w`/`--warmup` option to
 perform a certain number of program executions before the actual benchmark:
 ```sh
-hyperfine --warmup 3 'grep -R TODO *'
+perfratio --warmup 3 'grep -R TODO *'
 ```
 
 Conversely, if you want to run the benchmark for a cold cache, you can use the `-p`/`--prepare`
@@ -71,7 +71,7 @@ sync; echo 3 | sudo tee /proc/sys/vm/drop_caches
 To use this specific command with hyperfine, call `sudo -v` to temporarily gain sudo permissions
 and then call:
 ```sh
-hyperfine --prepare 'sync; echo 3 | sudo tee /proc/sys/vm/drop_caches' 'grep -R TODO *'
+perfratio --prepare 'sync; echo 3 | sudo tee /proc/sys/vm/drop_caches' 'grep -R TODO *'
 ```
 
 ### Parameterized benchmarks
@@ -79,19 +79,19 @@ hyperfine --prepare 'sync; echo 3 | sudo tee /proc/sys/vm/drop_caches' 'grep -R 
 If you want to run a series of benchmarks where a single parameter is varied (say, the number of
 threads), you can use the `-P`/`--parameter-scan` option and call:
 ```sh
-hyperfine --prepare 'make clean' --parameter-scan num_threads 1 12 'make -j {num_threads}'
+perfratio --prepare 'make clean' --parameter-scan num_threads 1 12 'make -j {num_threads}'
 ```
 This also works with decimal numbers. The `-D`/`--parameter-step-size` option can be used
 to control the step size:
 ```sh
-hyperfine --parameter-scan delay 0.3 0.7 -D 0.2 'sleep {delay}'
+perfratio --parameter-scan delay 0.3 0.7 -D 0.2 'sleep {delay}'
 ```
 This runs `sleep 0.3`, `sleep 0.5` and `sleep 0.7`.
 
 For non-numeric parameters, you can also supply a list of values with the `-L`/`--parameter-list`
 option:
 ```
-hyperfine -L compiler gcc,clang '{compiler} -O2 main.cpp'
+perfratio -L compiler gcc,clang '{compiler} -O2 main.cpp'
 ```
 
 > [!WARNING]
@@ -112,10 +112,10 @@ hyperfine -L compiler gcc,clang '{compiler} -O2 main.cpp'
 By default, commands are executed using a predefined shell (`/bin/sh` on Unix, `cmd.exe` on Windows).
 If you want to use a different shell, you can use the `-S, --shell <SHELL>` option:
 ```sh
-hyperfine --shell zsh 'for i in {1..10000}; do echo test; done'
+perfratio --shell zsh 'for i in {1..10000}; do echo test; done'
 ```
 
-Note that hyperfine always *corrects for the shell spawning time*. To do this, it performs a calibration
+Note that perfratio always *corrects for the shell spawning time*. To do this, it performs a calibration
 procedure where it runs the shell with an empty command (multiple times), to measure the startup time
 of the shell. It will then subtract this time from the total to show the actual time used by the command
 in question.
@@ -124,27 +124,27 @@ If you want to run a benchmark *without an intermediate shell*, you can use the 
 option. This is helpful for very fast commands (< 5 ms) where the shell startup overhead correction would
 produce a significant amount of noise. Note that you cannot use shell syntax like `*` or `~` in this case.
 ```
-hyperfine -N 'grep TODO /home/user'
+perfratio -N 'grep TODO /home/user'
 ```
 
 
 ### Shell functions and aliases
 
-If you are using bash, you can export shell functions to directly benchmark them with hyperfine:
+If you are using bash, you can export shell functions to directly benchmark them with perfratio:
 
 ```bash
 my_function() { sleep 1; }
 export -f my_function
-hyperfine --shell=bash my_function
+perfratio --shell=bash my_function
 ```
 
 Otherwise, inline them into or source them from the benchmarked program:
 
 ```sh
-hyperfine 'my_function() { sleep 1; }; my_function'
+perfratio 'my_function() { sleep 1; }; my_function'
 
 echo 'alias my_alias="sleep 1"' > /tmp/my_alias.sh
-hyperfine '. /tmp/my_alias.sh; my_alias'
+perfratio '. /tmp/my_alias.sh; my_alias'
 ```
 
 ### Exporting results
@@ -353,11 +353,11 @@ Make sure that you use Rust 1.88 or newer.
 
 ### From binaries (Linux, macOS, Windows)
 
-Download the corresponding archive from the [Release page](https://github.com/UnitedOpen-Source/joulex/releases).
+Download the corresponding archive from the [Release page](https://github.com/BenchCommons/perfratio/releases).
 
 ## Alternative tools
 
-Hyperfine is inspired by [bench](https://github.com/Gabriella439/bench).
+perfratio (like hyperfine before it) is inspired by [bench](https://github.com/Gabriella439/bench).
 
 ## Integration with other tools
 
@@ -379,14 +379,14 @@ The name *hyperfine* was chosen in reference to the hyperfine levels of caesium 
 [definition of our base unit of time](https://en.wikipedia.org/wiki/Second#History_of_definition)
 — the second.
 
-## Citing hyperfine
+## Citing perfratio
 
-Thank you for considering to cite hyperfine in your research work. Please see the information
-in the sidebar on how to properly cite hyperfine.
+Thank you for considering to cite perfratio in your research work. Please see the information
+in the sidebar on how to properly cite perfratio (see `CITATION.cff`).
 
 ## License
 
-`hyperfine` is dual-licensed under the terms of the MIT License and the Apache License 2.0.
+`perfratio` (a fork of hyperfine, Copyright David Peter and all hyperfine contributors) is dual-licensed under the terms of the MIT License and the Apache License 2.0.
 
 See the [LICENSE-APACHE](LICENSE-APACHE) and [LICENSE-MIT](LICENSE-MIT) files for details.
 

@@ -1,7 +1,7 @@
 //! Tests for --compare / --fail-if-regressed / --export-diff-markdown.
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 use std::path::{Path, PathBuf};
@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 /// Export a baseline where `app` takes 100 ms and `other` 50 ms.
 fn baseline(dir: &Path) -> PathBuf {
     let path = dir.join("baseline.json");
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=5", "--export-json"])
         .arg(&path)
         .args(["-n", "app", "sleep 0.1", "-n", "other", "sleep 0.05"])
@@ -22,7 +22,7 @@ fn baseline(dir: &Path) -> PathBuf {
 fn unchanged_results_pass() {
     let dir = tempfile::tempdir().unwrap();
     let base = baseline(dir.path());
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--runs=5",
@@ -42,7 +42,7 @@ fn a_significant_slowdown_fails_with_exit_code_3() {
     let dir = tempfile::tempdir().unwrap();
     let base = baseline(dir.path());
     let diff = dir.path().join("diff.md");
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=5", "--fail-if-regressed=5%"])
         .arg("--compare")
         .arg(&base)
@@ -76,7 +76,7 @@ fn a_significant_slowdown_fails_with_exit_code_3() {
 fn a_slowdown_below_the_threshold_passes() {
     let dir = tempfile::tempdir().unwrap();
     let base = baseline(dir.path());
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--runs=5",
@@ -94,7 +94,7 @@ fn a_slowdown_below_the_threshold_passes() {
 fn without_a_threshold_it_only_reports() {
     let dir = tempfile::tempdir().unwrap();
     let base = baseline(dir.path());
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=5", "--compare"])
         .arg(&base)
         .args(["-n", "app", "sleep 0.2"])
@@ -105,7 +105,7 @@ fn without_a_threshold_it_only_reports() {
 
 #[test]
 fn invalid_inputs_fail_before_benchmarking() {
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--compare",
@@ -119,7 +119,7 @@ fn invalid_inputs_fail_before_benchmarking() {
 
     let dir = tempfile::tempdir().unwrap();
     let base = baseline(dir.path());
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--fail-if-regressed=fast", "--compare"])
         .arg(&base)
         .arg("sleep 0.1")
@@ -128,7 +128,7 @@ fn invalid_inputs_fail_before_benchmarking() {
         .stderr(predicate::str::contains("invalid threshold 'fast'"))
         .stdout(predicate::str::contains("Benchmark 1").not());
 
-    hyperfine()
+    perfratio()
         .args(["--fail-if-regressed=5%", "sleep 0.1"])
         .assert()
         .failure()

@@ -1,5 +1,5 @@
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
@@ -9,15 +9,15 @@ use predicates::prelude::*;
 ///   See: <https://superuser.com/questions/853580/real-windows-equivalent-to-cat-stdin>
 const STDIN_READ_COMMAND: &str = if cfg!(windows) { "findstr x*" } else { "cat" };
 
-pub fn hyperfine_debug() -> assert_cmd::Command {
-    let mut cmd = hyperfine();
+pub fn perfratio_debug() -> assert_cmd::Command {
+    let mut cmd = perfratio();
     cmd.arg("--debug-mode");
     cmd
 }
 
 #[test]
 fn runs_successfully() {
-    hyperfine()
+    perfratio()
         .arg("--runs=2")
         .arg("echo dummy benchmark")
         .assert()
@@ -26,7 +26,7 @@ fn runs_successfully() {
 
 #[test]
 fn one_run_is_supported() {
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("echo dummy benchmark")
         .assert()
@@ -35,7 +35,7 @@ fn one_run_is_supported() {
 
 #[test]
 fn can_run_commands_without_a_shell() {
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--show-output")
         .arg("--shell=none")
@@ -47,7 +47,7 @@ fn can_run_commands_without_a_shell() {
 
 #[test]
 fn fails_with_wrong_number_of_command_name_arguments() {
-    hyperfine()
+    perfratio()
         .arg("--command-name=a")
         .arg("--command-name=b")
         .arg("echo a")
@@ -58,7 +58,7 @@ fn fails_with_wrong_number_of_command_name_arguments() {
 
 #[test]
 fn fails_with_wrong_number_of_prepare_options() {
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--prepare=echo a")
         .arg("--prepare=echo b")
@@ -67,7 +67,7 @@ fn fails_with_wrong_number_of_prepare_options() {
         .assert()
         .success();
 
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--prepare=echo ref")
         .arg("--prepare=echo a")
@@ -78,7 +78,7 @@ fn fails_with_wrong_number_of_prepare_options() {
         .assert()
         .success();
 
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--prepare=echo a")
         .arg("--prepare=echo b")
@@ -91,7 +91,7 @@ fn fails_with_wrong_number_of_prepare_options() {
             "The '--prepare' option has to be provided",
         ));
 
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--prepare=echo a")
         .arg("--prepare=echo b")
@@ -107,7 +107,7 @@ fn fails_with_wrong_number_of_prepare_options() {
 
 #[test]
 fn fails_with_wrong_number_of_conclude_options() {
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--conclude=echo a")
         .arg("--conclude=echo b")
@@ -116,7 +116,7 @@ fn fails_with_wrong_number_of_conclude_options() {
         .assert()
         .success();
 
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--conclude=echo ref")
         .arg("--conclude=echo a")
@@ -127,7 +127,7 @@ fn fails_with_wrong_number_of_conclude_options() {
         .assert()
         .success();
 
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--conclude=echo a")
         .arg("--conclude=echo b")
@@ -140,7 +140,7 @@ fn fails_with_wrong_number_of_conclude_options() {
             "The '--conclude' option has to be provided",
         ));
 
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--conclude=echo a")
         .arg("--conclude=echo b")
@@ -156,7 +156,7 @@ fn fails_with_wrong_number_of_conclude_options() {
 
 #[test]
 fn fails_with_duplicate_parameter_names() {
-    hyperfine()
+    perfratio()
         .arg("--parameter-list")
         .arg("x")
         .arg("1,2,3")
@@ -171,7 +171,7 @@ fn fails_with_duplicate_parameter_names() {
 
 #[test]
 fn fails_for_unknown_command() {
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("some-nonexisting-program-b5d9574198b7e4b12a71fa4747c0a577")
         .assert()
@@ -183,7 +183,7 @@ fn fails_for_unknown_command() {
 
 #[test]
 fn fails_for_unknown_command_without_shell() {
-    hyperfine()
+    perfratio()
         .arg("--shell=none")
         .arg("--runs=1")
         .arg("some-nonexisting-program-b5d9574198b7e4b12a71fa4747c0a577")
@@ -197,7 +197,7 @@ fn fails_for_unknown_command_without_shell() {
 #[cfg(unix)]
 #[test]
 fn fails_for_failing_command_without_shell() {
-    hyperfine()
+    perfratio()
         .arg("--shell=none")
         .arg("--runs=1")
         .arg("false")
@@ -210,7 +210,7 @@ fn fails_for_failing_command_without_shell() {
 
 #[test]
 fn fails_for_unknown_setup_command() {
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--setup=some-nonexisting-program-b5d9574198b7e4b12a71fa4747c0a577")
         .arg("echo test")
@@ -223,7 +223,7 @@ fn fails_for_unknown_setup_command() {
 
 #[test]
 fn fails_for_unknown_cleanup_command() {
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--cleanup=some-nonexisting-program-b5d9574198b7e4b12a71fa4747c0a577")
         .arg("echo test")
@@ -236,7 +236,7 @@ fn fails_for_unknown_cleanup_command() {
 
 #[test]
 fn fails_for_unknown_prepare_command() {
-    hyperfine()
+    perfratio()
         .arg("--prepare=some-nonexisting-program-b5d9574198b7e4b12a71fa4747c0a577")
         .arg("echo test")
         .assert()
@@ -248,7 +248,7 @@ fn fails_for_unknown_prepare_command() {
 
 #[test]
 fn fails_for_unknown_conclude_command() {
-    hyperfine()
+    perfratio()
         .arg("--conclude=some-nonexisting-program-b5d9574198b7e4b12a71fa4747c0a577")
         .arg("echo test")
         .assert()
@@ -261,7 +261,7 @@ fn fails_for_unknown_conclude_command() {
 #[cfg(unix)]
 #[test]
 fn can_run_failing_commands_with_ignore_failure_option() {
-    hyperfine()
+    perfratio()
         .arg("false")
         .assert()
         .failure()
@@ -269,7 +269,7 @@ fn can_run_failing_commands_with_ignore_failure_option() {
             "Command terminated with non-zero exit code",
         ));
 
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--ignore-failure")
         .arg("false")
@@ -281,7 +281,7 @@ fn can_run_failing_commands_with_ignore_failure_option() {
 #[test]
 fn can_ignore_specific_exit_codes() {
     // Test that specifying exit code 1 ignores it
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--ignore-failure=1")
         .arg("exit 1")
@@ -289,7 +289,7 @@ fn can_ignore_specific_exit_codes() {
         .success();
 
     // Test that other exit codes still fail
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--ignore-failure=1")
         .arg("exit 2")
@@ -304,21 +304,21 @@ fn can_ignore_specific_exit_codes() {
 #[test]
 fn can_ignore_multiple_exit_codes() {
     // Test that all specified exit codes are ignored
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--ignore-failure=1,2,3")
         .arg("exit 1")
         .assert()
         .success();
 
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--ignore-failure=1,2,3")
         .arg("exit 2")
         .assert()
         .success();
 
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--ignore-failure=1,2,3")
         .arg("exit 3")
@@ -326,7 +326,7 @@ fn can_ignore_multiple_exit_codes() {
         .success();
 
     // Test that other exit codes still fail
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--ignore-failure=1,2,3")
         .arg("exit 4")
@@ -340,21 +340,21 @@ fn can_ignore_multiple_exit_codes() {
 #[cfg(unix)]
 #[test]
 fn ignore_exit_code_is_an_alias_for_ignore_failure() {
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--ignore-exit-code")
         .arg("false")
         .assert()
         .success();
 
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--ignore-exit-code=1")
         .arg("exit 1")
         .assert()
         .success();
 
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--ignore-exit-code=1")
         .arg("exit 2")
@@ -369,7 +369,7 @@ fn ignore_exit_code_is_an_alias_for_ignore_failure() {
 #[test]
 fn ignore_failure_with_all_non_zero() {
     // Test explicit "all-non-zero" mode
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--ignore-failure=all-non-zero")
         .arg("exit 5")
@@ -379,7 +379,7 @@ fn ignore_failure_with_all_non_zero() {
 
 #[test]
 fn shows_output_of_benchmarked_command() {
-    hyperfine()
+    perfratio()
         .arg("--runs=2")
         .arg("--command-name=dummy")
         .arg("--show-output")
@@ -391,7 +391,7 @@ fn shows_output_of_benchmarked_command() {
 
 #[test]
 fn runs_commands_using_user_defined_shell() {
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--show-output")
         .arg("--shell")
@@ -408,7 +408,7 @@ fn runs_commands_using_user_defined_shell() {
 
 #[test]
 fn can_pass_input_to_command_from_a_file() {
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--input=example_input_file.txt")
         .arg("--show-output")
@@ -420,7 +420,7 @@ fn can_pass_input_to_command_from_a_file() {
 
 #[test]
 fn fails_if_invalid_stdin_data_file_provided() {
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--input=example_non_existent_file.txt")
         .arg("--show-output")
@@ -434,26 +434,26 @@ fn fails_if_invalid_stdin_data_file_provided() {
 
 #[test]
 fn returns_mean_time_in_correct_unit() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("sleep 1.234")
         .assert()
         .success()
         .stdout(predicate::str::contains("Time (mean ± σ):      1.234 s ±"));
 
-    hyperfine_debug()
+    perfratio_debug()
         .arg("sleep 0.123")
         .assert()
         .success()
         .stdout(predicate::str::contains("Time (mean ± σ):     123.0 ms ±"));
 
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--time-unit=millisecond")
         .arg("sleep 1.234")
         .assert()
         .success()
         .stdout(predicate::str::contains("Time (mean ± σ):     1234.0 ms ±"));
 
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--time-unit=microsecond")
         .arg("sleep 1.234")
         .assert()
@@ -465,7 +465,7 @@ fn returns_mean_time_in_correct_unit() {
 
 #[test]
 fn performs_ten_runs_for_slow_commands() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("sleep 0.5")
         .assert()
         .success()
@@ -474,7 +474,7 @@ fn performs_ten_runs_for_slow_commands() {
 
 #[test]
 fn performs_three_seconds_of_benchmarking_for_fast_commands() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("sleep 0.01")
         .assert()
         .success()
@@ -483,7 +483,7 @@ fn performs_three_seconds_of_benchmarking_for_fast_commands() {
 
 #[test]
 fn takes_shell_spawning_time_into_account_for_computing_number_of_runs() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--shell=sleep 0.02")
         .arg("sleep 0.01")
         .assert()
@@ -493,7 +493,7 @@ fn takes_shell_spawning_time_into_account_for_computing_number_of_runs() {
 
 #[test]
 fn takes_preparation_command_into_account_for_computing_number_of_runs() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--prepare=sleep 0.02")
         .arg("sleep 0.01")
         .assert()
@@ -502,7 +502,7 @@ fn takes_preparation_command_into_account_for_computing_number_of_runs() {
 
     // Shell overhead needs to be added to both the prepare command and the actual command,
     // leading to a total benchmark time of (prepare + shell + cmd + shell = 0.1 s)
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--shell=sleep 0.01")
         .arg("--prepare=sleep 0.03")
         .arg("sleep 0.05")
@@ -513,7 +513,7 @@ fn takes_preparation_command_into_account_for_computing_number_of_runs() {
 
 #[test]
 fn takes_conclusion_command_into_account_for_computing_number_of_runs() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--conclude=sleep 0.02")
         .arg("sleep 0.01")
         .assert()
@@ -522,7 +522,7 @@ fn takes_conclusion_command_into_account_for_computing_number_of_runs() {
 
     // Shell overhead needs to be added to both the conclude command and the actual command,
     // leading to a total benchmark time of (cmd + shell + conclude + shell = 0.1 s)
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--shell=sleep 0.01")
         .arg("--conclude=sleep 0.03")
         .arg("sleep 0.05")
@@ -533,7 +533,7 @@ fn takes_conclusion_command_into_account_for_computing_number_of_runs() {
 
 #[test]
 fn takes_both_preparation_and_conclusion_command_into_account_for_computing_number_of_runs() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--prepare=sleep 0.01")
         .arg("--conclude=sleep 0.01")
         .arg("sleep 0.01")
@@ -543,7 +543,7 @@ fn takes_both_preparation_and_conclusion_command_into_account_for_computing_numb
 
     // Shell overhead needs to be added to both the prepare, conclude and the actual command,
     // leading to a total benchmark time of (prepare + shell + cmd + shell + conclude + shell = 0.1 s)
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--shell=sleep 0.01")
         .arg("--prepare=sleep 0.01")
         .arg("--conclude=sleep 0.01")
@@ -555,7 +555,7 @@ fn takes_both_preparation_and_conclusion_command_into_account_for_computing_numb
 
 #[test]
 fn shows_benchmark_comparison_with_relative_times() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("sleep 1.0")
         .arg("sleep 2.0")
         .arg("sleep 3.0")
@@ -569,7 +569,7 @@ fn shows_benchmark_comparison_with_relative_times() {
 
 #[test]
 fn shows_benchmark_comparison_with_same_time() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--command-name=A")
         .arg("--command-name=B")
         .arg("sleep 1.0")
@@ -587,7 +587,7 @@ fn shows_benchmark_comparison_with_same_time() {
 
 #[test]
 fn shows_benchmark_comparison_relative_to_reference() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--reference=sleep 2.0")
         .arg("sleep 1.0")
         .arg("sleep 3.0")
@@ -601,7 +601,7 @@ fn shows_benchmark_comparison_relative_to_reference() {
 
 #[test]
 fn shows_reference_name() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--reference=sleep 2.0")
         .arg("--reference-name=refabc123")
         .arg("sleep 1.0")
@@ -613,7 +613,7 @@ fn shows_reference_name() {
 
 #[test]
 fn shows_faster_slower_annotations_with_sort_command_and_reference() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--sort=command")
         .arg("--reference=sleep 2.0")
         .arg("sleep 1.0")
@@ -629,7 +629,7 @@ fn shows_faster_slower_annotations_with_sort_command_and_reference() {
 
 #[test]
 fn shows_faster_slower_natural_layout_with_sort_command_and_reference() {
-    let assert = hyperfine_debug()
+    let assert = perfratio_debug()
         .arg("--sort=command")
         .arg("--reference=sleep 2.0")
         .arg("sleep 1.0")
@@ -671,7 +671,7 @@ fn shows_faster_slower_natural_layout_with_sort_command_and_reference() {
 
 #[test]
 fn performs_all_benchmarks_in_parameter_scan() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--parameter-scan")
         .arg("time")
         .arg("30")
@@ -692,7 +692,7 @@ fn performs_all_benchmarks_in_parameter_scan() {
 
 #[test]
 fn performs_reference_and_all_benchmarks_in_parameter_scan() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--reference=sleep 25")
         .arg("--parameter-scan")
         .arg("time")
@@ -715,7 +715,7 @@ fn performs_reference_and_all_benchmarks_in_parameter_scan() {
 
 #[test]
 fn intermediate_results_are_not_exported_to_stdout() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--style=none") // To only see the Markdown export on stdout
         .arg("--export-markdown")
         .arg("-")
@@ -737,7 +737,7 @@ fn exports_intermediate_results_to_file() {
     let tempdir = tempdir().unwrap();
     let export_path = tempdir.path().join("results.md");
 
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--export-markdown")
         .arg(&export_path)
@@ -752,7 +752,7 @@ fn exports_intermediate_results_to_file() {
 
 #[test]
 fn unused_parameters_are_shown_in_benchmark_name() {
-    hyperfine()
+    perfratio()
         .arg("--runs=2")
         .arg("--parameter-list")
         .arg("branch")
@@ -769,7 +769,7 @@ fn unused_parameters_are_shown_in_benchmark_name() {
 #[test]
 fn speed_comparison_sort_order() {
     for sort_order in ["auto", "mean-time"] {
-        hyperfine_debug()
+        perfratio_debug()
             .arg("sleep 2")
             .arg("sleep 1")
             .arg(format!("--sort={sort_order}"))
@@ -780,7 +780,7 @@ fn speed_comparison_sort_order() {
             ));
     }
 
-    hyperfine_debug()
+    perfratio_debug()
         .arg("sleep 2")
         .arg("sleep 1")
         .arg("--sort=command")
@@ -794,7 +794,7 @@ fn speed_comparison_sort_order() {
 #[cfg(windows)]
 #[test]
 fn windows_quote_args() {
-    hyperfine()
+    perfratio()
         .arg("more \"example_input_file.txt\"")
         .assert()
         .success();
@@ -803,7 +803,7 @@ fn windows_quote_args() {
 #[cfg(windows)]
 #[test]
 fn windows_quote_before_quote_args() {
-    hyperfine()
+    perfratio()
         .arg("dir \"..\\src\\\" \"..\\tests\\\"")
         .assert()
         .success();
@@ -811,7 +811,7 @@ fn windows_quote_before_quote_args() {
 
 #[test]
 fn fails_with_zero_runs() {
-    hyperfine()
+    perfratio()
         .arg("--runs=0")
         .arg("echo a")
         .assert()
@@ -820,7 +820,7 @@ fn fails_with_zero_runs() {
             "At least one run has to be performed. Please specify a value larger than zero for '--runs'",
         ));
 
-    hyperfine()
+    perfratio()
         .arg("--max-runs=0")
         .arg("echo a")
         .assert()
@@ -832,13 +832,13 @@ fn fails_with_zero_runs() {
 
 #[test]
 fn can_generate_shell_completions() {
-    hyperfine()
+    perfratio()
         .arg("--generate-completions=bash")
         .assert()
         .success()
         .stdout(predicate::str::contains("complete -F _perfratio"));
 
-    hyperfine()
+    perfratio()
         .arg("--generate-completions=zsh")
         .assert()
         .success()
@@ -852,7 +852,7 @@ fn can_export_unified() {
     let tempdir = tempdir().unwrap();
     let export_path = tempdir.path().join("results.csv");
 
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--export")
         .arg(&export_path)
@@ -873,7 +873,7 @@ fn filter_failed_commands() {
     let tempdir = tempdir().unwrap();
     let export_path = tempdir.path().join("results.json");
 
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--ignore-failure")
         .arg("--filter-failed")
@@ -900,11 +900,11 @@ fn filter_failed_commands() {
 #[test]
 #[cfg(unix)]
 fn iteration_env_var_forwarded() {
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
-        .arg("--prepare=echo prep-$JOULEX_ITERATION")
+        .arg("--prepare=echo prep-$PERFRATIO_ITERATION")
         .arg("--show-output")
-        .arg("echo run-$JOULEX_ITERATION")
+        .arg("echo run-$PERFRATIO_ITERATION")
         .assert()
         .success()
         .stdout(predicate::str::contains("prep-0"))
@@ -919,7 +919,7 @@ fn runs_with_parameter_file() {
     let mut temp = NamedTempFile::new().unwrap();
     writeln!(temp, "foo\nbar").unwrap();
 
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--parameter-file")
         .arg("testvar")
@@ -934,7 +934,7 @@ fn runs_with_parameter_file() {
 
 #[test]
 fn fails_with_missing_parameter_file() {
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--parameter-file")
         .arg("testvar")
@@ -952,7 +952,7 @@ fn can_import_json_and_compare_with_live_command() {
     let tempdir = tempdir().unwrap();
     let export_path = tempdir.path().join("baseline.json");
 
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--shell=none")
         .arg("--export-json")
@@ -961,7 +961,7 @@ fn can_import_json_and_compare_with_live_command() {
         .assert()
         .success();
 
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--shell=none")
         .arg("--import-json")
@@ -984,7 +984,7 @@ fn can_convert_imported_json_without_live_command() {
     let export_json_path = tempdir.path().join("baseline.json");
     let export_md_path = tempdir.path().join("converted.md");
 
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--export-json")
         .arg(&export_json_path)
@@ -992,7 +992,7 @@ fn can_convert_imported_json_without_live_command() {
         .assert()
         .success();
 
-    hyperfine()
+    perfratio()
         .arg("--import-json")
         .arg(&export_json_path)
         .arg("--export-markdown")
@@ -1006,7 +1006,7 @@ fn can_convert_imported_json_without_live_command() {
 
 #[test]
 fn fails_with_missing_import_json_file() {
-    hyperfine()
+    perfratio()
         .arg("--import-json")
         .arg("non_existent_import_file.json")
         .assert()
@@ -1023,7 +1023,7 @@ fn exports_detailed_user_and_system_times_in_json() {
     let tempdir = tempdir().unwrap();
     let export_path = tempdir.path().join("results.json");
 
-    hyperfine()
+    perfratio()
         .arg("--runs=2")
         .arg("--export-json")
         .arg(&export_path)
@@ -1038,7 +1038,7 @@ fn exports_detailed_user_and_system_times_in_json() {
 
 #[test]
 fn suppresses_outlier_warnings_flag() {
-    hyperfine()
+    perfratio()
         .arg("--runs=2")
         .arg("--suppress-outlier-warnings")
         .arg("echo test_suppress")
@@ -1055,7 +1055,7 @@ fn export_csv_with_reference_and_parameter_scan() {
     let tempdir = tempdir().unwrap();
     let export_path = tempdir.path().join("results.csv");
 
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--shell=none")
         .arg("--reference=sleep 0.01")
@@ -1075,7 +1075,7 @@ fn export_csv_with_reference_and_parameter_scan() {
 
 #[test]
 fn off_cpu_warning_and_cpu_percent_display() {
-    hyperfine()
+    perfratio()
         .arg("--runs=2")
         .arg("--shell=none")
         .arg("sleep 0.12")
@@ -1089,7 +1089,7 @@ fn off_cpu_warning_and_cpu_percent_display() {
 
 #[test]
 fn off_cpu_warning_suppressed_by_flag() {
-    hyperfine()
+    perfratio()
         .arg("--runs=2")
         .arg("--shell=none")
         .arg("--no-off-cpu-warning")
@@ -1102,7 +1102,7 @@ fn off_cpu_warning_suppressed_by_flag() {
 
 #[test]
 fn off_cpu_warning_not_suppressed_by_outlier_flag() {
-    hyperfine()
+    perfratio()
         .arg("--runs=2")
         .arg("--shell=none")
         .arg("--suppress-outlier-warnings")
@@ -1117,7 +1117,7 @@ fn off_cpu_warning_not_suppressed_by_outlier_flag() {
 
 #[test]
 fn off_cpu_warning_suppressed_by_suppress_warnings_flag() {
-    hyperfine()
+    perfratio()
         .arg("--runs=2")
         .arg("--shell=none")
         .arg("--suppress-warnings=off-cpu")
@@ -1127,7 +1127,7 @@ fn off_cpu_warning_suppressed_by_suppress_warnings_flag() {
         .stdout(predicate::str::contains("CPU:"))
         .stderr(predicate::str::contains("Substantial off-CPU time detected").not());
 
-    hyperfine()
+    perfratio()
         .arg("--runs=2")
         .arg("--shell=none")
         .arg("--suppress-warnings=all")
@@ -1137,7 +1137,7 @@ fn off_cpu_warning_suppressed_by_suppress_warnings_flag() {
         .stdout(predicate::str::contains("CPU:"))
         .stderr(predicate::str::contains("Substantial off-CPU time detected").not());
 
-    hyperfine()
+    perfratio()
         .arg("--runs=2")
         .arg("--shell=none")
         .arg("--suppress-warnings=outliers")
@@ -1157,7 +1157,7 @@ fn json_export_includes_cpu_percent() {
     let tempdir = tempdir().unwrap();
     let export_path = tempdir.path().join("results.json");
 
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--export-json")
         .arg(&export_path)
@@ -1176,7 +1176,7 @@ fn multiple_parameter_scans_csv_export() {
     let tempdir = tempdir().unwrap();
     let export_path = tempdir.path().join("results.csv");
 
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--export-csv")
         .arg(&export_path)
@@ -1206,7 +1206,7 @@ fn multiple_parameter_scans_and_list_combined_json_export() {
     let tempdir = tempdir().unwrap();
     let export_path = tempdir.path().join("results.json");
 
-    hyperfine()
+    perfratio()
         .arg("--runs=1")
         .arg("--export-json")
         .arg(&export_path)
@@ -1234,7 +1234,7 @@ fn multiple_parameter_scans_and_list_combined_json_export() {
 
 #[test]
 fn multiple_parameter_scans_with_step_size_cli_error() {
-    hyperfine()
+    perfratio()
         .arg("-P")
         .arg("a")
         .arg("1")
@@ -1255,7 +1255,7 @@ fn multiple_parameter_scans_with_step_size_cli_error() {
 
 #[test]
 fn omit_failed_runs_requires_ignore_failure() {
-    hyperfine()
+    perfratio()
         .arg("--omit-failed-runs")
         .arg("echo a")
         .assert()
@@ -1266,11 +1266,11 @@ fn omit_failed_runs_requires_ignore_failure() {
 #[cfg(unix)]
 #[test]
 fn omit_failed_runs_excludes_failures_from_statistics() {
-    hyperfine()
+    perfratio()
         .arg("--ignore-failure")
         .arg("--omit-failed-runs")
         .arg("--runs=5")
-        .arg("sh -c 'if [ \"$JOULEX_ITERATION\" = \"2\" ] || [ \"$JOULEX_ITERATION\" = \"4\" ]; then exit 1; else sleep 0.01; fi'")
+        .arg("sh -c 'if [ \"$PERFRATIO_ITERATION\" = \"2\" ] || [ \"$PERFRATIO_ITERATION\" = \"4\" ]; then exit 1; else sleep 0.01; fi'")
         .assert()
         .success()
         .stdout(predicate::str::contains("2 failed runs omitted"))
@@ -1282,7 +1282,7 @@ fn omit_failed_runs_excludes_failures_from_statistics() {
 #[cfg(unix)]
 #[test]
 fn omit_failed_runs_all_failed_errors() {
-    hyperfine()
+    perfratio()
         .arg("--ignore-failure")
         .arg("--omit-failed-runs")
         .arg("--runs=3")
@@ -1300,13 +1300,13 @@ fn omit_failed_runs_json_export() {
     let tempdir = tempdir().unwrap();
     let export_path = tempdir.path().join("results.json");
 
-    hyperfine()
+    perfratio()
         .arg("--ignore-failure")
         .arg("--omit-failed-runs")
         .arg("--runs=5")
         .arg("--export-json")
         .arg(&export_path)
-        .arg("sh -c 'if [ \"$JOULEX_ITERATION\" = \"1\" ] || [ \"$JOULEX_ITERATION\" = \"3\" ]; then exit 1; else sleep 0.01; fi'")
+        .arg("sh -c 'if [ \"$PERFRATIO_ITERATION\" = \"1\" ] || [ \"$PERFRATIO_ITERATION\" = \"3\" ]; then exit 1; else sleep 0.01; fi'")
         .assert()
         .success();
 
@@ -1337,14 +1337,14 @@ fn omit_failed_runs_with_filter_failed_preserves_successful_runs() {
     let tempdir = tempdir().unwrap();
     let export_path = tempdir.path().join("results.json");
 
-    hyperfine()
+    perfratio()
         .arg("-i")
         .arg("--omit-failed-runs")
         .arg("--filter-failed")
         .arg("-r=6")
         .arg("--export-json")
         .arg(&export_path)
-        .arg("sh -c 'if [ \"$JOULEX_ITERATION\" = \"2\" ]; then exit 1; else sleep 0.01; fi'")
+        .arg("sh -c 'if [ \"$PERFRATIO_ITERATION\" = \"2\" ]; then exit 1; else sleep 0.01; fi'")
         .arg("sleep 0.02")
         .assert()
         .success();
@@ -1373,7 +1373,7 @@ fn omit_failed_runs_with_filter_failed_preserves_successful_runs() {
 
 #[test]
 fn test_short_flags_style_and_sort() {
-    hyperfine()
+    perfratio()
         .arg("-r=2")
         .arg("-l")
         .arg("basic")
@@ -1387,7 +1387,7 @@ fn test_short_flags_style_and_sort() {
 
 #[test]
 fn test_short_flag_show_output() {
-    hyperfine()
+    perfratio()
         .arg("-r=2")
         .arg("-d")
         .arg("echo output_marker_123")
@@ -1406,7 +1406,7 @@ fn test_short_flag_output_and_input() {
 
     std::fs::write(&input_path, "hello short flags\n").unwrap();
 
-    hyperfine()
+    perfratio()
         .arg("-r=2")
         .arg("-I")
         .arg(&input_path)
@@ -1458,7 +1458,7 @@ fn test_deep_stats_identical_constant_samples() {
     }"#;
     std::fs::write(&json_path, json_content).unwrap();
 
-    hyperfine()
+    perfratio()
         .arg("--import-json")
         .arg(&json_path)
         .arg("--deep-stats")
@@ -1473,14 +1473,14 @@ fn test_deep_stats_identical_constant_samples() {
 
 #[test]
 fn help_has_no_colors_when_not_a_terminal() {
-    let output = hyperfine().arg("--help").output().unwrap();
+    let output = perfratio().arg("--help").output().unwrap();
     assert!(output.status.success());
     assert!(!String::from_utf8_lossy(&output.stdout).contains('\u{1b}'));
 }
 
 #[test]
 fn help_respects_no_color_even_when_colors_are_forced() {
-    let output = hyperfine()
+    let output = perfratio()
         .env("CLICOLOR_FORCE", "1")
         .env("NO_COLOR", "1")
         .arg("--help")
@@ -1491,7 +1491,7 @@ fn help_respects_no_color_even_when_colors_are_forced() {
 
 #[test]
 fn help_is_colored_when_colors_are_forced() {
-    let output = hyperfine()
+    let output = perfratio()
         .env("CLICOLOR_FORCE", "1")
         .env_remove("NO_COLOR")
         .arg("--help")
@@ -1504,7 +1504,7 @@ fn help_is_colored_when_colors_are_forced() {
 
 #[test]
 fn parameter_scan_cartesian_product_exceeding_limit_fails_fast() {
-    hyperfine()
+    perfratio()
         .arg("-N")
         .arg("-r=1")
         .arg("-P")
@@ -1536,7 +1536,7 @@ fn imported_command_names_cannot_inject_terminal_escape_sequences() {
     )
     .unwrap();
 
-    let output = hyperfine()
+    let output = perfratio()
         .arg("--import-json")
         .arg(&import_path)
         .arg("--export-markdown")
@@ -1561,17 +1561,17 @@ fn own_exports_pass_import_validation_including_omitted_failed_runs() {
     let tempdir = tempdir().unwrap();
     let export_path = tempdir.path().join("omitted.json");
 
-    hyperfine()
+    perfratio()
         .arg("--runs=4")
         .arg("--ignore-failure")
         .arg("--omit-failed-runs")
         .arg("--export-json")
         .arg(&export_path)
-        .arg("sh -c '[ \"$JOULEX_ITERATION\" = 2 ] && exit 1; exit 0'")
+        .arg("sh -c '[ \"$PERFRATIO_ITERATION\" = 2 ] && exit 1; exit 0'")
         .assert()
         .success();
 
-    hyperfine()
+    perfratio()
         .arg("--import-json")
         .arg(&export_path)
         .assert()
@@ -1590,7 +1590,7 @@ fn fails_to_import_json_with_invalid_results() {
     )
     .unwrap();
 
-    hyperfine()
+    perfratio()
         .arg("--import-json")
         .arg(&import_path)
         .assert()
@@ -1605,7 +1605,7 @@ fn fails_to_import_json_with_invalid_results() {
 
 #[test]
 fn round_robin_rejects_parametrized_setup() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--schedule=round-robin")
         .arg("-P")
         .arg("val")
@@ -1622,7 +1622,7 @@ fn round_robin_rejects_parametrized_setup() {
 
 #[test]
 fn round_robin_rejects_parametrized_cleanup() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--schedule=round-robin")
         .arg("-P")
         .arg("val")
@@ -1639,7 +1639,7 @@ fn round_robin_rejects_parametrized_cleanup() {
 
 #[test]
 fn round_robin_allows_parametrized_setup_with_override_flag() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--schedule=round-robin")
         .arg("--allow-setup-with-round-robin")
         .arg("-r=1")
@@ -1655,7 +1655,7 @@ fn round_robin_allows_parametrized_setup_with_override_flag() {
 
 #[test]
 fn round_robin_allows_unparametrized_setup() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--schedule=round-robin")
         .arg("-r=1")
         .arg("-P")
@@ -1670,7 +1670,7 @@ fn round_robin_allows_unparametrized_setup() {
 
 #[test]
 fn fish_completions_complete_executables_for_the_command() {
-    hyperfine()
+    perfratio()
         .arg("--generate-completions")
         .arg("fish")
         .assert()
@@ -1682,7 +1682,7 @@ fn fish_completions_complete_executables_for_the_command() {
 
 #[test]
 fn non_fish_completions_do_not_contain_fish_snippet() {
-    hyperfine()
+    perfratio()
         .arg("--generate-completions")
         .arg("bash")
         .assert()
@@ -1698,7 +1698,7 @@ fn existing_export_is_kept_when_benchmark_fails() {
     let export_path = tempdir.path().join("previous.json");
     std::fs::write(&export_path, "previous results").unwrap();
 
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--export-json")
         .arg(&export_path)
         .arg("--prepare=exit 1")
@@ -1714,7 +1714,7 @@ fn existing_export_is_kept_when_benchmark_fails() {
 
 #[test]
 fn export_to_missing_directory_fails_before_benchmarking() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--export-json")
         .arg("/nonexistent-perfratio-dir/out.json")
         .arg("sleep 0.1")
@@ -1736,7 +1736,7 @@ fn export_replaces_symlink_instead_of_writing_through_it() {
     let link = tempdir.path().join("results.json");
     std::os::unix::fs::symlink(&victim, &link).unwrap();
 
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--export-json")
         .arg(&link)
         .arg("sleep 0.1")
@@ -1763,7 +1763,7 @@ fn round_robin_equal_run_counts_for_asymmetric_commands() {
     let tempdir = tempdir().unwrap();
     let export_path = tempdir.path().join("results.json");
 
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--schedule=round-robin")
         .arg("--export-json")
         .arg(&export_path)
@@ -1786,7 +1786,7 @@ fn round_robin_equal_run_counts_for_asymmetric_commands() {
 
 #[test]
 fn schedule_interleaved_alias_works() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--schedule=interleaved")
         .arg("-r=2")
         .arg("sleep 0.01")
@@ -1797,7 +1797,7 @@ fn schedule_interleaved_alias_works() {
 
 #[test]
 fn schedule_sequential_is_rejected() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--schedule=sequential")
         .arg("sleep 0.01")
         .assert()
@@ -1810,7 +1810,7 @@ fn schedule_sequential_is_rejected() {
 #[cfg(unix)]
 #[test]
 fn iteration_placeholder_works_without_a_shell() {
-    hyperfine()
+    perfratio()
         .arg("--shell=none")
         .arg("--warmup=1")
         .arg("--runs=3")
@@ -1831,7 +1831,7 @@ fn iteration_placeholder_works_without_a_shell() {
 #[cfg(unix)]
 #[test]
 fn iteration_placeholder_is_expanded_in_prepare() {
-    hyperfine()
+    perfratio()
         .arg("--runs=2")
         .arg("--prepare=echo prep-{iteration}")
         .arg("--show-output")
@@ -1844,7 +1844,7 @@ fn iteration_placeholder_is_expanded_in_prepare() {
 
 #[test]
 fn deep_stats_terminal_output_respects_time_unit_and_shows_stddev() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--deep-stats")
         .arg("--time-unit=millisecond")
         .arg("-r=5")
@@ -1861,7 +1861,7 @@ fn deep_stats_terminal_output_respects_time_unit_and_shows_stddev() {
 fn export_to_dev_stdout_and_dev_null_works() {
     // Regression test: the atomic write-and-rename of exports must not be used
     // for devices (renaming into /dev is not permitted).
-    hyperfine()
+    perfratio()
         .args([
             "--runs=1",
             "--style=none",
@@ -1874,7 +1874,7 @@ fn export_to_dev_stdout_and_dev_null_works() {
         // written once, by the final export (not after every benchmark)
         .stdout(predicate::str::contains("command,mean,stddev").count(1));
 
-    hyperfine()
+    perfratio()
         .args([
             "--runs=1",
             "--style=none",
@@ -1910,7 +1910,7 @@ fn export_to_a_fifo_works() {
         })
     };
 
-    hyperfine()
+    perfratio()
         .args(["--runs=1", "--style=none", "--export-json"])
         .arg(&fifo)
         .arg("echo")

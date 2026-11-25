@@ -1,7 +1,7 @@
 //! Tests for --timeout (#51).
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 use serde_json::Value;
@@ -9,7 +9,7 @@ use serde_json::Value;
 #[test]
 fn invalid_timeout_durations_are_rejected() {
     for invalid in ["0", "0s", "0ms", "-1s", "abc", "inf", "NaN", "-500ms"] {
-        hyperfine()
+        perfratio()
             .args(["--timeout", invalid, "sleep 0.01"])
             .assert()
             .failure()
@@ -20,7 +20,7 @@ fn invalid_timeout_durations_are_rejected() {
 #[test]
 fn timed_out_benchmark_skips_remaining_runs_and_reports_timeout() {
     let start = std::time::Instant::now();
-    hyperfine()
+    perfratio()
         .args([
             "--timeout",
             "150ms",
@@ -44,7 +44,7 @@ fn timed_out_benchmark_skips_remaining_runs_and_reports_timeout() {
 #[test]
 fn timeout_with_multiple_commands_and_relative_speed() {
     let start = std::time::Instant::now();
-    hyperfine()
+    perfratio()
         .args([
             "--timeout",
             "150ms",
@@ -72,7 +72,7 @@ fn timeout_json_export() {
     let dir = tempfile::tempdir().unwrap();
     let json_file = dir.path().join("out.json");
 
-    hyperfine()
+    perfratio()
         .args(["--timeout", "150ms", "-N", "--runs=2", "--export-json"])
         .arg(&json_file)
         .args(["sleep 5", "sleep 0.01"])
@@ -105,7 +105,7 @@ fn timeout_csv_and_markdown_exports() {
     let csv_file = dir.path().join("out.csv");
     let md_file = dir.path().join("out.md");
 
-    hyperfine()
+    perfratio()
         .args(["--timeout", "200ms", "-N", "--runs=2", "--export-csv"])
         .arg(&csv_file)
         .arg("--export-markdown")
@@ -135,7 +135,7 @@ fn timeout_csv_and_markdown_exports() {
 
 #[test]
 fn intermediate_preparation_timeout_aborts_with_error() {
-    hyperfine()
+    perfratio()
         .args(["--timeout", "150ms", "--prepare", "sleep 5", "sleep 0.01"])
         .assert()
         .failure()
@@ -146,7 +146,7 @@ fn intermediate_preparation_timeout_aborts_with_error() {
 
 #[test]
 fn intermediate_setup_timeout_aborts_with_error() {
-    hyperfine()
+    perfratio()
         .args(["--timeout", "150ms", "--setup", "sleep 5", "sleep 0.01"])
         .assert()
         .failure()
@@ -159,7 +159,7 @@ fn process_group_kills_descendants_on_unix() {
     // Spawn a subshell that launches a background sleep and waits
     // Watchdog should kill the entire process group including the background sleep
     let start = std::time::Instant::now();
-    hyperfine()
+    perfratio()
         .args(["--timeout", "200ms", "--runs=1", "sh -c 'sleep 30 & wait'"])
         .assert()
         .success()

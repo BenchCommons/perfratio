@@ -160,17 +160,6 @@ pub fn get_progress_bar(length: u64, msg: &str, option: OutputStyleOption) -> Pr
                     let estimate = eta(state.elapsed(), last.0, last.1, state.len().unwrap_or(0));
                     let _ = w.write_str(&format_eta(estimate));
                 }
-            })
-            .with_key("joulex_eta", {
-                let last_step = Arc::new(Mutex::new((0u64, Duration::ZERO)));
-                move |state: &ProgressState, w: &mut dyn Write| {
-                    let mut last = last_step.lock().unwrap_or_else(|e| e.into_inner());
-                    if state.pos() != last.0 {
-                        *last = (state.pos(), state.elapsed());
-                    }
-                    let estimate = eta(state.elapsed(), last.0, last.1, state.len().unwrap_or(0));
-                    let _ = w.write_str(&format_eta(estimate));
-                }
             }),
     };
 

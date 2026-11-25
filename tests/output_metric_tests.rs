@@ -1,19 +1,19 @@
 //! Tests for --output-metric (#90).
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
 #[test]
 fn conflicts_with_show_output_and_output_and_until() {
-    hyperfine()
+    perfratio()
         .args(["--output-metric", "lat=([0-9]+)", "--show-output", "echo 1"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("cannot be used with"));
 
-    hyperfine()
+    perfratio()
         .args([
             "--output-metric",
             "lat=([0-9]+)",
@@ -25,7 +25,7 @@ fn conflicts_with_show_output_and_output_and_until() {
         .failure()
         .stderr(predicate::str::contains("cannot be used with"));
 
-    hyperfine()
+    perfratio()
         .args([
             "--output-metric",
             "lat=([0-9]+)",
@@ -40,7 +40,7 @@ fn conflicts_with_show_output_and_output_and_until() {
 
 #[test]
 fn rejects_invalid_syntax_missing_equals() {
-    hyperfine()
+    perfratio()
         .args(["--output-metric", "latency_no_equals", "echo 1"])
         .assert()
         .failure()
@@ -49,7 +49,7 @@ fn rejects_invalid_syntax_missing_equals() {
 
 #[test]
 fn rejects_invalid_name() {
-    hyperfine()
+    perfratio()
         .args(["--output-metric", "my-metric=([0-9]+)", "echo 1"])
         .assert()
         .failure()
@@ -60,7 +60,7 @@ fn rejects_invalid_name() {
 
 #[test]
 fn rejects_missing_capture_group() {
-    hyperfine()
+    perfratio()
         .args(["--output-metric", "lat=[0-9]+", "echo 1"])
         .assert()
         .failure()
@@ -71,7 +71,7 @@ fn rejects_missing_capture_group() {
 
 #[test]
 fn rejects_duplicate_metric_name() {
-    hyperfine()
+    perfratio()
         .args([
             "--output-metric",
             "lat=([0-9]+)",
@@ -86,7 +86,7 @@ fn rejects_duplicate_metric_name() {
 
 #[test]
 fn single_metric_extracted_and_displayed() {
-    hyperfine()
+    perfratio()
         .args([
             "--runs",
             "2",
@@ -102,7 +102,7 @@ fn single_metric_extracted_and_displayed() {
 
 #[test]
 fn multiple_metrics_extracted_and_displayed() {
-    hyperfine()
+    perfratio()
         .args([
             "--runs",
             "2",
@@ -122,7 +122,7 @@ fn multiple_metrics_extracted_and_displayed() {
 
 #[test]
 fn missing_metric_fails_command() {
-    hyperfine()
+    perfratio()
         .args([
             "--runs",
             "2",
@@ -139,7 +139,7 @@ fn missing_metric_fails_command() {
 
 #[test]
 fn missing_metric_ignored_with_ignore_failure() {
-    hyperfine()
+    perfratio()
         .args([
             "-i",
             "--runs",
@@ -157,7 +157,7 @@ fn export_json_contains_custom_metrics() {
     let dir = tempfile::tempdir().unwrap();
     let json_path = dir.path().join("results.json");
 
-    hyperfine()
+    perfratio()
         .args([
             "--runs",
             "2",
@@ -197,7 +197,7 @@ fn export_csv_contains_custom_metric_columns() {
     let dir = tempfile::tempdir().unwrap();
     let csv_path = dir.path().join("results.csv");
 
-    hyperfine()
+    perfratio()
         .args([
             "--runs",
             "2",

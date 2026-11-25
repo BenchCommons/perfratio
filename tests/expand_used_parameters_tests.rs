@@ -1,7 +1,7 @@
 //! Tests for --expand-used-parameters.
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 #[cfg(unix)]
 use predicates::prelude::*;
@@ -35,11 +35,11 @@ fn commands_are_only_combined_with_the_parameters_they_use() {
     ];
 
     // default: every command × every combination = 3 × 8 = 24 benchmarks
-    let output = hyperfine().args(args).output().unwrap();
+    let output = perfratio().args(args).output().unwrap();
     assert_eq!(benchmark_lines(&output.stdout).len(), 24);
 
     // with the flag: 1 + 1 + 2 = 4 benchmarks
-    let output = hyperfine()
+    let output = perfratio()
         .arg("--expand-used-parameters")
         .args(args)
         .output()
@@ -58,7 +58,7 @@ fn commands_are_only_combined_with_the_parameters_they_use() {
 #[cfg(unix)]
 #[test]
 fn parameters_used_in_prepare_still_create_distinct_benchmarks() {
-    hyperfine()
+    perfratio()
         .args([
             "-N",
             "--runs=1",
@@ -85,7 +85,7 @@ fn parameters_used_in_prepare_still_create_distinct_benchmarks() {
 #[cfg(unix)]
 #[test]
 fn parameters_used_in_the_command_name_still_create_distinct_benchmarks() {
-    hyperfine()
+    perfratio()
         .args([
             "-N",
             "--runs=1",
@@ -104,7 +104,7 @@ fn parameters_used_in_the_command_name_still_create_distinct_benchmarks() {
 fn exports_only_contain_the_used_parameters() {
     let dir = tempfile::tempdir().unwrap();
     let json = dir.path().join("out.json");
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=1", "--expand-used-parameters"])
         .args(["-L", "A", "1,2", "-L", "B", "x,y", "--export-json"])
         .arg(&json)

@@ -7,7 +7,7 @@
 # ]
 # ///
 
-"""This program shows `hyperfine` benchmark results as a box and whisker plot.
+"""This program shows `perfratio` benchmark results as a box and whisker plot.
 
 Quoting from the matplotlib documentation:
     The box extends from the lower to upper quartile values of the data, with

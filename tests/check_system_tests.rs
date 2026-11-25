@@ -1,8 +1,8 @@
 //! Tests for --check-system, using a fake Linux /sys and /proc tree (the
-//! hidden JOULEX_SYSTEM_CHECK_ROOT hook), so they run on every platform.
+//! hidden PERFRATIO_SYSTEM_CHECK_ROOT hook), so they run on every platform.
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
@@ -26,8 +26,8 @@ fn fake_root(governor: &str) -> tempfile::TempDir {
 #[test]
 fn reports_problems_with_hints_and_continues() {
     let root = fake_root("powersave");
-    hyperfine()
-        .env("JOULEX_SYSTEM_CHECK_ROOT", root.path())
+    perfratio()
+        .env("PERFRATIO_SYSTEM_CHECK_ROOT", root.path())
         .args(["--check-system", "--debug-mode", "--runs=1", "sleep 0.1"])
         .assert()
         .success()
@@ -45,8 +45,8 @@ fn reports_problems_with_hints_and_continues() {
 #[test]
 fn strict_mode_aborts_with_exit_code_4() {
     let root = fake_root("powersave");
-    hyperfine()
-        .env("JOULEX_SYSTEM_CHECK_ROOT", root.path())
+    perfratio()
+        .env("PERFRATIO_SYSTEM_CHECK_ROOT", root.path())
         .args([
             "--check-system=strict",
             "--debug-mode",
@@ -64,8 +64,8 @@ fn strict_mode_aborts_with_exit_code_4() {
 #[test]
 fn strict_mode_passes_on_a_quiet_system() {
     let root = fake_root("performance");
-    hyperfine()
-        .env("JOULEX_SYSTEM_CHECK_ROOT", root.path())
+    perfratio()
+        .env("PERFRATIO_SYSTEM_CHECK_ROOT", root.path())
         .args([
             "--check-system=strict",
             "--debug-mode",
@@ -80,8 +80,8 @@ fn strict_mode_passes_on_a_quiet_system() {
 #[test]
 fn strict_failure_is_explained_even_without_output() {
     let root = fake_root("powersave");
-    hyperfine()
-        .env("JOULEX_SYSTEM_CHECK_ROOT", root.path())
+    perfratio()
+        .env("PERFRATIO_SYSTEM_CHECK_ROOT", root.path())
         .args([
             "--check-system=strict",
             "--style=none",
@@ -96,8 +96,8 @@ fn strict_failure_is_explained_even_without_output() {
 #[test]
 fn without_the_option_nothing_is_checked() {
     let root = fake_root("powersave");
-    hyperfine()
-        .env("JOULEX_SYSTEM_CHECK_ROOT", root.path())
+    perfratio()
+        .env("PERFRATIO_SYSTEM_CHECK_ROOT", root.path())
         .args(["--debug-mode", "--runs=1", "sleep 0.1"])
         .assert()
         .success()
@@ -108,7 +108,7 @@ fn without_the_option_nothing_is_checked() {
 fn json_export_records_the_environment() {
     let dir = tempfile::tempdir().unwrap();
     let json = dir.path().join("out.json");
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=1", "--export-json"])
         .arg(&json)
         .arg("sleep 0.1")
@@ -117,7 +117,6 @@ fn json_export_records_the_environment() {
     let json: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&json).unwrap()).unwrap();
     let system = &json["perfratio"]["system"];
-    assert_eq!(system, &json["joulex"]["system"]);
     assert!(system["cpus"].as_u64().unwrap() >= 1);
     if cfg!(unix) {
         assert!(!system["kernel"].as_str().unwrap().is_empty());

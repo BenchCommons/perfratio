@@ -9,7 +9,7 @@
 # ///
 
 """
-This script shows `hyperfine` benchmark results as a bar plot grouped by command.
+This script shows `perfratio` benchmark results as a bar plot grouped by command.
 Note all the input files must contain results for all commands.
 """
 

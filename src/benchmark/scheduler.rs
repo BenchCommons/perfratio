@@ -759,7 +759,7 @@ impl<'a> Scheduler<'a> {
 fn generate_results(args: &[&'static str]) -> Result<Vec<BenchmarkResult>> {
     use crate::cli::get_cli_arguments;
 
-    let args = ["hyperfine", "--debug-mode", "--style=none"]
+    let args = ["perfratio", "--debug-mode", "--style=none"]
         .iter()
         .chain(args);
     let cli_arguments = get_cli_arguments(args);

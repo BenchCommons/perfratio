@@ -128,14 +128,15 @@ fn run_command_and_measure_common(
     command.stdin(stdin).stdout(stdout).stderr(stderr);
 
     command.env(
-        "HYPERFINE_RANDOMIZED_ENVIRONMENT_OFFSET",
+        "PERFRATIO_RANDOMIZED_ENVIRONMENT_OFFSET",
         randomized_environment_offset::value(),
     );
 
     if let Some(value) = iteration.to_env_var_value() {
         command.env("PERFRATIO_ITERATION", &value);
-        command.env("JOULEX_ITERATION", &value);
-        command.env("HYPERFINE_ITERATION", value);
+        // Deprecated aliases, removed in the next release (see warn_legacy_iteration_vars)
+        command.env(crate::util::legacy::LEGACY_ITERATION_VARS[0], &value);
+        command.env(crate::util::legacy::LEGACY_ITERATION_VARS[1], value);
     }
 
     #[cfg(target_os = "linux")]

@@ -1,14 +1,14 @@
 //! Tests for --show-output-on-failure.
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
 #[test]
 fn conflicts_with_show_output_and_output() {
     for other in ["--show-output", "--output=pipe"] {
-        hyperfine()
+        perfratio()
             .args(["--show-output-on-failure", other, "echo"])
             .assert()
             .failure()
@@ -22,7 +22,7 @@ mod unix {
 
     #[test]
     fn a_failing_run_shows_its_output_in_the_error() {
-        hyperfine()
+        perfratio()
             .args(["--runs=2", "--show-output-on-failure"])
             .arg("echo to-stdout; echo boom >&2; exit 3")
             .assert()
@@ -39,7 +39,7 @@ mod unix {
 
     #[test]
     fn without_the_option_the_error_suggests_it() {
-        hyperfine()
+        perfratio()
             .args(["--runs=2", "exit 3"])
             .assert()
             .failure()
@@ -48,7 +48,7 @@ mod unix {
 
     #[test]
     fn successful_runs_print_nothing_extra() {
-        hyperfine()
+        perfratio()
             .args(["--runs=3", "--show-output-on-failure", "--style=basic"])
             // The marker is assembled by printf, so it isn't part of the
             // command name shown in the output
@@ -61,14 +61,14 @@ mod unix {
 
     #[test]
     fn ignored_failures_are_shown_as_warnings() {
-        hyperfine()
+        perfratio()
             .args([
                 "--runs=5",
                 "-i",
                 "--show-output-on-failure",
                 "--style=basic",
             ])
-            .arg("[ \"$JOULEX_ITERATION\" = 2 ] && { echo only-two >&2; exit 1; }; true")
+            .arg("[ \"$PERFRATIO_ITERATION\" = 2 ] && { echo only-two >&2; exit 1; }; true")
             .assert()
             .success()
             .stderr(predicate::str::contains(
@@ -80,7 +80,7 @@ mod unix {
 
     #[test]
     fn at_most_three_failed_runs_are_shown() {
-        hyperfine()
+        perfratio()
             .args([
                 "--runs=6",
                 "-i",
@@ -100,7 +100,7 @@ mod unix {
     /// more than a pipe buffer must not deadlock.
     #[test]
     fn large_output_on_both_streams_does_not_deadlock() {
-        hyperfine()
+        perfratio()
             .args(["--runs=2", "--show-output-on-failure"])
             .arg("head -c 5000000 /dev/zero >&2; head -c 5000000 /dev/zero; echo end >&2; exit 1")
             .timeout(std::time::Duration::from_secs(60))
@@ -112,7 +112,7 @@ mod unix {
 
     #[test]
     fn captured_output_cannot_control_the_terminal() {
-        hyperfine()
+        perfratio()
             .args(["--runs=1", "--show-output-on-failure"])
             .arg("printf '\\033]0;pwned\\007\\033[31mred\\n' >&2; exit 1")
             .assert()
