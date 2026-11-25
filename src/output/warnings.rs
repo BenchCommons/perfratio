@@ -1,6 +1,7 @@
 use std::fmt;
 
 use crate::benchmark::MIN_EXECUTION_TIME;
+use crate::outlier_detection::{OutlierMethod, OutlierStats};
 use crate::output::format::format_duration;
 use crate::util::units::Second;
 
@@ -15,6 +16,19 @@ pub enum Warnings {
     NonZeroExitCode,
     SlowInitialRun(Second, OutlierWarningOptions),
     OutliersDetected(OutlierWarningOptions),
+    /// Outlier count and share with the fences, for time (`OutliersCounted`)
+    OutliersCounted {
+        options: OutlierWarningOptions,
+        stats: OutlierStats,
+        total: usize,
+        method: OutlierMethod,
+    },
+    /// At least 10% outliers in a non-time metric (memory in bytes, energy in J)
+    MetricOutliers {
+        metric: &'static str,
+        stats: OutlierStats,
+        total: usize,
+    },
     OffCpuTime(Second, Second, f64),
     FailedRunsOmitted {
         omitted: usize,
@@ -95,6 +109,41 @@ impl fmt::Display for Warnings {
                 } else {
                     " It might help to use the '--warmup' or '--prepare' options."
                 }
+            ),
+            Warnings::OutliersCounted {
+                ref options,
+                ref stats,
+                total,
+                method,
+            } => write!(
+                f,
+                "Statistical outliers were detected: {} of {total} runs ({:.1}%) are outside \
+                 [{} … {}] ({}).{}{hint}",
+                stats.count,
+                stats.percent,
+                format_duration(stats.lower_fence.max(0.0), None),
+                format_duration(stats.upper_fence, None),
+                method.name(),
+                if stats.is_severe() {
+                    " This is 10% or more of the runs; the result is probably unreliable. \
+                     Consider re-running on a quiet system or with CPU isolation."
+                } else {
+                    ""
+                },
+                hint = if stats.is_severe() && !(options.warmup_in_use && options.prepare_in_use) {
+                    " It might help to use the '--warmup' or '--prepare' options."
+                } else {
+                    ""
+                }
+            ),
+            Warnings::MetricOutliers {
+                metric,
+                ref stats,
+                total,
+            } => write!(
+                f,
+                "{} of {total} {metric} measurements ({:.1}%) are outliers (outside [{:.6} … {:.6}]).",
+                stats.count, stats.percent, stats.lower_fence, stats.upper_fence
             ),
             Warnings::OffCpuTime(wall, cpu, ratio) => {
                 let ratio_str = if ratio.is_infinite() {
