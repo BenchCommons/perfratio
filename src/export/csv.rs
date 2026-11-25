@@ -277,6 +277,8 @@ fn test_csv() {
             mean_energy_joules: None,
             mean_watts: None,
             energy_joules: None,
+            idle_watts: None,
+            mean_net_energy_joules: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: {
                 let mut params = BTreeMap::new();
@@ -320,6 +322,8 @@ fn test_csv() {
             mean_energy_joules: None,
             mean_watts: None,
             energy_joules: None,
+            idle_watts: None,
+            mean_net_energy_joules: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: {
                 let mut params = BTreeMap::new();
@@ -390,6 +394,8 @@ fn test_csv_formula_injection_sanitization() {
         mean_energy_joules: None,
         mean_watts: None,
         energy_joules: None,
+        idle_watts: None,
+        mean_net_energy_joules: None,
         exit_codes: vec![Some(0)],
         parameters: {
             let mut params = BTreeMap::new();
@@ -494,6 +500,8 @@ fn test_csv_with_reference_command() {
             mean_energy_joules: None,
             mean_watts: None,
             energy_joules: None,
+            idle_watts: None,
+            mean_net_energy_joules: None,
             exit_codes: vec![Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
@@ -532,6 +540,8 @@ fn test_csv_with_reference_command() {
             mean_energy_joules: None,
             mean_watts: None,
             energy_joules: None,
+            idle_watts: None,
+            mean_net_energy_joules: None,
             exit_codes: vec![Some(0)],
             parameters: {
                 let mut params = BTreeMap::new();
@@ -602,6 +612,8 @@ fn test_csv_heterogeneous_parameters() {
             mean_energy_joules: None,
             mean_watts: None,
             energy_joules: None,
+            idle_watts: None,
+            mean_net_energy_joules: None,
             exit_codes: vec![Some(0)],
             parameters: {
                 let mut params = BTreeMap::new();
@@ -644,6 +656,8 @@ fn test_csv_heterogeneous_parameters() {
             mean_energy_joules: None,
             mean_watts: None,
             energy_joules: None,
+            idle_watts: None,
+            mean_net_energy_joules: None,
             exit_codes: vec![Some(0)],
             parameters: {
                 let mut params = BTreeMap::new();

@@ -341,6 +341,8 @@ pub struct Options {
     /// Measure energy consumption in Joules and display Performance per Watt
     pub measure_energy: bool,
 
+    /// Idle-power measurement window for net energy (--energy-baseline)
+    pub energy_baseline: Option<std::time::Duration>,
     /// Which energy backend to use (`--energy-backend`)
     pub energy_backend: crate::energy::BackendPreference,
 
@@ -424,6 +426,7 @@ impl Default for Options {
             command_input_policy: CommandInputPolicy::Null,
             metric: crate::metric::Metric::Wall,
             measure_energy: false,
+            energy_baseline: None,
             energy_backend: crate::energy::BackendPreference::Auto,
             deep_stats: false,
             filter_failed: false,
@@ -687,6 +690,10 @@ impl Options {
                 crate::util::units::parse_duration(val)
                     .map_err(|e| OptionsError::InvalidTimeout(val.clone(), e))?,
             );
+        }
+        if let Some(val) = matches.get_one::<String>("energy-baseline") {
+            options.energy_baseline = parse_energy_baseline(val)
+                .map_err(|e| OptionsError::InvalidEnergyBaseline(val.clone(), e))?;
         }
         if let Some(val) = matches.get_one::<String>("until") {
             if val.is_empty() {
@@ -1080,4 +1087,52 @@ fn test_warning_suppression_options() {
     let opts = Options::from_cli_arguments(&matches_suppress_all).unwrap();
     assert!(opts.suppress_off_cpu_warnings);
     assert!(opts.suppress_outlier_warnings);
+}
+
+/// `--energy-baseline` value: `None` for an explicit zero ("0", "0s", "0ms"), which disables
+/// the baseline; otherwise a positive duration. `parse_duration` rejects zero, so zero is
+/// recognised here, after checking that the unit is valid.
+fn parse_energy_baseline(val: &str) -> Result<Option<std::time::Duration>, String> {
+    let t = val.trim();
+    let split = t
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .unwrap_or(t.len());
+    let (num, unit) = t.split_at(split);
+    if num.parse::<f64>().is_ok_and(|n| n == 0.0) {
+        crate::util::units::parse_duration(&format!("1{unit}"))?;
+        return Ok(None);
+    }
+    crate::util::units::parse_duration(t).map(Some)
+}
+
+#[cfg(test)]
+mod energy_baseline_tests {
+    use super::parse_energy_baseline;
+    use std::time::Duration;
+
+    #[test]
+    fn zero_disables_the_baseline() {
+        for v in ["0", "0s", "0.0", "0ms", " 0 "] {
+            assert_eq!(parse_energy_baseline(v), Ok(None), "{v}");
+        }
+    }
+
+    #[test]
+    fn positive_durations_parse() {
+        assert_eq!(
+            parse_energy_baseline("2s"),
+            Ok(Some(Duration::from_secs(2)))
+        );
+        assert_eq!(
+            parse_energy_baseline("500ms"),
+            Ok(Some(Duration::from_millis(500)))
+        );
+    }
+
+    #[test]
+    fn invalid_values_are_rejected() {
+        for v in ["-1s", "", "abc", "0parsecs", "2parsecs"] {
+            assert!(parse_energy_baseline(v).is_err(), "{v}");
+        }
+    }
 }

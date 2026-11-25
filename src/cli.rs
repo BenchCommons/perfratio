@@ -459,6 +459,16 @@ pub fn build_command() -> Command {
                 .help("Measure energy consumption (Joules) and average power draw (Watts) using hardware sensors."),
         )
         .arg(
+            Arg::new("energy-baseline")
+                .long("energy-baseline")
+                .action(ArgAction::Set)
+                .value_name("DURATION")
+                .requires("energy")
+                .allow_hyphen_values(true)
+                .help("Measure idle power for DURATION (e.g. 2s) before benchmarking and also \
+                       report net energy = measured - idle power x run time. Off by default."),
+        )
+        .arg(
             Arg::new("energy-backend")
                 .long("energy-backend")
                 .value_name("BACKEND")

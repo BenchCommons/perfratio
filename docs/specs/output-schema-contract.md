@@ -149,6 +149,8 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `mean_watts` | W (`mean_energy_joules / mean`) | same as above |
 | `energy_joules` | J[] | only when every run has a sample |
 | `energy_samples` | count (**new**) | when `measurements.energy = "measured"`: runs with a sample, so partial coverage is visible |
+| `idle_watts` (**new in 1.1**, #59) | W | optional (`--energy-baseline` and the idle measurement succeeded) |
+| `mean_net_energy_joules` (**new in 1.1**, #59) | J, per run `max(energy - idle_watts * time, 0)` | optional (with `idle_watts` and ≥ 1 energy sample) |
 | `custom_metrics` | { name: (f64 \| null)[] }, one entry per run aligned with `times`; `null` = not extracted with `-i` | optional (`--output-metric`, see `custom-output-metrics.md`) |
 | `custom_metrics_summary` | { name: { `mean`, `stddev`?, `median`, `min`, `max` } } | with `custom_metrics` |
 | `parameters`, `per_run_parameters` | strings / stats | optional (`--parameter-*`) |
@@ -162,7 +164,7 @@ Rules:
 - `custom_metrics` units are whatever the command prints; perfratio does not interpret them.
   Names follow `[A-Za-z0-9_]+`. A consumer that needs units encodes them in the name
   (e.g. `algo_ns`) or in a `--label`.
-- `metric` and `primary_metric` (#48) were added in 1.1 as MINOR additions. Fields added later by #59 (net energy, domains) and #216
+- `metric` and `primary_metric` (#48), `idle_watts` and `mean_net_energy_joules` (#59) were added in 1.1 as MINOR additions. Fields added later by #59 (domains) and #216
   (`target_duration_seconds`, `total_sampling_seconds`) are MINOR additions to this schema
   and must be added to this table in the same PR.
 

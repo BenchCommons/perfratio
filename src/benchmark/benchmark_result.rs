@@ -96,6 +96,15 @@ pub struct BenchmarkResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub energy_joules: Option<Vec<f64>>,
 
+    /// Idle power in Watts measured by `--energy-baseline`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_watts: Option<f64>,
+
+    /// Average net energy in Joules: per run `max(energy - idle_watts * time, 0)`.
+    /// `mean_energy_joules` stays the gross value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mean_net_energy_joules: Option<f64>,
+
     /// Exit codes of all command invocations
     #[serde(default)]
     pub exit_codes: Vec<Option<i32>>,
