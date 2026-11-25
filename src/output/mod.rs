@@ -25,6 +25,7 @@ pub fn write_stdout(args: std::fmt::Arguments<'_>) {
 }
 
 /// `print!` that survives a closed stdout (see [`write_stdout`]).
+#[doc(hidden)]
 #[macro_export]
 macro_rules! out {
     ($($arg:tt)*) => {
@@ -33,6 +34,7 @@ macro_rules! out {
 }
 
 /// `println!` that survives a closed stdout (see [`write_stdout`]).
+#[doc(hidden)]
 #[macro_export]
 macro_rules! outln {
     () => {
