@@ -20,6 +20,7 @@ pub mod benchmark;
 pub mod cli;
 pub mod command;
 pub mod compare;
+pub mod delta_table;
 pub mod energy;
 pub mod error;
 pub mod export;
@@ -132,6 +133,9 @@ fn run() -> Result<()> {
     scheduler.add_imported_results(imported_results);
     scheduler.run_benchmarks()?;
     scheduler.print_relative_speed_comparison();
+    if cli_arguments.get_flag("delta-table") {
+        scheduler.print_delta_table();
+    }
     scheduler.final_export()?;
 
     if let Some((baseline_path, baseline)) = &baseline {

@@ -82,6 +82,8 @@ pub enum ExportTarget {
 struct ExporterWithTarget {
     exporter: Box<dyn Exporter>,
     target: ExportTarget,
+    /// `--delta-table`: append the delta tables (Markdown export only)
+    append_delta_table: bool,
 }
 
 /// Handles the management of multiple file exporters.
@@ -91,6 +93,8 @@ pub struct ExportManager {
     sort_order: SortOrder,
     /// Run metadata for the JSON and CSV exports
     metadata: ExportMetadata,
+    /// `--delta-table`
+    delta_table: bool,
 }
 
 impl ExportManager {
@@ -113,6 +117,7 @@ impl ExportManager {
             time_unit,
             sort_order,
             metadata: ExportMetadata::new(labels),
+            delta_table: matches.try_get_one::<bool>("delta-table").ok().flatten() == Some(&true),
         };
 
         if let Some(args) = matches.get_many::<String>("export") {
@@ -162,6 +167,7 @@ impl ExportManager {
 
         self.exporters.push(ExporterWithTarget {
             exporter,
+            append_delta_table: self.delta_table && matches!(export_type, ExportType::Markdown),
             target: if filename == "-" {
                 ExportTarget::Stdout
             } else {
@@ -193,8 +199,13 @@ impl ExportManager {
     ) -> Result<()> {
         for e in &self.exporters {
             let content = || {
-                e.exporter
-                    .serialize(results, reference, self.time_unit, self.sort_order)
+                let mut bytes =
+                    e.exporter
+                        .serialize(results, reference, self.time_unit, self.sort_order)?;
+                if e.append_delta_table {
+                    bytes.extend(crate::delta_table::markdown(results, reference).into_bytes());
+                }
+                Ok::<_, anyhow::Error>(bytes)
             };
 
             match e.target {
