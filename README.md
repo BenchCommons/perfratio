@@ -5,7 +5,7 @@
 perfratio is a command-line benchmarking tool that measures **time, peak memory and energy**
 for the same command and compares the results with statistics. It is the measurement engine
 of [BenchCommons](https://github.com/BenchCommons). It owns the versioned JSON output
-contract that other BenchCommons tools consume (see [JSON export](#json-export-and-the-schemaversion-contract)).
+contract that other BenchCommons tools consume. The `schemaVersion` field is coming in 1.0 and is pending PR #262 (see [JSON export](#json-export-and-the-schemaversion-contract)).
 
 perfratio was formerly called `joulex`.
 
@@ -20,7 +20,8 @@ borrow from [`Gabriella439/bench`](https://github.com/Gabriella439/bench). perfr
 - Deep statistics (`--deep-stats`): bootstrapped confidence intervals and hypothesis tests.
 - A regression gate against an earlier export (`--compare`, `--fail-if-regressed`).
 - Cross-language helpers: `--warmup auto`, `--first-run`, `--output-metric`, `--target-precision`.
-- A versioned JSON export (`schemaVersion`) for tools that consume the results.
+- Time-budgeted sampling (`--duration 5s`) and significance indicators on speedups and regressions.
+- A versioned JSON export for tools that consume the results. The `schemaVersion` field is coming in 1.0 (pending #262).
 
 Run `perfratio --help` for every option. perfratio can read hyperfine and joulex JSON
 files (`--import-json`).
@@ -153,6 +154,9 @@ request comment. A GitHub Actions example is in [doc/ci.md](doc/ci.md).
 
 `--export-json <FILE>` (or `-e results.json`) writes the summary statistics and every run's
 timings. perfratio owns this output, and consumers such as `tools-benchmark` read it.
+**Status:** the `schemaVersion` key is not on `master` yet. It is pending PR #262 and
+planned for 1.0. Until then exports have no `schemaVersion` (the legacy shape).
+
 The contract is a top-level `"schemaVersion": "MAJOR.MINOR"` string. Consumers must ignore
 unknown keys and accept any MINOR version of the MAJOR version they support. A removed or
 renamed field, or a changed unit, bumps MAJOR.
@@ -173,7 +177,7 @@ warmup effects differ a lot between runtimes. Use:
 |---|---|
 | `--warmup auto` | Warms up each command until timings are stable (at most 100 runs), so JIT-compiled and interpreted languages are not penalized by a fixed count. |
 | `--first-run=separate` | Reports the cold first run on its own line (`first_run` in the JSON) and keeps it out of the statistics. |
-| `--output-metric NAME=REGEX` | Reads a number from the command's stdout (first capture group of the last match). Have the program time its algorithm and print it, so startup is separated from algorithm time. |
+| `--output-metric NAME=REGEX` | Reads a number from the command's stdout, or stderr with `--output-metric-stderr` (first capture group of the last match). Have the program time its algorithm and print it, so startup is separated from algorithm time. |
 | `--target-precision <PCT>` | Runs until the 95% confidence interval of the mean is within PCT of the mean, bounded by `--min-runs`, `--max-runs` and `--max-benchmarking-time`. Fast commands finish early. |
 
 Example (real output; the program prints `algo_ms=12.5` and sleeps 50 ms):
