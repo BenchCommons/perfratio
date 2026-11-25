@@ -179,9 +179,9 @@ Execution order across commands: 'grouped' (default) or 'round-robin' / 'interle
 .IP
 Import timing results from a JSON file previously exported by perfratio, joulex, or hyperfine to compare against live commands or re-export into other formats.
 .HP
-\fB\-w\fR, \fB\-\-warmup\fR \fINUM\fP
+\fB\-w\fR, \fB\-\-warmup\fR \fINUM|auto\fP
 .IP
-Perform \fINUM\fP warmup runs before the actual benchmark to fill caches.
+Perform \fINUM\fP warmup runs before the actual benchmark to fill caches. With \fIauto\fP, warmup runs are performed until the last 5 timings differ by at most 1% ((max \- min) / median), at most 100 runs.
 .HP
 \fB\-\-first\-run\fR \fIMODE\fP
 .IP
