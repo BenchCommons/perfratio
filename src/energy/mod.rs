@@ -61,23 +61,76 @@ impl EnergyBackend {
     }
 }
 
-/// Picks a working sampler for `pref`, or None if no backend is usable.
-pub fn select_sampler(pref: BackendPreference) -> Option<(Box<dyn EnergySampler>, EnergyBackend)> {
-    #[cfg(target_os = "linux")]
-    {
-        if pref != BackendPreference::Perf {
-            if let Some(s) = rapl::LinuxRaplSampler::try_new() {
-                return Some((Box::new(s), EnergyBackend::SysfsPowercap));
-            }
-        }
-        if pref != BackendPreference::Sysfs {
-            if let Some(s) = perf_rapl::PerfRaplSampler::try_new() {
-                return Some((Box::new(s), EnergyBackend::PerfPmu));
-            }
+/// Why no energy backend is usable; maps to `measurements.energy_unavailable_reason`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unavailable {
+    UnsupportedPlatform,
+    /// Neither the sysfs files nor the PMU exist
+    RaplNotFound,
+    /// Files or the PMU exist but cannot be read or opened (EACCES, paranoid)
+    RaplUnreadable,
+}
+
+impl Unavailable {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::UnsupportedPlatform => "unsupported_platform",
+            Self::RaplNotFound => "rapl_not_found",
+            Self::RaplUnreadable => "rapl_unreadable",
         }
     }
-    let _ = pref;
-    None
+}
+
+type Selected = (Box<dyn EnergySampler>, EnergyBackend);
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+type PerfOpener<'a> = &'a dyn Fn() -> Result<Box<dyn EnergySampler>, perf_rapl::PerfRaplError>;
+
+/// Backend selection with injectable sysfs root and perf opener.
+/// Applies the fallback and error classification rules of the perf-rapl spec.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn select_with(
+    pref: BackendPreference,
+    sysfs_root: &std::path::Path,
+    open_perf: PerfOpener<'_>,
+) -> Result<Selected, Unavailable> {
+    let mut unreadable = false;
+    if pref != BackendPreference::Perf {
+        match rapl::LinuxRaplSampler::try_new_at(sysfs_root) {
+            Some(s) => return Ok((Box::new(s), EnergyBackend::SysfsPowercap)),
+            None => unreadable |= rapl::domains_present(sysfs_root),
+        }
+    }
+    if pref != BackendPreference::Sysfs {
+        match open_perf() {
+            Ok(s) => return Ok((s, EnergyBackend::PerfPmu)),
+            Err(e) => unreadable |= e.is_unreadable(),
+        }
+    }
+    Err(if unreadable {
+        Unavailable::RaplUnreadable
+    } else {
+        Unavailable::RaplNotFound
+    })
+}
+
+/// Picks a working sampler for `pref`, or the reason no backend is usable.
+pub fn select_sampler_detailed(pref: BackendPreference) -> Result<Selected, Unavailable> {
+    #[cfg(target_os = "linux")]
+    {
+        select_with(pref, std::path::Path::new(rapl::SYSFS_ROOT), &|| {
+            perf_rapl::PerfRaplSampler::try_new().map(|s| Box::new(s) as Box<dyn EnergySampler>)
+        })
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = pref;
+        Err(Unavailable::UnsupportedPlatform)
+    }
+}
+
+/// Picks a working sampler for `pref`, or None if no backend is usable.
+pub fn select_sampler(pref: BackendPreference) -> Option<Selected> {
+    select_sampler_detailed(pref).ok()
 }
 
 pub fn get_energy_sampler(pref: BackendPreference) -> Box<dyn EnergySampler> {
@@ -138,5 +191,124 @@ mod tests {
             BackendPreference::Sysfs
         );
         assert!(BackendPreference::resolve(None, Some("bogus")).is_err());
+    }
+
+    struct Stub;
+    impl EnergySampler for Stub {
+        fn start(&mut self) {}
+        fn stop(&mut self) -> Option<f64> {
+            Some(1.0)
+        }
+        fn is_available(&self) -> bool {
+            true
+        }
+    }
+
+    fn fake_sysfs(root: &std::path::Path, content: Option<&str>) {
+        let d = root.join("intel-rapl:0");
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("name"), "package-0\n").unwrap();
+        if let Some(c) = content {
+            std::fs::write(d.join("energy_uj"), c).unwrap();
+        }
+    }
+
+    type PerfResult = Result<Box<dyn EnergySampler>, perf_rapl::PerfRaplError>;
+
+    fn perf_ok() -> PerfResult {
+        Ok(Box::new(Stub))
+    }
+
+    fn pick(
+        pref: BackendPreference,
+        root: &std::path::Path,
+        perf: fn() -> PerfResult,
+    ) -> Result<EnergyBackend, Unavailable> {
+        select_with(pref, root, &perf).map(|(_, b)| b)
+    }
+
+    #[test]
+    fn auto_prefers_sysfs() {
+        let dir = tempfile::tempdir().unwrap();
+        fake_sysfs(dir.path(), Some("123\n"));
+        assert_eq!(
+            pick(BackendPreference::Auto, dir.path(), perf_ok),
+            Ok(EnergyBackend::SysfsPowercap)
+        );
+    }
+
+    #[test]
+    fn auto_falls_back_to_perf_when_sysfs_missing_or_unreadable() {
+        let dir = tempfile::tempdir().unwrap();
+        // no sysfs at all
+        let missing = dir.path().join("nope");
+        assert_eq!(
+            pick(BackendPreference::Auto, &missing, perf_ok),
+            Ok(EnergyBackend::PerfPmu)
+        );
+        // energy_uj present but not parseable/readable
+        fake_sysfs(dir.path(), Some("garbage"));
+        assert_eq!(
+            pick(BackendPreference::Auto, dir.path(), perf_ok),
+            Ok(EnergyBackend::PerfPmu)
+        );
+    }
+
+    #[test]
+    fn forced_backends_do_not_fall_back() {
+        let dir = tempfile::tempdir().unwrap();
+        fake_sysfs(dir.path(), Some("123\n"));
+        assert_eq!(
+            pick(BackendPreference::Perf, dir.path(), perf_ok),
+            Ok(EnergyBackend::PerfPmu)
+        );
+        let missing = dir.path().join("nope");
+        assert_eq!(
+            pick(BackendPreference::Sysfs, &missing, perf_ok),
+            Err(Unavailable::RaplNotFound)
+        );
+        fn denied() -> PerfResult {
+            Err(perf_rapl::PerfRaplError::Os(13))
+        }
+        // forcing perf under a strict paranoid is unreadable, no sysfs fallback
+        assert_eq!(
+            pick(BackendPreference::Perf, dir.path(), denied),
+            Err(Unavailable::RaplUnreadable)
+        );
+    }
+
+    #[test]
+    fn classifies_unavailable_reasons() {
+        fn denied() -> PerfResult {
+            Err(perf_rapl::PerfRaplError::Os(13))
+        }
+        fn no_pmu() -> PerfResult {
+            Err(perf_rapl::PerfRaplError::NotFound)
+        }
+        fn enodev() -> PerfResult {
+            Err(perf_rapl::PerfRaplError::Os(19))
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("nope");
+        let auto = BackendPreference::Auto;
+        assert_eq!(pick(auto, &missing, no_pmu), Err(Unavailable::RaplNotFound));
+        assert_eq!(pick(auto, &missing, enodev), Err(Unavailable::RaplNotFound));
+        assert_eq!(
+            pick(auto, &missing, denied),
+            Err(Unavailable::RaplUnreadable)
+        );
+        // sysfs file exists but is unreadable content, PMU absent
+        fake_sysfs(dir.path(), Some("garbage"));
+        assert_eq!(
+            pick(auto, dir.path(), no_pmu),
+            Err(Unavailable::RaplUnreadable)
+        );
+        // domain directory without energy_uj counts as not found
+        let dir2 = tempfile::tempdir().unwrap();
+        fake_sysfs(dir2.path(), None);
+        assert_eq!(
+            pick(auto, dir2.path(), no_pmu),
+            Err(Unavailable::RaplNotFound)
+        );
     }
 }

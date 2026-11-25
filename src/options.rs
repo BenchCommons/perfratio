@@ -740,15 +740,19 @@ impl Options {
         };
 
         options.measure_energy = matches.get_flag("energy");
-        options.energy_backend = crate::energy::BackendPreference::resolve(
-            matches
-                .get_one::<String>("energy-backend")
-                .map(String::as_str),
-            std::env::var(crate::energy::ENERGY_BACKEND_ENV)
-                .ok()
-                .as_deref(),
-        )
-        .map_err(OptionsError::InvalidEnergyBackend)?;
+        // Only look at the backend choice (and its environment variable) when
+        // energy is requested, so a bad value cannot break runs without --energy.
+        if options.measure_energy {
+            options.energy_backend = crate::energy::BackendPreference::resolve(
+                matches
+                    .get_one::<String>("energy-backend")
+                    .map(String::as_str),
+                std::env::var(crate::energy::ENERGY_BACKEND_ENV)
+                    .ok()
+                    .as_deref(),
+            )
+            .map_err(OptionsError::InvalidEnergyBackend)?;
+        }
         options.deep_stats = matches.get_flag("deep-stats");
         options.filter_failed = matches.get_flag("filter-failed");
         options.suppress_outlier_warnings = matches.get_flag("suppress-outlier-warnings");

@@ -30,7 +30,8 @@ PMU discovery (root is injectable in code, default `/sys/bus/event_source/device
 - `auto`: use sysfs if every selected `energy_uj` is readable, otherwise try the perf PMU.
   The sysfs path is not modified.
 - `sysfs` / `perf`: only that backend; no fallback.
-- An invalid value is an error. On non-Linux every choice results in "unavailable".
+- An invalid value is an error, but only checked when `--energy` is given; without `--energy` the
+  choice and `PERFRATIO_ENERGY_BACKEND` are ignored. On non-Linux every choice results in "unavailable".
 
 ### JSON metadata (additive, `schemaVersion` MINOR bump)
 `perfratio.energy_backend`: `"sysfs_powercap"` or `"perf_pmu"`. Omitted when `--energy` is not
@@ -52,7 +53,10 @@ Today (before #240 lands) only `energy_backend` is exported.
 
 ## Testing
 - Unit: parsing of `type`, `event=`, `.scale`, `.unit`, `cpumask`; fake PMU tree via the
-  injectable root; count-to-Joule conversion incl. u64 wrap; backend preference/env resolution.
+  injectable root; count-to-Joule conversion incl. u64 wrap; backend preference/env resolution;
+  auto fallback selection and the `rapl_unreadable`/`rapl_not_found` classification via an injected
+  sysfs root and perf opener (errno mapped through `pmu::decide`: EACCES/EPERM and other errors are
+  unreadable, ENOENT/ENODEV are not found).
 - Not run on real hardware (CI and development machine are not bare-metal Linux with
   `perf_event_open`): the `perf_event_open`/`read` calls and the equality of both backends against
   `perf stat -e power/energy-pkg/`. The Linux-only code was not compiled locally on macOS; CI covers it.

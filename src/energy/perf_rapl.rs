@@ -70,6 +70,41 @@ pub fn parse_cpumask(s: &str) -> Option<Vec<u32>> {
     (!cpus.is_empty()).then_some(cpus)
 }
 
+/// Why the perf PMU backend could not be created.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PerfRaplError {
+    /// No usable `power/energy-pkg/` description in sysfs (no PMU, wrong unit, bad files)
+    NotFound,
+    /// `perf_event_open` or a counter read failed with this `errno`
+    Os(i32),
+}
+
+impl PerfRaplError {
+    /// Maps the error to a PMU status using the `pmu` diagnostics.
+    pub fn pmu_status(self) -> Option<crate::pmu::PmuStatus> {
+        match self {
+            Self::NotFound => None,
+            Self::Os(errno) => Some(crate::pmu::decide(
+                None,
+                Some(crate::pmu::Probe::Failed(errno)),
+            )),
+        }
+    }
+
+    /// True if the PMU exists but cannot be used (`rapl_unreadable`).
+    /// `ENOENT`/`ENODEV` from `perf_event_open` mean the PMU is not there.
+    pub fn is_unreadable(self) -> bool {
+        matches!(
+            self.pmu_status(),
+            Some(
+                crate::pmu::PmuStatus::Denied { .. }
+                    | crate::pmu::PmuStatus::Other { .. }
+                    | crate::pmu::PmuStatus::Unknown { .. }
+            )
+        )
+    }
+}
+
 impl PmuConfig {
     pub fn from_sysfs(root: &Path) -> Option<Self> {
         let read = |p: &str| fs::read_to_string(root.join(p)).ok();
@@ -112,7 +147,7 @@ mod linux {
         start_readings: Option<Vec<u64>>,
     }
 
-    fn open_counter(pmu_type: u32, config: u64, cpu: u32) -> Option<OwnedFd> {
+    fn open_counter(pmu_type: u32, config: u64, cpu: u32) -> Result<OwnedFd, PerfRaplError> {
         // Zeroed attr: counting mode, enabled-on-open is not needed because
         // `disabled` (bit 0 of the flags word) stays 0.
         let mut attr = [0u8; ATTR_SIZE];
@@ -132,53 +167,65 @@ mod linux {
             )
         };
         if fd < 0 {
-            return None;
+            let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
+            return Err(PerfRaplError::Os(errno));
         }
         // SAFETY: the kernel returned a new fd that we exclusively own.
-        Some(unsafe { OwnedFd::from_raw_fd(fd as i32) })
+        Ok(unsafe { OwnedFd::from_raw_fd(fd as i32) })
     }
 
-    fn read_counter(fd: &OwnedFd) -> Option<u64> {
+    fn read_counter(fd: &OwnedFd) -> Result<u64, PerfRaplError> {
         let mut buf = [0u8; 8];
         // SAFETY: `buf` is valid for 8 writable bytes.
         let n = unsafe { libc::read(fd.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len()) };
-        (n == 8).then(|| u64::from_ne_bytes(buf))
+        if n == 8 {
+            Ok(u64::from_ne_bytes(buf))
+        } else {
+            // Capture errno first; a short read has none, report EIO.
+            let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
+            Err(PerfRaplError::Os(if n < 0 && errno != 0 {
+                errno
+            } else {
+                5
+            }))
+        }
     }
 
     impl PerfRaplSampler {
-        pub fn try_new() -> Option<Self> {
+        pub fn try_new() -> Result<Self, PerfRaplError> {
             Self::try_new_at(Path::new(POWER_PMU_ROOT))
         }
 
-        /// Fails (None) if the PMU is missing or any counter cannot be opened,
-        /// e.g. `EACCES` under a strict `perf_event_paranoid`.
-        pub fn try_new_at(root: &Path) -> Option<Self> {
-            let cfg = PmuConfig::from_sysfs(root)?;
+        /// Fails if the PMU is missing ([`PerfRaplError::NotFound`]) or any counter
+        /// cannot be opened ([`PerfRaplError::Os`]), e.g. `EACCES` under a strict
+        /// `perf_event_paranoid`.
+        pub fn try_new_at(root: &Path) -> Result<Self, PerfRaplError> {
+            let cfg = PmuConfig::from_sysfs(root).ok_or(PerfRaplError::NotFound)?;
             let fds = cfg
                 .cpus
                 .iter()
                 .map(|&cpu| open_counter(cfg.pmu_type, cfg.config, cpu))
-                .collect::<Option<Vec<_>>>()?;
-            Some(Self {
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Self {
                 fds,
                 scale: cfg.scale,
                 start_readings: None,
             })
         }
 
-        fn read_all(&self) -> Option<Vec<u64>> {
+        fn read_all(&self) -> Result<Vec<u64>, PerfRaplError> {
             self.fds.iter().map(read_counter).collect()
         }
     }
 
     impl EnergySampler for PerfRaplSampler {
         fn start(&mut self) {
-            self.start_readings = self.read_all();
+            self.start_readings = self.read_all().ok();
         }
 
         fn stop(&mut self) -> Option<f64> {
             let start = self.start_readings.take()?;
-            let stop = self.read_all()?;
+            let stop = self.read_all().ok()?;
             Some(
                 start
                     .iter()
@@ -259,6 +306,25 @@ mod tests {
         assert_eq!(cfg.config, 2);
         assert_eq!(cfg.cpus, vec![0]);
         assert!((cfg.scale - 2.3283064365386963e-10).abs() < 1e-20);
+    }
+
+    #[test]
+    fn classifies_perf_errors() {
+        use crate::pmu::PmuStatus;
+        assert!(!PerfRaplError::NotFound.is_unreadable());
+        assert_eq!(PerfRaplError::NotFound.pmu_status(), None);
+        // EACCES, EPERM: PMU present, not allowed
+        assert!(PerfRaplError::Os(13).is_unreadable());
+        assert!(PerfRaplError::Os(1).is_unreadable());
+        assert_eq!(
+            PerfRaplError::Os(13).pmu_status(),
+            Some(PmuStatus::Denied { paranoid: None })
+        );
+        // ENOENT, ENODEV: no such PMU
+        assert!(!PerfRaplError::Os(2).is_unreadable());
+        assert!(!PerfRaplError::Os(19).is_unreadable());
+        // anything else is a real failure of an existing PMU
+        assert!(PerfRaplError::Os(22).is_unreadable());
     }
 
     #[test]
