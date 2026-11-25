@@ -13,13 +13,36 @@ counter pipeline and repeats nothing from here.
 | `topdown-tma.md` | #221 | `--topdown` |
 | `effective-frequency.md` | #222 | effective frequency, throttling warning |
 
+## Problem / Motivation
+
+The five feature specs (#211, #218, #220, #221, #222) all add events or derived values on top
+of the counter pipeline from #49. Without one shared description, each spec would repeat the
+`perf_event_open` privilege rules, the counter budget, hybrid-CPU handling and the JSON
+versioning rules, and the copies would drift apart. This file holds those rules once. It
+also records the main risk they share: the same counter name meaning user-only in one
+release and user + kernel in the next.
+
+## Contract
+
+This file defines no flag. It fixes the rules that the five specs must follow:
+
+- Privilege: user-space counting needs `perf_event_paranoid <= 2`; kernel-side counting needs
+  `<= 1` or `CAP_PERFMON`. The effective scope is always recorded in the export.
+- One fd per event; groups only where a spec requires them (#221).
+- Raw events come from a CPU allow-list, never from probing. Unknown model: `unavailable`,
+  reason `unsupported_cpu`.
+- All JSON additions are optional and additive (one `schemaVersion` MINOR bump per release),
+  per `output-schema-contract.md`. New `unavailable_reason` values are listed in the JSON section.
+- Every new event states its programmable counter budget (table below).
+- Hardware tests run only with `PERFRATIO_TEST_PERF=1`.
+
 ## Dependencies
 
 | Issue | Spec / PR | What these specs take from it |
 |---|---|---|
 | #49 `--counters` | `hardware-counters.md` (PR #276) | Counter pipeline: per-run fd lifecycle (open per run, enable before `spawn()`, read after `wait4`), `inherit`, overhead calibration, JSON `counters` arrays aligned with `times`, `measurements.counters`. |
-| #217 preflight | `pmu-preflight.md` (PR #268) | Permission probe and diagnostics. Its threshold (`perf_event_paranoid` <= 2) covers **user-space only** counting. Kernel-side counting (#218, #220) needs <= 1 or `CAP_PERFMON`; see "Privilege levels" below. |
-| #219 multiplexing | `pmu-multiplexing.md` (PR #271) | `read_format = TOTAL_TIME_ENABLED \| TOTAL_TIME_RUNNING`, scaling, `coverage`. Every counter added here goes through it. Groups need extra rules (below). |
+| #217 preflight | `pmu-preflight.md` (PR #268, merged) | Permission probe and diagnostics. Its threshold (`perf_event_paranoid` <= 2) covers **user-space only** counting. Kernel-side counting (#218, #220) needs <= 1 or `CAP_PERFMON`; see "Privilege levels" below. |
+| #219 multiplexing | `pmu-multiplexing.md` (PR #271, pending #271: the file is not on master until that PR merges) | `read_format = TOTAL_TIME_ENABLED \| TOTAL_TIME_RUNNING`, scaling, `coverage`. Every counter added here goes through it. Groups need extra rules (below). |
 | #240 schema | `output-schema-contract.md` | `schemaVersion`, `measurements` groups, additive-change rules. |
 | #213 derived metrics | open | IPC and miss rates. #222 reuses its formatting. |
 
@@ -128,6 +151,11 @@ value in an open enum is a **MINOR** change. Consumers ignore unknown keys.
   `instructions` as user-only and a later release makes the default scope `all`, the same key
   changes meaning. `counter-scope-modifiers.md` removes the risk by recording the effective
   scope in the export from the first release that has `--counters`; see its decision D1.
+  **D1 (default `--scope`, `all` or `user`): proposed, maintainer to confirm.** Recommended
+  default: `all` (user + kernel), matching `perf stat`. When the kernel denies it
+  (`perf_event_paranoid > 1` without `CAP_PERFMON`), perfratio falls back to user-only
+  visibly: it warns and records the effective scope and `kernel_scope_denied`. The specs
+  that mention the default scope assume `all` until the maintainer decides otherwise.
 - Per-run arrays stay aligned with `times`, filtered by `--omit-failed-runs` and outlier
   discarding exactly like the #49 arrays. `null` marks a run where a value could not be read.
 - `--import-json` round-trips every new field and ignores absent ones.
