@@ -369,6 +369,18 @@ impl<'a> BenchmarkRunner<'a> {
     /// `--aggregate-parameter-runs`, and never after `--max-runs` or when
     /// `budget` seconds have passed since `started`.
     pub fn needs_more_runs(&self, started: std::time::Instant, budget: Second) -> bool {
+        if let Some(duration) = self.options.duration {
+            // `--duration`: the budget is the summed run time, not the wall
+            // clock, so that it is reproducible with `--debug-mode`.
+            let runs = self.times_real.len() as u64;
+            if self.options.run_bounds.max.is_some_and(|max| runs >= max) {
+                return false;
+            }
+            let whole_cycles = runs.is_multiple_of(self.command.runs_multiple());
+            return runs < self.options.run_bounds.min
+                || !whole_cycles
+                || self.times_real.iter().sum::<Second>() < duration - 1e-9; // float sum slack
+        }
         let Some(target) = self.options.target_precision else {
             return false;
         };
@@ -467,7 +479,11 @@ impl<'a> BenchmarkRunner<'a> {
             + conclusion_overhead;
         self.initial_total_time = total_time;
 
-        let runs_in_min_time = (self.options.min_benchmarking_time / total_time) as u64;
+        let runs_in_min_time = (self
+            .options
+            .duration
+            .unwrap_or(self.options.min_benchmarking_time)
+            / total_time) as u64;
 
         let count = {
             let min = cmp::max(runs_in_min_time, self.options.run_bounds.min);
@@ -1225,6 +1241,9 @@ impl<'a> BenchmarkRunner<'a> {
                 .map(|[p05, p25, p75, p95]| benchmark_result::Percentiles { p05, p25, p75, p95 }),
             geometric_mean: crate::stats::summary::geometric_mean(&self.times_real),
             warmup_runs: self.warmup.filter(|w| w.auto).map(|w| w.runs),
+            target_duration_seconds: self.options.duration,
+            total_sampling_seconds: self.options.duration.map(|_| self.times_real.iter().sum()),
+            runs_done: self.options.duration.map(|_| self.times_real.len() as u64),
             user: user_mean,
             system: system_mean,
             cpu_percent,
@@ -1623,7 +1642,7 @@ impl<'a> Benchmark<'a> {
         // Gather statistics (perform the actual benchmark). With
         // --target-precision, the runs continue until the mean is precise
         // enough instead of stopping after the planned count.
-        let adaptive = self.options.target_precision.is_some();
+        let adaptive = self.options.target_precision.is_some() || self.options.duration.is_some();
         let started = std::time::Instant::now();
         let mut i = 0;
         loop {

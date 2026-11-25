@@ -35,6 +35,18 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub warmup_runs: Option<u64>,
 
+    /// `--duration`: the sampling budget in seconds
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_duration_seconds: Option<f64>,
+
+    /// `--duration`: summed run time in seconds of the runs performed
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_sampling_seconds: Option<f64>,
+
+    /// `--duration`: number of runs performed
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runs_done: Option<u64>,
+
     /// Geometric mean of the run times (omitted if a run took 0 s)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub geometric_mean: Option<Second>,
