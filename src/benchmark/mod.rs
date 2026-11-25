@@ -15,7 +15,8 @@ use crate::options::{
     OutputStyleOption, RunBounds,
 };
 use crate::outlier_detection::{
-    modified_zscores, outlier_indices, MAX_DISCARD_FRACTION, OUTLIER_THRESHOLD,
+    detect_outliers, modified_zscores, outlier_indices, OutlierReport, MAX_DISCARD_FRACTION,
+    OUTLIER_THRESHOLD,
 };
 use crate::output::format::{format_duration, format_duration_unit};
 use crate::output::progress_bar::{
@@ -1189,6 +1190,27 @@ impl<'a> BenchmarkRunner<'a> {
             }
         }
 
+        // Outlier counts per measured series
+        let outlier_report = if !self.timed_out {
+            let method = self.options.outlier_method;
+            detect_outliers(&self.times_real, method).map(|time| {
+                let memory: Vec<f64> = self.memory_usage_byte.iter().map(|&b| b as f64).collect();
+                let energy: Vec<f64> = self.energy_measurements.iter().flatten().copied().collect();
+                OutlierReport {
+                    method,
+                    time,
+                    memory_usage_byte: detect_outliers(&memory, method),
+                    energy_joules: if energy.len() == self.times_real.len() {
+                        detect_outliers(&energy, method)
+                    } else {
+                        None
+                    },
+                }
+            })
+        } else {
+            None
+        };
+
         // Warnings
         let mut warnings = vec![];
 
@@ -1287,8 +1309,35 @@ impl<'a> BenchmarkRunner<'a> {
                         diag.outlier_variance_fraction.unwrap_or_default(),
                         diag.outlier_count.unwrap_or_default(),
                     ));
-                } else if scores.iter().any(|&s| s.abs() > OUTLIER_THRESHOLD) {
+                } else if let Some(stats) = outlier_report
+                    .as_ref()
+                    .map(|r| r.time)
+                    .filter(|s| s.count > 0)
+                {
+                    warnings.push(Warnings::OutliersCounted {
+                        options: outlier_warning_options,
+                        stats,
+                        total: self.times_real.len(),
+                        method: self.options.outlier_method,
+                    });
+                } else if outlier_report.is_none()
+                    && scores.iter().any(|&s| s.abs() > OUTLIER_THRESHOLD)
+                {
                     warnings.push(Warnings::OutliersDetected(outlier_warning_options));
+                }
+                if let Some(report) = &outlier_report {
+                    for (metric, stats) in [
+                        ("memory usage", report.memory_usage_byte),
+                        ("energy", report.energy_joules),
+                    ] {
+                        if let Some(stats) = stats.filter(|s| s.is_severe()) {
+                            warnings.push(Warnings::MetricOutliers {
+                                metric,
+                                stats,
+                                total: self.times_real.len(),
+                            });
+                        }
+                    }
                 }
                 if diag.has_trend() {
                     warnings.push(Warnings::Trend(
@@ -1399,6 +1448,7 @@ impl<'a> BenchmarkRunner<'a> {
             resources,
             runs_planned,
             first_run,
+            outliers: outlier_report,
             diagnostics: (!diagnostics.is_empty()).then_some(diagnostics),
             per_run_parameters,
             baseline,
