@@ -517,6 +517,18 @@ pub fn build_command() -> Command {
                        that was reached."),
         )
         .arg(
+            Arg::new("duration")
+                .long("duration")
+                .action(ArgAction::Set)
+                .value_name("DURATION")
+                .conflicts_with_all(["runs", "target-precision"])
+                .help("Sample each command repeatedly until the summed run time reaches \
+                       DURATION (e.g. 5s, 5000ms, 1m), with at least 3 runs ('--min-runs' \
+                       and '--max-runs' override the floor and cap). Warmup, '--prepare' \
+                       and '--conclude' time is not counted. Conflicts with '--runs' and \
+                       '--target-precision'."),
+        )
+        .arg(
             Arg::new("timeout")
                 .long("timeout")
                 .action(ArgAction::Set)
