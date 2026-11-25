@@ -96,6 +96,8 @@ fn output_metric_stderr_requires_output_metric() {
         .stderr(predicate::str::contains("--output-metric"));
 }
 
+// The command uses POSIX shell syntax (`if [ ... ]`, `$((...))`), which cmd.exe cannot run.
+#[cfg(unix)]
 #[test]
 fn ignored_missing_metric_stays_aligned_with_times() {
     let dir = tempfile::tempdir().unwrap();
