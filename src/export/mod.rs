@@ -20,7 +20,7 @@ use self::csv::CsvExporter;
 use self::html::HtmlExporter;
 use self::json::JsonExporter;
 use self::markdown::MarkdownExporter;
-use self::metadata::{parse_labels, ExportMetadata};
+use self::metadata::{parse_labels, ExportMetadata, Measurements};
 use self::orgmode::OrgmodeExporter;
 use self::runs::RunsExporter;
 
@@ -116,7 +116,13 @@ impl ExportManager {
             exporters: vec![],
             time_unit,
             sort_order,
-            metadata: ExportMetadata::new(labels),
+            metadata: ExportMetadata::new(
+                labels,
+                Measurements::new(
+                    matches.get_flag("energy"),
+                    matches.get_flag("resource-usage"),
+                ),
+            ),
             delta_table: matches.try_get_one::<bool>("delta-table").ok().flatten() == Some(&true),
         };
 
