@@ -15,7 +15,7 @@ pub struct RunsExporter<M: MarkupExporter> {
     markup: M,
 }
 
-/// The iteration numbers (as in `JOULEX_ITERATION`) of the runs that are
+/// The iteration numbers (as in `PERFRATIO_ITERATION`) of the runs that are
 /// still present in `result`, i.e. without runs removed by
 /// `--omit-failed-runs` or `--discard-outliers`.
 fn iteration_numbers(result: &BenchmarkResult, kept: usize) -> Vec<usize> {
@@ -116,6 +116,7 @@ impl<M: MarkupExporter> Exporter for RunsExporter<M> {
         _reference: Option<&BenchmarkResult>,
         unit: Option<Unit>,
         _sort_order: SortOrder,
+        _metric: crate::metric::Metric,
     ) -> Result<Vec<u8>> {
         let unit = unit.unwrap_or_else(|| determine_unit_from_results(results));
         let tables: Vec<String> = results
@@ -155,6 +156,7 @@ mod tests {
                 None,
                 Some(Unit::MilliSecond),
                 SortOrder::Command,
+                crate::metric::Metric::Wall,
             )
             .unwrap();
         insta::assert_snapshot!(String::from_utf8(out).unwrap(), @r"
@@ -185,7 +187,13 @@ mod tests {
         let mut r = result();
         r.command_with_unused_parameters = "a | b".into();
         let out = RunsExporter::<OrgmodeExporter>::default()
-            .serialize(&[r], None, Some(Unit::MilliSecond), SortOrder::Command)
+            .serialize(
+                &[r],
+                None,
+                Some(Unit::MilliSecond),
+                SortOrder::Command,
+                crate::metric::Metric::Wall,
+            )
             .unwrap();
         assert!(String::from_utf8(out)
             .unwrap()
@@ -203,6 +211,7 @@ mod tests {
                     None,
                     Some(Unit::MilliSecond),
                     SortOrder::Command,
+                    crate::metric::Metric::Wall,
                 )
                 .unwrap(),
         )
@@ -212,7 +221,13 @@ mod tests {
         r.energy_joules = Some(vec![0.5]); // incomplete: some samples missing
         let out = String::from_utf8(
             RunsExporter::<MarkdownExporter>::default()
-                .serialize(&[r], None, Some(Unit::MilliSecond), SortOrder::Command)
+                .serialize(
+                    &[r],
+                    None,
+                    Some(Unit::MilliSecond),
+                    SortOrder::Command,
+                    crate::metric::Metric::Wall,
+                )
                 .unwrap(),
         )
         .unwrap();

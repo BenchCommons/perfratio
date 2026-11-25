@@ -1,7 +1,7 @@
 //! Tests for the run metadata, labels and relative speed in JSON/CSV exports.
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
@@ -9,7 +9,7 @@ fn export(args: &[&str]) -> (serde_json::Value, String) {
     let dir = tempfile::tempdir().unwrap();
     let json = dir.path().join("out.json");
     let csv = dir.path().join("out.csv");
-    hyperfine()
+    perfratio()
         .arg("--debug-mode")
         .args(args)
         .arg("--export-json")
@@ -76,14 +76,14 @@ fn csv_appends_relative_speed_and_label_columns() {
 fn new_json_exports_can_be_imported_again() {
     let dir = tempfile::tempdir().unwrap();
     let json = dir.path().join("out.json");
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--label", "k=v", "--export-json"])
         .arg(&json)
         .arg("sleep 0.1")
         .assert()
         .success();
 
-    hyperfine()
+    perfratio()
         .arg("--import-json")
         .arg(&json)
         .assert()
@@ -94,13 +94,13 @@ fn new_json_exports_can_be_imported_again() {
 #[test]
 fn rejects_invalid_labels() {
     for label in ["novalue", "bad key=1"] {
-        hyperfine()
+        perfratio()
             .args(["--debug-mode", "--label", label, "sleep 0.1"])
             .assert()
             .failure()
             .stderr(predicate::str::contains("Invalid label"));
     }
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--label",
@@ -131,13 +131,13 @@ fn json_percentiles_are_imported_back_unchanged() {
     let dir = tempfile::tempdir().unwrap();
     let first = dir.path().join("first.json");
     let second = dir.path().join("second.json");
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=5", "--export-json"])
         .arg(&first)
         .arg("sleep 0.1")
         .assert()
         .success();
-    hyperfine()
+    perfratio()
         .arg("--import-json")
         .arg(&first)
         .arg("--export-json")
@@ -158,7 +158,7 @@ fn json_percentiles_are_imported_back_unchanged() {
 fn json_starts_with_schema_version_and_has_no_joulex_key() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("out.json");
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=2", "--export-json"])
         .arg(&path)
         .arg("sleep 0.1")
@@ -167,7 +167,7 @@ fn json_starts_with_schema_version_and_has_no_joulex_key() {
     let text = std::fs::read_to_string(&path).unwrap();
     // `schemaVersion` must be the first key of the document
     assert!(
-        text.starts_with("{\n  \"schemaVersion\": \"1.0\","),
+        text.starts_with("{\n  \"schemaVersion\": \"1.1\","),
         "{text}"
     );
     let json: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -217,7 +217,7 @@ fn measurements_energy_requested_is_measured_or_unavailable_with_reason() {
 /// the metadata object and the measurements block (values of the host and time
 /// are masked).
 #[test]
-fn schema_1_0_layout_snapshot() {
+fn schema_1_1_layout_snapshot() {
     let (json, _) = export(&["--runs=2", "--label", "lang=rust", "sleep 0.1"]);
     let keys =
         |v: &serde_json::Value| -> Vec<String> { v.as_object().unwrap().keys().cloned().collect() };
@@ -290,6 +290,7 @@ fn schema_1_0_layout_snapshot() {
       - exit_codes
       - memory_usage_byte
     top_level:
+      - metric
       - perfratio
       - results
       - schemaVersion
@@ -307,7 +308,7 @@ fn import_json_reads_legacy_files_with_only_joulex_key() {
     )
     .unwrap();
     let out = dir.path().join("out.json");
-    hyperfine()
+    perfratio()
         .arg("--import-json")
         .arg(&legacy)
         .arg("--export-json")

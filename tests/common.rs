@@ -1,13 +1,13 @@
 use std::process::Command;
 
-pub fn hyperfine_raw_command() -> Command {
+pub fn perfratio_raw_command() -> Command {
     let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("perfratio"));
     cmd.current_dir("tests/");
     cmd
 }
 
-pub fn hyperfine() -> assert_cmd::Command {
-    assert_cmd::Command::from_std(hyperfine_raw_command())
+pub fn perfratio() -> assert_cmd::Command {
+    assert_cmd::Command::from_std(perfratio_raw_command())
 }
 
 #[allow(dead_code)]

@@ -19,22 +19,24 @@ struct RaplDomain {
     max_range: Option<u64>,
 }
 
-/// Classify why (or whether) RAPL can be used under `base`.
-#[cfg(any(target_os = "linux", test))]
-pub fn probe_at(base: &Path) -> Result<(), super::EnergyUnavailable> {
-    use super::EnergyUnavailable;
-    if !base.exists() {
-        return Err(EnergyUnavailable::RaplNotFound);
-    }
-    match LinuxRaplSampler::try_new_at(base) {
-        Some(_) => Ok(()),
-        None => Err(EnergyUnavailable::RaplUnreadable),
-    }
+/// Default location of the powercap RAPL tree.
+pub const SYSFS_ROOT: &str = "/sys/class/powercap/intel-rapl";
+
+/// True if any top-level domain has an `energy_uj` file, readable or not.
+/// Used to tell `rapl_unreadable` from `rapl_not_found`.
+pub fn domains_present(base: &Path) -> bool {
+    fs::read_dir(base).into_iter().flatten().flatten().any(|e| {
+        let name = e.file_name();
+        let name = name.to_string_lossy();
+        name.starts_with("intel-rapl:")
+            && name.matches(':').count() == 1
+            && e.path().join("energy_uj").exists()
+    })
 }
 
 impl LinuxRaplSampler {
     pub fn try_new() -> Option<Self> {
-        Self::try_new_at(Path::new("/sys/class/powercap/intel-rapl"))
+        Self::try_new_at(Path::new(SYSFS_ROOT))
     }
 
     pub fn try_new_at(base: &Path) -> Option<Self> {
@@ -324,20 +326,6 @@ mod tests {
         sampler.start();
         fs::write(pkg0.join("energy_uj"), "200000\n").unwrap();
         assert_eq!(sampler.stop(), None);
-    }
-
-    #[test]
-    fn test_probe_classifies_failures() {
-        use crate::energy::EnergyUnavailable;
-        let dir = tempdir().unwrap();
-        assert_eq!(
-            probe_at(&dir.path().join("missing")),
-            Err(EnergyUnavailable::RaplNotFound)
-        );
-        // powercap exists but no readable domain
-        assert_eq!(probe_at(dir.path()), Err(EnergyUnavailable::RaplUnreadable));
-        create_fake_rapl_domain(dir.path(), "intel-rapl:0", "package-0", 1000, None);
-        assert_eq!(probe_at(dir.path()), Ok(()));
     }
 
     #[test]

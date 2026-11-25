@@ -68,6 +68,9 @@ pub enum OptionsError<'a> {
     #[error("Invalid threshold '{0}' for '--discard-outliers': expected a positive number")]
     InvalidOutlierThreshold(String),
 
+    #[error("Invalid energy backend '{0}': expected auto, sysfs or perf")]
+    InvalidEnergyBackend(String),
+
     #[error("Invalid '--affinity': {0}")]
     InvalidAffinity(String),
     #[error("Invalid '--priority': {0}")]
@@ -76,6 +79,8 @@ pub enum OptionsError<'a> {
     InvalidTargetPrecision(String),
     #[error("Invalid duration '{0}' for '--timeout': {1}")]
     InvalidTimeout(String, String),
+    #[error("Invalid duration '{0}' for '--energy-baseline': {1}")]
+    InvalidEnergyBaseline(String, String),
     #[error("Invalid duration '{0}' for '--duration': {1}")]
     InvalidDuration(String, String),
     #[error("The --until pattern cannot be empty")]

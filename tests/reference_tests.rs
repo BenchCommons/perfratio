@@ -1,13 +1,13 @@
 //! Tests for choosing the reference of the relative speed comparison.
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
 /// Mock executor: `sleep X` "takes" exactly X seconds.
-fn hyperfine_debug() -> assert_cmd::Command {
-    let mut cmd = hyperfine();
+fn perfratio_debug() -> assert_cmd::Command {
+    let mut cmd = perfratio();
     cmd.arg("--debug-mode");
     cmd
 }
@@ -37,7 +37,7 @@ fn reference_is_used_even_when_results_were_imported() {
     let dir = tempfile::tempdir().unwrap();
     let imported = write_import_file(dir.path(), "imported slow", 5.0, 0);
 
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--runs=2")
         .arg("--import-json")
         .arg(&imported)
@@ -57,7 +57,7 @@ fn filtered_out_reference_falls_back_to_the_fastest_result() {
     let dir = tempfile::tempdir().unwrap();
     let imported = write_import_file(dir.path(), "imported fast", 0.001, 0);
 
-    hyperfine()
+    perfratio()
         .arg("--shell=none")
         .arg("--runs=2")
         .arg("--import-json")
@@ -76,7 +76,7 @@ fn without_reference_the_fastest_result_is_the_baseline() {
     let dir = tempfile::tempdir().unwrap();
     let imported = write_import_file(dir.path(), "imported slow", 5.0, 0);
 
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--runs=2")
         .arg("--import-json")
         .arg(&imported)
@@ -94,7 +94,7 @@ fn reference_is_respected_in_exports() {
     let csv_path = dir.path().join("out.csv");
     let html_path = dir.path().join("out.html");
 
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--runs=2")
         .arg("--reference=sleep 0.2")
         .arg("sleep 0.1")

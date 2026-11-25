@@ -5,11 +5,11 @@ authors = [
 ]
 categories = ["command-line-utilities"]
 description = "Multi-dimensional command-line benchmarking tool with Performance per Watt, Hardware Counter Ratios, and Deep Statistics"
-homepage = "https://github.com/UnitedOpen-Source/perfratio"
+homepage = "https://github.com/BenchCommons/perfratio"
 license = "MIT OR Apache-2.0"
 name = "perfratio"
 readme = "README.md"
-repository = "https://github.com/UnitedOpen-Source/perfratio"
+repository = "https://github.com/BenchCommons/perfratio"
 version = "0.1.0"
 edition = "2021"
 build = "build.rs"
@@ -21,7 +21,6 @@ include = [
     "/build.rs",
     "/tests/**/*",
     "/doc/perfratio.1",
-    "/doc/joulex.1",
     "/README.md",
     "/CHANGELOG.md",
     "/LICENSE-MIT",

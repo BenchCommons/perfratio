@@ -1,12 +1,12 @@
 //! Tests for the per-run table exports.
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 fn export(flag: &str, args: &[&str]) -> String {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("runs");
-    hyperfine()
+    perfratio()
         .arg("--debug-mode")
         .args(args)
         .arg(flag)
@@ -26,7 +26,7 @@ fn markdown_runs_export_has_one_table_per_benchmark() {
     assert!(out.contains("### `sleep 0.1`"));
     assert!(out.contains("### `sleep 0.2`"));
     assert!(out.contains("| Iteration | Wall [ms] |"));
-    // 3 runs per benchmark, numbered like JOULEX_ITERATION
+    // 3 runs per benchmark, numbered like PERFRATIO_ITERATION
     assert!(out.contains("| 0 | 100.0 |") && out.contains("| 2 | 100.0 |"));
     assert!(out.contains("| 0 | 200.0 |") && out.contains("| 2 | 200.0 |"));
     assert!(!out.contains("| 3 |"));
@@ -48,7 +48,7 @@ fn orgmode_and_asciidoc_runs_exports_are_written() {
 fn omitted_runs_leave_gaps_in_the_iteration_numbers() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("runs.md");
-    hyperfine()
+    perfratio()
         .args([
             "-N",
             "--runs=4",
@@ -57,7 +57,7 @@ fn omitted_runs_leave_gaps_in_the_iteration_numbers() {
             "--export-markdown-runs",
         ])
         .arg(&path)
-        .arg("sh -c '[ \"$JOULEX_ITERATION\" = 1 ] && exit 1; exit 0'")
+        .arg("sh -c '[ \"$PERFRATIO_ITERATION\" = 1 ] && exit 1; exit 0'")
         .assert()
         .success();
     let out = std::fs::read_to_string(&path).unwrap();

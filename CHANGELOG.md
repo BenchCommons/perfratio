@@ -12,6 +12,7 @@ Generated from the merged pull requests (#1 to #243). Pull requests that bump de
 
 - Ambiguous alias dropped in round-robin mode when computing the common run count ([#145](https://github.com/BenchCommons/perfratio/pull/145), issue [#102](https://github.com/BenchCommons/perfratio/issues/102), [#111](https://github.com/BenchCommons/perfratio/issues/111))
 - Project renamed from joulex to perfratio (crate, binary, man page, `$PERFRATIO_ITERATION`); see docs/MIGRATION.md ([#224](https://github.com/BenchCommons/perfratio/pull/224))
+- Removed the `joulex` shell completions, the `joulex.1` man page and the `joulex_eta` progress key; `$JOULEX_ITERATION`, `$HYPERFINE_ITERATION` and `$JOULEX_SYSTEM_CHECK_ROOT` still work but warn and are removed in the release after 1.0 ([#225](https://github.com/BenchCommons/perfratio/issues/225))
 
 ### Features
 

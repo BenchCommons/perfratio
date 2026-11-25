@@ -1,7 +1,7 @@
 //! Tests for --aggregate-parameter-runs (#74) and --parameter-sample (#57).
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 use serde_json::Value;
@@ -9,7 +9,7 @@ use serde_json::Value;
 fn export(args: &[&str]) -> Vec<Value> {
     let dir = tempfile::tempdir().unwrap();
     let json = dir.path().join("out.json");
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--style=basic", "--export-json"])
         .arg(&json)
         .args(args)
@@ -65,7 +65,7 @@ fn aggregate_rounds_up_to_whole_cycles_per_template() {
 
 #[test]
 fn aggregate_names_and_errors() {
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=1", "--aggregate-parameter-runs"])
         .args(["-L", "t", "1,2", "sleep 0.{t}"])
         .assert()
@@ -73,7 +73,7 @@ fn aggregate_names_and_errors() {
         .stdout(predicate::str::contains(
             "Benchmark 1: sleep 0.{t} (aggregated over 2 parameter values)",
         ));
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--aggregate-parameter-runs", "sleep 0.1"])
         .assert()
         .failure()
@@ -139,7 +139,7 @@ fn sample_combines_with_list_parameters() {
 
 #[test]
 fn sample_parameter_name_errors() {
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--parameter-sample",
@@ -150,7 +150,7 @@ fn sample_parameter_name_errors() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("reserved"));
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "-L",
@@ -172,7 +172,7 @@ fn setup_cannot_use_a_per_run_parameter() {
         ["--parameter-sample", "f", "a,b"],
         ["--aggregate-parameter-runs", "-L", "f"],
     ] {
-        let mut cmd = hyperfine();
+        let mut cmd = perfratio();
         cmd.args(["--debug-mode", "--setup", "echo {f}"]).args(args);
         if args[0] == "--aggregate-parameter-runs" {
             cmd.arg("a,b");
