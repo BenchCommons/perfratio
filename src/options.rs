@@ -280,6 +280,10 @@ pub struct Options {
     /// fraction of the mean (0.01 = ±1%)
     pub target_precision: Option<f64>,
 
+    /// `--duration`: sample each command until its summed run time (seconds)
+    /// reaches this budget
+    pub duration: Option<Second>,
+
     /// `--max-benchmarking-time`: time budget per command for
     /// `--target-precision`
     pub max_benchmarking_time: Second,
@@ -378,6 +382,9 @@ pub struct Options {
 
     /// `--output-metric`: custom metrics to extract from command output
     pub output_metrics: Vec<crate::output_metric::OutputMetric>,
+
+    /// Extract `--output-metric` values from stderr instead of stdout
+    pub output_metrics_stderr: bool,
 }
 
 impl Default for Options {
@@ -389,6 +396,7 @@ impl Default for Options {
             first_run: FirstRunPolicy::default(),
             min_benchmarking_time: 3.0,
             target_precision: None,
+            duration: None,
             max_benchmarking_time: 60.0,
             command_failure_action: CmdFailureAction::RaiseError,
             reference_command: None,
@@ -421,6 +429,7 @@ impl Default for Options {
             timeout: None,
             until: None,
             output_metrics: Vec::new(),
+            output_metrics_stderr: false,
         }
     }
 }
@@ -482,6 +491,17 @@ impl Options {
             }
             (None, None) => {}
         };
+
+        if let Some(val) = matches.get_one::<String>("duration") {
+            let budget = crate::util::units::parse_duration(val)
+                .map_err(|e| OptionsError::InvalidDuration(val.clone(), e))?;
+            options.duration = Some(budget.as_secs_f64());
+            // 3 runs are enough for a mean and a standard deviation; the
+            // default minimum of 10 would defeat short budgets.
+            if min_runs.is_none() {
+                options.run_bounds.min = options.run_bounds.max.map_or(3, |max| max.min(3));
+            }
+        }
 
         options.setup_command = matches
             .get_many::<String>("setup")
@@ -682,6 +702,21 @@ impl Options {
                 }
                 options.output_metrics.push(parsed);
             }
+        }
+
+        options.output_metrics_stderr = matches.get_flag("output-metric-stderr");
+        if !options.output_metrics.is_empty()
+            && options.command_output_policies.iter().any(|p| {
+                matches!(
+                    p,
+                    CommandOutputPolicy::File(_) | CommandOutputPolicy::Inherit
+                )
+            })
+        {
+            return Err(OptionsError::InvalidOutputMetric(
+                "--output-metric cannot be combined with '--output=inherit' or an output file"
+                    .into(),
+            ));
         }
 
         options.command_input_policy = if let Some(path_str) = matches.get_one::<String>("input") {

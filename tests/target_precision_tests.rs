@@ -146,15 +146,31 @@ mod unix {
         assert!(started.elapsed().as_secs_f64() < 15.0);
     }
 
+    /// Alternates between 10 ms and 30 ms by run number, so the spread is
+    /// fixed by construction and a 0.1% target can't be reached in 11 runs,
+    /// however quiet the machine is.
+    fn alternating(counter: &std::path::Path) -> String {
+        let c = counter.display();
+        format!(
+            "n=$(cat {c} 2>/dev/null || echo 0); n=$((n + 1)); echo $n > {c}; \
+             sleep 0.0$(( n % 2 * 2 + 1 ))"
+        )
+    }
+
     #[test]
     fn round_robin_stops_each_command_at_its_target() {
+        // A constant `sleep 0.01` could reach ±0.1% after the minimum of 10
+        // runs on a quiet machine and stop before 11 (#244).
+        let dir = tempfile::tempdir().unwrap();
+        let a = alternating(&dir.path().join("a"));
+        let b = alternating(&dir.path().join("b"));
         perfratio()
             .args([
                 "--target-precision=0.1%",
                 "--max-runs=11",
                 "--schedule=round-robin",
             ])
-            .args(["--style=basic", NOISY, "sleep 0.01"])
+            .args(["--style=basic", &a, &b])
             .assert()
             .success()
             .stdout(predicate::str::contains("11 runs (±").count(2));

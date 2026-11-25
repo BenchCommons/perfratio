@@ -56,7 +56,7 @@ fn summary_shows_absolute_means_and_differences() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "sleep 0.5 ran\n    2.00 ± 0.00 times faster than sleep 1 (1.000 s, +0.500 s)\n    4.00 ± 0.00 times faster than sleep 2 (2.000 s, +1.500 s)",
+            "sleep 0.5 ran\n    2.00 ± 0.00 times faster than sleep 1 (1.000 s, +0.500 s)  [-] significant regression (p < 0.001)\n    4.00 ± 0.00 times faster than sleep 2 (2.000 s, +1.500 s)  [-] significant regression (p < 0.001)",
         ));
 }
 

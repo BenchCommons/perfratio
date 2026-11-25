@@ -18,10 +18,16 @@ identifiers remained in code, tests, docs and packaging files.
 | `$JOULEX_SYSTEM_CHECK_ROOT` (hidden test hook) | Still read as fallback for `$PERFRATIO_SYSTEM_CHECK_ROOT`, with a deprecation warning. | next release |
 
 The aliases live in `src/util/legacy.rs` and the fallback in `src/system_check.rs`.
-Detection of the iteration variables is textual, so a variable set by a wrapper
-script that is invoked from the command line cannot trigger the warning.
+Detection of the iteration variables is textual and only counts `$NAME`,
+`${NAME}` and `%NAME%` references in the command line, not other mentions such
+as file names. A variable set by a wrapper script that is invoked from the
+command line cannot trigger the warning.
 
 ### Removed immediately
+
+These removals take effect without a deprecation period and are breaking for
+anyone using them: the `joulex` completions, `doc/joulex.1` and the
+`joulex_eta` progress template key. They are listed in `docs/MIGRATION.md`.
 
 - `joulex` shell completions (`build.rs`, fish snippet in `src/cli.rs`) and `doc/joulex.1`.
 - Fallback progress template key `joulex_eta`.
@@ -34,7 +40,7 @@ script that is invoked from the command line cannot trigger the warning.
 ### JSON export
 
 No change in this spec. The legacy `"joulex"` key in `src/export/json.rs` is
-handled separately; `perfratio` stays the contract key. Import of files written by
+removed in 1.0 by #262; `perfratio` stays the contract key. Import of files written by
 hyperfine keeps working.
 
 ### Kept on purpose

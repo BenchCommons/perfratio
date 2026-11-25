@@ -16,6 +16,9 @@ pub const LEGACY_FAKE_ROOT_ENV: &str = "JOULEX_SYSTEM_CHECK_ROOT";
 pub enum Status {
     /// Nothing to worry about
     Ok,
+    /// A capability that is unavailable but not needed by default; passes
+    /// `--check-system=strict`
+    Info,
     /// A condition that often adds noise (load, battery, heat)
     Warn,
     /// A setting that is known to add noise (frequency scaling, turbo boost)
@@ -52,6 +55,7 @@ impl fmt::Display for Check {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let symbol = match self.status {
             Status::Ok => colors::green("✔"),
+            Status::Info => colors::yellow("i"),
             Status::Warn => colors::yellow("!"),
             Status::Fail => colors::red("✖"),
         };
@@ -111,7 +115,9 @@ pub fn report(checks: &[Check]) -> String {
 
 /// Whether every check passed.
 pub fn all_passed(checks: &[Check]) -> bool {
-    checks.iter().all(|c| c.status == Status::Ok)
+    checks
+        .iter()
+        .all(|c| matches!(c.status, Status::Ok | Status::Info))
 }
 
 // ---------------------------------------------------------------------------
@@ -180,7 +186,42 @@ fn linux_checks(root: &Path, cpus: usize) -> Vec<Check> {
         checks.push(check);
     }
 
+    let paranoid = read(root, "/proc/sys/kernel/perf_event_paranoid")
+        .and_then(|c| crate::pmu::parse_paranoid(&c));
+    if let Some(check) = pmu_check(paranoid, pmu_probe(root)) {
+        checks.push(check);
+    }
+
     checks
+}
+
+/// The real probe runs only against the real `/`, never a fake root.
+#[cfg(target_os = "linux")]
+fn pmu_probe(root: &Path) -> Option<crate::pmu::Probe> {
+    (root == Path::new("/")).then(crate::pmu::probe)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn pmu_probe(_root: &Path) -> Option<crate::pmu::Probe> {
+    None
+}
+
+/// Hardware counters (`--counters`) are optional, so a problem is informational.
+fn pmu_check(paranoid: Option<i32>, probe: Option<crate::pmu::Probe>) -> Option<Check> {
+    if paranoid.is_none() && probe.is_none() {
+        return None;
+    }
+    let status = crate::pmu::decide(paranoid, probe);
+    let level = if crate::pmu::is_problem(&status) {
+        Status::Info
+    } else {
+        Status::Ok
+    };
+    let check = Check::new("HW counters", level, crate::pmu::summary(&status));
+    Some(match crate::pmu::hint(&status) {
+        Some(hint) => check.with_hint(hint),
+        None => check,
+    })
 }
 
 /// All CPUs should use the `performance` governor.
@@ -705,6 +746,7 @@ mod tests {
         write("sys/class/power_supply/AC/type", "Mains\n");
         write("sys/class/power_supply/AC/online", "1\n");
         write("sys/class/thermal/thermal_zone0/temp", "47000\n");
+        write("proc/sys/kernel/perf_event_paranoid", "3\n");
 
         let checks = linux_checks(dir.path(), 8);
         let summary: Vec<(&str, Status, &str)> = checks
@@ -719,8 +761,29 @@ mod tests {
                 ("Load average", Status::Ok, "0.05 (8 CPUs)"),
                 ("Power source", Status::Ok, "AC"),
                 ("Thermal", Status::Ok, "max 47 °C"),
+                (
+                    "HW counters",
+                    Status::Info,
+                    "permission denied (perf_event_paranoid=3)"
+                ),
             ]
         );
+        assert!(!all_passed(&checks)); // the governor fails
+    }
+
+    #[test]
+    fn pmu_is_informational() {
+        use crate::pmu::Probe;
+        assert!(pmu_check(None, None).is_none());
+        let denied = pmu_check(Some(3), None).unwrap();
+        assert_eq!(denied.status, Status::Info);
+        assert!(denied.hint.unwrap().contains("perf_event_paranoid=2"));
+        assert!(all_passed(&[pmu_check(Some(3), None).unwrap()]));
+        let ok = pmu_check(Some(1), Some(Probe::Opened)).unwrap();
+        assert_eq!(ok.status, Status::Ok);
+        assert_eq!(pmu_check(Some(2), None).unwrap().status, Status::Ok);
+        let vm = pmu_check(Some(2), Some(Probe::Failed(2))).unwrap();
+        assert_eq!(vm.status, Status::Info);
     }
 
     #[test]
