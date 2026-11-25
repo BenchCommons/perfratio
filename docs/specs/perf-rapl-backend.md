@@ -49,7 +49,7 @@ The reason is computed from both backends under the effective preference:
   strict `perf_event_paranoid` gives `rapl_unreadable`, not a sysfs fallback).
 The reason set stays as in #240; no new value is needed. The #240 implementation must call
 `energy::select_sampler` (or its successor) so status, reason and `energy_backend` agree.
-Today (before #240 lands) only `energy_backend` is exported.
+Implemented: `Measurements::new` and `perfratio.energy_backend` both use the result of `energy::select_sampler_detailed`.
 
 ## Testing
 - Unit: parsing of `type`, `event=`, `.scale`, `.unit`, `cpumask`; fake PMU tree via the
