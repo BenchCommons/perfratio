@@ -173,6 +173,7 @@ impl EnergySampler for DummySampler {
 
 #[cfg(test)]
 mod tests {
+    #![cfg_attr(windows, allow(dead_code, unused_imports))]
     use super::*;
 
     #[test]
@@ -228,6 +229,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(windows))] // sysfs fixture dirs contain ":"
     fn auto_prefers_sysfs() {
         let dir = tempfile::tempdir().unwrap();
         fake_sysfs(dir.path(), Some("123\n"));
@@ -238,6 +240,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(windows))] // sysfs fixture dirs contain ":"
     fn auto_falls_back_to_perf_when_sysfs_missing_or_unreadable() {
         let dir = tempfile::tempdir().unwrap();
         // no sysfs at all
@@ -255,6 +258,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(windows))] // sysfs fixture dirs contain ":"
     fn forced_backends_do_not_fall_back() {
         let dir = tempfile::tempdir().unwrap();
         fake_sysfs(dir.path(), Some("123\n"));
@@ -278,6 +282,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(windows))] // sysfs fixture dirs contain ":"
     fn classifies_unavailable_reasons() {
         fn denied() -> PerfResult {
             Err(perf_rapl::PerfRaplError::Os(13))
