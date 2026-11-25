@@ -119,6 +119,11 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diagnostics: Option<crate::stats::diagnostics::Diagnostics>,
 
+    /// Outlier counts and percentages (time, memory, energy) by
+    /// `--outlier-method`; absent with fewer than 4 runs
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outliers: Option<crate::outlier_detection::OutlierReport>,
+
     /// Which per-run parameter values each run used (`--parameter-sample`,
     /// `--aggregate-parameter-runs`), and the statistics per value
     #[serde(default, skip_serializing_if = "Option::is_none")]

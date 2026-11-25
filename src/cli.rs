@@ -927,6 +927,17 @@ pub fn build_command() -> Command {
                        Example:  perfratio --discard-outliers=20 'make'"),
         )
         .arg(
+            Arg::new("outlier-method")
+                .long("outlier-method")
+                .action(ArgAction::Set)
+                .value_name("METHOD")
+                .value_parser(["iqr", "modified-z"])
+                .default_value("iqr")
+                .help("How outliers are counted for the outlier warning and the 'outliers' export \
+                       field: 'iqr' (Tukey's fences, 1.5 × interquartile range) or 'modified-z' \
+                       (modified Z-score). Does not affect --discard-outliers."),
+        )
+        .arg(
             Arg::new("suppress-outlier-warnings")
                 .long("suppress-outlier-warnings")
                 .action(ArgAction::SetTrue)
