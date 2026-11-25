@@ -125,9 +125,9 @@ mod linux {
             libc::syscall(
                 libc::SYS_perf_event_open,
                 attr.as_ptr(),
-                -1 as libc::c_int,
-                cpu as libc::c_int,
-                -1 as libc::c_int,
+                -1_i32,
+                cpu as i32,
+                -1_i32,
                 PERF_FLAG_FD_CLOEXEC,
             )
         };
