@@ -45,6 +45,8 @@ pub mod export;
 #[doc(hidden)]
 pub mod import;
 #[doc(hidden)]
+pub mod metric;
+#[doc(hidden)]
 pub mod options;
 #[doc(hidden)]
 pub mod outlier_detection;
@@ -56,6 +58,8 @@ pub mod output_metric;
 pub mod parameter;
 #[doc(hidden)]
 pub mod pmu;
+#[doc(hidden)]
+pub mod pmu_scaling;
 #[doc(hidden)]
 pub mod stats;
 #[doc(hidden)]

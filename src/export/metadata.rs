@@ -16,6 +16,10 @@ pub struct ExportMetadata {
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub labels: BTreeMap<String, String>,
     pub system: SystemInfo,
+    /// Energy backend that produced the samples (`sysfs_powercap` or `perf_pmu`).
+    /// Omitted unless `--energy` is given and a backend is usable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub energy_backend: Option<&'static str>,
     /// Which measurement groups were measured, unavailable or not requested
     pub measurements: Measurements,
 }
@@ -38,32 +42,23 @@ pub struct Measurements {
     pub time: MeasurementStatus,
     pub memory: MeasurementStatus,
     pub energy: MeasurementStatus,
-    /// Why energy is `unavailable`; an open enum (see `EnergyUnavailable::as_str`)
+    /// Why energy is `unavailable`; an open enum (see `energy::Unavailable::as_str`)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub energy_unavailable_reason: Option<&'static str>,
     pub resources: MeasurementStatus,
 }
 
 impl Measurements {
-    pub fn new(energy_requested: bool, resources_requested: bool) -> Self {
-        Self::with_energy_probe(energy_requested, resources_requested, || {
-            crate::energy::probe()
-        })
-    }
-
-    pub fn with_energy_probe(
-        energy_requested: bool,
+    /// `energy` is the backend selection result, `None` if `--energy` was not given.
+    pub fn new(
+        energy: Option<Result<crate::energy::EnergyBackend, crate::energy::Unavailable>>,
         resources_requested: bool,
-        probe: impl FnOnce() -> Result<(), crate::energy::EnergyUnavailable>,
     ) -> Self {
         use MeasurementStatus::*;
-        let (energy, reason) = if !energy_requested {
-            (NotRequested, None)
-        } else {
-            match probe() {
-                Ok(()) => (Measured, None),
-                Err(reason) => (Unavailable, Some(reason.as_str())),
-            }
+        let (energy, reason) = match energy {
+            None => (NotRequested, None),
+            Some(Ok(_)) => (Measured, None),
+            Some(Err(reason)) => (Unavailable, Some(reason.as_str())),
         };
         Measurements {
             time: Measured,
@@ -113,6 +108,7 @@ impl ExportMetadata {
                 cpu_model: cpu_model(),
                 kernel: kernel_release(),
             },
+            energy_backend: None,
             measurements,
         }
     }
@@ -332,7 +328,7 @@ mod tests {
     #[test]
     fn measurements_reflect_requests_and_energy_availability() {
         use MeasurementStatus::*;
-        let m = Measurements::with_energy_probe(false, false, || panic!("not probed"));
+        let m = Measurements::new(None, false);
         assert_eq!(
             (m.energy, m.energy_unavailable_reason),
             (NotRequested, None)
@@ -342,13 +338,11 @@ mod tests {
             (Measured, Measured, NotRequested)
         );
 
-        let m = Measurements::with_energy_probe(true, true, || Ok(()));
+        let m = Measurements::new(Some(Ok(crate::energy::EnergyBackend::PerfPmu)), true);
         assert_eq!((m.energy, m.energy_unavailable_reason), (Measured, None));
         assert_eq!(m.resources, Measured);
 
-        let m = Measurements::with_energy_probe(true, false, || {
-            Err(crate::energy::EnergyUnavailable::RaplUnreadable)
-        });
+        let m = Measurements::new(Some(Err(crate::energy::Unavailable::RaplUnreadable)), false);
         assert_eq!(m.energy, Unavailable);
         assert_eq!(m.energy_unavailable_reason, Some("rapl_unreadable"));
     }

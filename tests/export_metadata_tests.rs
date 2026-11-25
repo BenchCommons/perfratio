@@ -167,7 +167,7 @@ fn json_starts_with_schema_version_and_has_no_joulex_key() {
     let text = std::fs::read_to_string(&path).unwrap();
     // `schemaVersion` must be the first key of the document
     assert!(
-        text.starts_with("{\n  \"schemaVersion\": \"1.0\","),
+        text.starts_with("{\n  \"schemaVersion\": \"1.1\","),
         "{text}"
     );
     let json: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -217,7 +217,7 @@ fn measurements_energy_requested_is_measured_or_unavailable_with_reason() {
 /// the metadata object and the measurements block (values of the host and time
 /// are masked).
 #[test]
-fn schema_1_0_layout_snapshot() {
+fn schema_1_1_layout_snapshot() {
     let (json, _) = export(&["--runs=2", "--label", "lang=rust", "sleep 0.1"]);
     let keys =
         |v: &serde_json::Value| -> Vec<String> { v.as_object().unwrap().keys().cloned().collect() };
@@ -290,6 +290,7 @@ fn schema_1_0_layout_snapshot() {
       - exit_codes
       - memory_usage_byte
     top_level:
+      - metric
       - perfratio
       - results
       - schemaVersion

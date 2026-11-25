@@ -25,6 +25,7 @@ use self::orgmode::OrgmodeExporter;
 use self::runs::RunsExporter;
 
 use crate::benchmark::benchmark_result::BenchmarkResult;
+use crate::metric::Metric;
 use crate::options::SortOrder;
 use crate::util::units::Unit;
 
@@ -71,6 +72,7 @@ trait Exporter {
         reference: Option<&BenchmarkResult>,
         unit: Option<Unit>,
         sort_order: SortOrder,
+        metric: Metric,
     ) -> Result<Vec<u8>>;
 }
 
@@ -91,6 +93,7 @@ pub struct ExportManager {
     exporters: Vec<ExporterWithTarget>,
     time_unit: Option<Unit>,
     sort_order: SortOrder,
+    metric: Metric,
     /// Run metadata for the JSON and CSV exports
     metadata: ExportMetadata,
     /// `--delta-table`
@@ -104,6 +107,7 @@ impl ExportManager {
         matches: &ArgMatches,
         time_unit: Option<Unit>,
         sort_order: SortOrder,
+        metric: Metric,
     ) -> Result<Self> {
         let labels = parse_labels(
             matches
@@ -112,17 +116,33 @@ impl ExportManager {
                 .flatten()
                 .map(String::as_str),
         )?;
+        let energy = if matches.get_flag("energy") || metric == Metric::Energy {
+            let pref = crate::energy::BackendPreference::resolve(
+                matches
+                    .get_one::<String>("energy-backend")
+                    .map(String::as_str),
+                std::env::var(crate::energy::ENERGY_BACKEND_ENV)
+                    .ok()
+                    .as_deref(),
+            )
+            .map_err(|v| {
+                anyhow::anyhow!("Invalid energy backend '{v}': expected auto, sysfs or perf")
+            })?;
+            Some(crate::energy::select_sampler_detailed(pref).map(|(_, backend)| backend))
+        } else {
+            None
+        };
+        let mut metadata = ExportMetadata::new(
+            labels,
+            Measurements::new(energy, matches.get_flag("resource-usage")),
+        );
+        metadata.energy_backend = energy.and_then(Result::ok).map(|b| b.as_str());
         let mut export_manager = Self {
             exporters: vec![],
             time_unit,
             sort_order,
-            metadata: ExportMetadata::new(
-                labels,
-                Measurements::new(
-                    matches.get_flag("energy"),
-                    matches.get_flag("resource-usage"),
-                ),
-            ),
+            metric,
+            metadata,
             delta_table: matches.try_get_one::<bool>("delta-table").ok().flatten() == Some(&true),
         };
 
@@ -205,9 +225,13 @@ impl ExportManager {
     ) -> Result<()> {
         for e in &self.exporters {
             let content = || {
-                let mut bytes =
-                    e.exporter
-                        .serialize(results, reference, self.time_unit, self.sort_order)?;
+                let mut bytes = e.exporter.serialize(
+                    results,
+                    reference,
+                    self.time_unit,
+                    self.sort_order,
+                    self.metric,
+                )?;
                 if e.append_delta_table {
                     bytes.extend(crate::delta_table::markdown(results, reference).into_bytes());
                 }

@@ -459,10 +459,61 @@ pub fn build_command() -> Command {
                 .help("Measure energy consumption (Joules) and average power draw (Watts) using hardware sensors."),
         )
         .arg(
+            Arg::new("energy-baseline")
+                .long("energy-baseline")
+                .action(ArgAction::Set)
+                .value_name("DURATION")
+                .requires("energy")
+                .allow_hyphen_values(true)
+                .help("Measure idle power for DURATION (e.g. 2s) before benchmarking and also \
+                       report net energy = measured - idle power x run time. Off by default."),
+        )
+        .arg(
+            Arg::new("energy-backend")
+                .long("energy-backend")
+                .value_name("BACKEND")
+                .value_parser(["auto", "sysfs", "perf"])
+                .help(
+                    "Energy backend for '--energy' (Linux): 'auto' (default) uses sysfs powercap \
+                     and falls back to the perf power PMU when energy_uj is unreadable, 'sysfs' \
+                     and 'perf' force one. Can also be set with PERFRATIO_ENERGY_BACKEND.",
+                ),
+        )
+        .arg(
             Arg::new("deep-stats")
                 .long("deep-stats")
                 .action(ArgAction::SetTrue)
                 .help("Perform deep statistical analysis (bootstrapped confidence intervals for mean, median, and stddev, plus hypothesis testing)."),
+        )
+        .arg(
+            Arg::new("metric")
+                .long("metric")
+                .action(ArgAction::Set)
+                .value_name("METRIC")
+                .value_parser([
+                    "wall",
+                    "wall-clock",
+                    "time",
+                    "cpu",
+                    "total-cpu",
+                    "user",
+                    "system",
+                    "energy",
+                    "memory",
+                    "rss",
+                    "peak-memory",
+                ])
+                .default_value("wall")
+                .hide_default_value(true)
+                .help(
+                    "Primary metric used for statistics, outlier detection, comparison, and sorting:\n  \
+                       * 'wall' (default, aliases: 'wall-clock', 'time'): wall-clock time\n  \
+                       * 'cpu' (alias: 'total-cpu'): total CPU time (user + system)\n  \
+                       * 'user': user CPU time\n  \
+                       * 'system': system / kernel CPU time\n  \
+                       * 'energy': energy consumed in Joules (auto-enables '--energy')\n  \
+                       * 'memory' (aliases: 'rss', 'peak-memory'): peak resident set size (RSS)\n"
+                ),
         )
         .arg(
             Arg::new("sort")

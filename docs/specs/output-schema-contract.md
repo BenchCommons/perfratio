@@ -1,7 +1,7 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Partly shipped (schemaVersion 1.0): `schemaVersion` first key (`SCHEMA_VERSION` in
+Partly shipped (schemaVersion 1.1; 1.0 plus `metric`/`primary_metric` from #48): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
@@ -65,7 +65,7 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
 
 ### 1. Versioning
 - The top-level object gains `"schemaVersion": "MAJOR.MINOR"` as its **first** key, e.g.
-  `"1.0"`. It is a string, independent of the crate `version`.
+  `"1.1"`. It is a string, independent of the crate `version`.
 - `schemaVersion` is the only camelCase key in the document. The name is fixed by
   `CONTRACTS.md` and #240 so consumers can find it without knowing the rest of the layout.
 - A file **without** `schemaVersion` is the legacy shape (perfratio ≤ the release that
@@ -82,10 +82,11 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
 - perfratio never emits a `MAJOR` change without one release that emits a deprecation for it
   (§4 shows the pattern).
 
-### 2. Top-level layout (`schemaVersion` 1.0)
+### 2. Top-level layout (`schemaVersion` 1.1)
 ```jsonc
 {
-  "schemaVersion": "1.0",
+  "schemaVersion": "1.1",
+  "metric": "wall",                                           // new in 1.1
   "perfratio": {
     "version": "1.2.0",
     "command_line": ["perfratio", "--export-json", "out.json", "..."],
@@ -106,6 +107,9 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
 }
 ```
 
+- `metric` (string, guaranteed, **new in 1.1**, #48): metric used for ranking and relative
+  speed, one of `wall`, `cpu`, `user`, `system`, `energy`, `memory` (`--metric`, default
+  `wall`; see `metric-target.md`). Closed enum; a new value is MAJOR.
 - `perfratio` (object, guaranteed): run metadata, as `ExportMetadata` today.
 - `perfratio.measurements` (object, guaranteed, **new**): one status per measurement group,
   host-level and identical for every result:
@@ -133,6 +137,7 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `times`, `user_times`, `system_times` | s[] | guaranteed (live run) |
 | `memory_usage_byte` | bytes[] (peak RSS per run) | guaranteed when `measurements.memory = "measured"` |
 | `exit_codes` | (int or `null`)[]; `null` = killed by a signal | guaranteed |
+| `primary_metric` { `metric`, `mean`, `stddev`?, `samples`? } (**new in 1.1**, #48) | metric unit (s, J or bytes) | optional (only with `--metric` other than `wall` and data for the metric) |
 | `relative_speed` | ratio to fastest/reference (1.0 = baseline) | optional (omitted if not computable) |
 | `relative_speed_stddev` | ratio | optional (omitted for the baseline) |
 | `percentiles` { `p05`, `p25`, `p75`, `p95` } | s | optional |
@@ -144,6 +149,8 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `mean_watts` | W (`mean_energy_joules / mean`) | same as above |
 | `energy_joules` | J[] | only when every run has a sample |
 | `energy_samples` | count (**new**) | when `measurements.energy = "measured"`: runs with a sample, so partial coverage is visible |
+| `idle_watts` (**new in 1.1**, #59) | W | optional (`--energy-baseline` and the idle measurement succeeded) |
+| `mean_net_energy_joules` (**new in 1.1**, #59) | J, per run `max(energy - idle_watts * time, 0)` | optional (with `idle_watts` and ≥ 1 energy sample) |
 | `custom_metrics` | { name: (f64 \| null)[] }, one entry per run aligned with `times`; `null` = not extracted with `-i` | optional (`--output-metric`, see `custom-output-metrics.md`) |
 | `custom_metrics_summary` | { name: { `mean`, `stddev`?, `median`, `min`, `max` } } | with `custom_metrics` |
 | `parameters`, `per_run_parameters` | strings / stats | optional (`--parameter-*`) |
@@ -157,7 +164,7 @@ Rules:
 - `custom_metrics` units are whatever the command prints; perfratio does not interpret them.
   Names follow `[A-Za-z0-9_]+`. A consumer that needs units encodes them in the name
   (e.g. `algo_ns`) or in a `--label`.
-- Fields added later by #48 (`metric`, `primary`), #59 (net energy, domains) and #216
+- `metric` and `primary_metric` (#48), `idle_watts` and `mean_net_energy_joules` (#59) were added in 1.1 as MINOR additions. Fields added later by #59 (domains) and #216
   (`target_duration_seconds`, `total_sampling_seconds`) are MINOR additions to this schema
   and must be added to this table in the same PR.
 
@@ -198,7 +205,7 @@ perfratio -N --warmup auto --first-run=separate \
 
 ## Implementation
 - `src/export/json.rs`: add `schema_version: &'static str` serialized as `"schemaVersion"`
-  first in `PerfratioSummary`; a `pub const SCHEMA_VERSION: &str = "1.0"`.
+  first in `PerfratioSummary`; a `pub const SCHEMA_VERSION: &str = "1.1"`.
 - `src/export/metadata.rs`: `ExportMetadata::measurements: Measurements`, filled from
   `Options` and the energy sampler's `is_available()` (`src/energy/mod.rs`).
   `LinuxRaplSampler::try_new` returns the reason it failed.
@@ -209,7 +216,7 @@ perfratio -N --warmup auto --first-run=separate \
   items are not part of this spec.
 
 ## Acceptance Criteria
-- [x] Every `--export-json` file starts with `"schemaVersion": "1.0"`.
+- [x] Every `--export-json` file starts with `"schemaVersion": "1.1"`.
 - [ ] `schema/perfratio-output.schema.json` exists, and CI validates the export of the
       integration tests against it (with and without `--energy`, `--output-metric`,
       `--first-run=separate`, `--parameter-scan`, Ctrl-C).

@@ -44,7 +44,11 @@ fn reports_count_and_percentage() {
     assert_eq!(o["percent"].as_f64().unwrap(), count as f64 / 20.0 * 100.0);
     assert!(o["lower_fence"].as_f64().unwrap() <= o["upper_fence"].as_f64().unwrap());
     assert!(o["memory_usage_byte"]["count"].is_u64());
-    if count > 0 {
+    // The slow-first-run and inflated-variance warnings take precedence over
+    // the count message, and either can fire on a noisy CI runner.
+    let preempted = stderr.contains("The first benchmarking run")
+        || stderr.contains("of the variance is caused by");
+    if count > 0 && !preempted {
         let pct = format!("{count} of 20 runs ({:.1}%)", count as f64 / 20.0 * 100.0);
         assert!(stderr.contains(&pct), "{stderr}");
     }

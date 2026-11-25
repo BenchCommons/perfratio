@@ -12,7 +12,12 @@ fn get_output<E: Exporter + Default>(
     sort_order: SortOrder,
 ) -> String {
     let exporter = E::default();
-    String::from_utf8(exporter.serialize(results, None, unit, sort_order).unwrap()).unwrap()
+    String::from_utf8(
+        exporter
+            .serialize(results, None, unit, sort_order, crate::metric::Metric::Wall)
+            .unwrap(),
+    )
+    .unwrap()
 }
 
 /// Ensure the makrup output includes the table header and the multiple
@@ -42,6 +47,8 @@ fn test_markup_export_auto_ms() {
             mean_energy_joules: None,
             mean_watts: None,
             energy_joules: None,
+            idle_watts: None,
+            mean_net_energy_joules: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
@@ -80,6 +87,8 @@ fn test_markup_export_auto_ms() {
             mean_energy_joules: None,
             mean_watts: None,
             energy_joules: None,
+            idle_watts: None,
+            mean_net_energy_joules: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
@@ -163,6 +172,8 @@ fn test_markup_export_auto_s() {
             mean_energy_joules: None,
             mean_watts: None,
             energy_joules: None,
+            idle_watts: None,
+            mean_net_energy_joules: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
@@ -201,6 +212,8 @@ fn test_markup_export_auto_s() {
             mean_energy_joules: None,
             mean_watts: None,
             energy_joules: None,
+            idle_watts: None,
+            mean_net_energy_joules: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
@@ -284,6 +297,8 @@ fn test_markup_export_manual_ms() {
             mean_energy_joules: None,
             mean_watts: None,
             energy_joules: None,
+            idle_watts: None,
+            mean_net_energy_joules: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
@@ -322,6 +337,8 @@ fn test_markup_export_manual_ms() {
             mean_energy_joules: None,
             mean_watts: None,
             energy_joules: None,
+            idle_watts: None,
+            mean_net_energy_joules: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
@@ -404,6 +421,8 @@ fn test_markup_export_manual_s() {
             mean_energy_joules: None,
             mean_watts: None,
             energy_joules: None,
+            idle_watts: None,
+            mean_net_energy_joules: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
@@ -442,6 +461,8 @@ fn test_markup_export_manual_s() {
             mean_energy_joules: None,
             mean_watts: None,
             energy_joules: None,
+            idle_watts: None,
+            mean_net_energy_joules: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
@@ -523,6 +544,8 @@ fn test_markup_export_zero_mean_displays_na() {
             mean_energy_joules: None,
             mean_watts: None,
             energy_joules: None,
+            idle_watts: None,
+            mean_net_energy_joules: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
@@ -561,6 +584,8 @@ fn test_markup_export_zero_mean_displays_na() {
             mean_energy_joules: None,
             mean_watts: None,
             energy_joules: None,
+            idle_watts: None,
+            mean_net_energy_joules: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),

@@ -1,12 +1,12 @@
 //! `--delta-table` (#212)
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
 fn debug() -> assert_cmd::Command {
-    let mut cmd = hyperfine();
+    let mut cmd = perfratio();
     cmd.arg("--debug-mode");
     cmd
 }
@@ -73,7 +73,7 @@ fn markdown_export_gets_the_table_only_with_the_flag() {
 fn filter_failed_applies_to_terminal_and_markdown() {
     let dir = tempfile::tempdir().unwrap();
     let md = dir.path().join("out.md");
-    hyperfine()
+    perfratio()
         .arg("--runs=3")
         .arg("--ignore-failure")
         .arg("--filter-failed")
