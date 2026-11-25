@@ -108,11 +108,27 @@ impl ExportManager {
                 .flatten()
                 .map(String::as_str),
         )?;
+        let mut metadata = ExportMetadata::new(labels);
+        if matches.get_flag("energy") {
+            let pref = crate::energy::BackendPreference::resolve(
+                matches
+                    .get_one::<String>("energy-backend")
+                    .map(String::as_str),
+                std::env::var(crate::energy::ENERGY_BACKEND_ENV)
+                    .ok()
+                    .as_deref(),
+            )
+            .map_err(|v| {
+                anyhow::anyhow!("Invalid energy backend '{v}': expected auto, sysfs or perf")
+            })?;
+            metadata.energy_backend =
+                crate::energy::select_sampler(pref).map(|(_, backend)| backend.as_str());
+        }
         let mut export_manager = Self {
             exporters: vec![],
             time_unit,
             sort_order,
-            metadata: ExportMetadata::new(labels),
+            metadata,
         };
 
         if let Some(args) = matches.get_many::<String>("export") {

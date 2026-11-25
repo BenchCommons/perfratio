@@ -16,6 +16,10 @@ pub struct ExportMetadata {
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub labels: BTreeMap<String, String>,
     pub system: SystemInfo,
+    /// Energy backend that produced the samples (`sysfs_powercap` or `perf_pmu`).
+    /// Omitted unless `--energy` is given and a backend is usable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub energy_backend: Option<&'static str>,
 }
 
 /// Environment the benchmarks ran in. Deliberately no hostname or user name.
@@ -52,6 +56,7 @@ impl ExportMetadata {
                 cpu_model: cpu_model(),
                 kernel: kernel_release(),
             },
+            energy_backend: None,
         }
     }
 }
