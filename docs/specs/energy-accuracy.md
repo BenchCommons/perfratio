@@ -14,8 +14,13 @@ Delivered:
 1. `--energy-baseline <DURATION>` (requires `--energy`): measures idle power once per process
    before the first benchmark, then reports net energy per run
    `net = max(gross - P_idle * time_real, 0)`. Gross energy stays reported and exported
-   unchanged. `0` disables it.
-2. A warning when `--energy` is used and the mean run time is below 10 ms.
+   unchanged. `0` (also `0s`, `0ms`) disables it; it is handled before duration parsing,
+   which rejects non-positive values. Negative or invalid values are an error.
+2. A warning when `--energy-baseline` is set but the idle measurement fails (no RAPL,
+   unreadable `energy_uj`), so the missing net fields are explained instead of silently
+   dropped, and a warning when the net energy of any run is clamped to 0 (idle estimate
+   above the gross energy), with the count of clamped runs.
+3. A warning when `--energy` is used and the mean run time is below 10 ms.
 
 Deferred, commented on #59 (not done here):
 - RAPL domain breakdown (`--energy-domains`, `energy_domains` export): changes the

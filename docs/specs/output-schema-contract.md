@@ -134,7 +134,7 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `mean_watts` | W (`mean_energy_joules / mean`) | same as above |
 | `energy_joules` | J[] | only when every run has a sample |
 | `energy_samples` | count (**new**) | when `measurements.energy = "measured"`: runs with a sample, so partial coverage is visible |
-| `custom_metrics` | { name: f64[] } | optional (`--output-metric`, see `custom-output-metrics.md`) |
+| `custom_metrics` | { name: (f64 \| null)[] }, one entry per run aligned with `times`; `null` = not extracted with `-i` | optional (`--output-metric`, see `custom-output-metrics.md`) |
 | `custom_metrics_summary` | { name: { `mean`, `stddev`?, `median`, `min`, `max` } } | with `custom_metrics` |
 | `parameters`, `per_run_parameters` | strings / stats | optional (`--parameter-*`) |
 | `omitted_failed_runs`, `discarded_outliers` | indices | optional |

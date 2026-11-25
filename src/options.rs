@@ -280,6 +280,10 @@ pub struct Options {
     /// fraction of the mean (0.01 = ±1%)
     pub target_precision: Option<f64>,
 
+    /// `--duration`: sample each command until its summed run time (seconds)
+    /// reaches this budget
+    pub duration: Option<Second>,
+
     /// `--max-benchmarking-time`: time budget per command for
     /// `--target-precision`
     pub max_benchmarking_time: Second,
@@ -381,6 +385,9 @@ pub struct Options {
 
     /// `--output-metric`: custom metrics to extract from command output
     pub output_metrics: Vec<crate::output_metric::OutputMetric>,
+
+    /// Extract `--output-metric` values from stderr instead of stdout
+    pub output_metrics_stderr: bool,
 }
 
 impl Default for Options {
@@ -392,6 +399,7 @@ impl Default for Options {
             first_run: FirstRunPolicy::default(),
             min_benchmarking_time: 3.0,
             target_precision: None,
+            duration: None,
             max_benchmarking_time: 60.0,
             command_failure_action: CmdFailureAction::RaiseError,
             reference_command: None,
@@ -425,6 +433,7 @@ impl Default for Options {
             timeout: None,
             until: None,
             output_metrics: Vec::new(),
+            output_metrics_stderr: false,
         }
     }
 }
@@ -486,6 +495,17 @@ impl Options {
             }
             (None, None) => {}
         };
+
+        if let Some(val) = matches.get_one::<String>("duration") {
+            let budget = crate::util::units::parse_duration(val)
+                .map_err(|e| OptionsError::InvalidDuration(val.clone(), e))?;
+            options.duration = Some(budget.as_secs_f64());
+            // 3 runs are enough for a mean and a standard deviation; the
+            // default minimum of 10 would defeat short budgets.
+            if min_runs.is_none() {
+                options.run_bounds.min = options.run_bounds.max.map_or(3, |max| max.min(3));
+            }
+        }
 
         options.setup_command = matches
             .get_many::<String>("setup")
@@ -661,9 +681,8 @@ impl Options {
             );
         }
         if let Some(val) = matches.get_one::<String>("energy-baseline") {
-            let d = crate::util::units::parse_duration(val)
+            options.energy_baseline = parse_energy_baseline(val)
                 .map_err(|e| OptionsError::InvalidEnergyBaseline(val.clone(), e))?;
-            options.energy_baseline = Some(d).filter(|d| !d.is_zero());
         }
         if let Some(val) = matches.get_one::<String>("until") {
             if val.is_empty() {
@@ -691,6 +710,21 @@ impl Options {
                 }
                 options.output_metrics.push(parsed);
             }
+        }
+
+        options.output_metrics_stderr = matches.get_flag("output-metric-stderr");
+        if !options.output_metrics.is_empty()
+            && options.command_output_policies.iter().any(|p| {
+                matches!(
+                    p,
+                    CommandOutputPolicy::File(_) | CommandOutputPolicy::Inherit
+                )
+            })
+        {
+            return Err(OptionsError::InvalidOutputMetric(
+                "--output-metric cannot be combined with '--output=inherit' or an output file"
+                    .into(),
+            ));
         }
 
         options.command_input_policy = if let Some(path_str) = matches.get_one::<String>("input") {
@@ -1006,4 +1040,52 @@ fn test_warning_suppression_options() {
     let opts = Options::from_cli_arguments(&matches_suppress_all).unwrap();
     assert!(opts.suppress_off_cpu_warnings);
     assert!(opts.suppress_outlier_warnings);
+}
+
+/// `--energy-baseline` value: `None` for an explicit zero ("0", "0s", "0ms"), which disables
+/// the baseline; otherwise a positive duration. `parse_duration` rejects zero, so zero is
+/// recognised here, after checking that the unit is valid.
+fn parse_energy_baseline(val: &str) -> Result<Option<std::time::Duration>, String> {
+    let t = val.trim();
+    let split = t
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .unwrap_or(t.len());
+    let (num, unit) = t.split_at(split);
+    if num.parse::<f64>().is_ok_and(|n| n == 0.0) {
+        crate::util::units::parse_duration(&format!("1{unit}"))?;
+        return Ok(None);
+    }
+    crate::util::units::parse_duration(t).map(Some)
+}
+
+#[cfg(test)]
+mod energy_baseline_tests {
+    use super::parse_energy_baseline;
+    use std::time::Duration;
+
+    #[test]
+    fn zero_disables_the_baseline() {
+        for v in ["0", "0s", "0.0", "0ms", " 0 "] {
+            assert_eq!(parse_energy_baseline(v), Ok(None), "{v}");
+        }
+    }
+
+    #[test]
+    fn positive_durations_parse() {
+        assert_eq!(
+            parse_energy_baseline("2s"),
+            Ok(Some(Duration::from_secs(2)))
+        );
+        assert_eq!(
+            parse_energy_baseline("500ms"),
+            Ok(Some(Duration::from_millis(500)))
+        );
+    }
+
+    #[test]
+    fn invalid_values_are_rejected() {
+        for v in ["-1s", "", "abc", "0parsecs", "2parsecs"] {
+            assert!(parse_energy_baseline(v).is_err(), "{v}");
+        }
+    }
 }

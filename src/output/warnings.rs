@@ -14,6 +14,10 @@ pub enum Warnings {
     FastExecutionTime,
     /// `--energy` with runs shorter than the RAPL resolution allows
     ShortEnergyRuns,
+    /// `--energy-baseline` was given but the idle power could not be measured
+    EnergyBaselineUnavailable,
+    /// Runs (clamped, total) whose net energy was clamped to 0
+    NetEnergyClamped(usize, usize),
     NonZeroExitCode,
     SlowInitialRun(Second, OutlierWarningOptions),
     OutliersDetected(OutlierWarningOptions),
@@ -53,6 +57,17 @@ pub enum Warnings {
 impl fmt::Display for Warnings {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
+            Warnings::EnergyBaselineUnavailable => write!(
+                f,
+                "'--energy-baseline' was requested but the idle power could not be measured; \
+                 net energy is not reported."
+            ),
+            Warnings::NetEnergyClamped(clamped, total) => write!(
+                f,
+                "Net energy was clamped to 0 J in {clamped} of {total} runs because the \
+                 idle power estimate exceeds the measured energy; net energy is biased high \
+                 and the idle baseline may be too noisy."
+            ),
             Warnings::ShortEnergyRuns => write!(
                 f,
                 "Runs are shorter than 10 ms; RAPL energy resolution is ~1 ms/≈60 µJ, \
