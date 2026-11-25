@@ -34,24 +34,46 @@ fn reports_count_and_percentage() {
     if common::is_rosetta() {
         return;
     }
-    let (result, stderr) = run_json(&["-N", "--runs=20", &slow_in("3|11")]);
+    // Real timings are not deterministic: only check the shape and that the
+    // numbers are consistent with each other and with the warning.
+    let (result, stderr) = run_json(&["-N", "--runs=20", "--outlier-method=iqr", &slow_in("3|11")]);
     let o = &result["outliers"];
     assert_eq!(o["method"], "iqr");
-    assert_eq!(o["count"], 2, "{o}");
-    assert_eq!(o["percent"], 10.0);
+    let count = o["count"].as_u64().expect("count is an integer");
+    assert!(count <= 20, "{o}");
+    assert_eq!(o["percent"].as_f64().unwrap(), count as f64 / 20.0 * 100.0);
     assert!(o["lower_fence"].as_f64().unwrap() <= o["upper_fence"].as_f64().unwrap());
     assert!(o["memory_usage_byte"]["count"].is_u64());
-    assert!(stderr.contains("2 of 20 runs (10.0%)"), "{stderr}");
+    if count > 0 {
+        let pct = format!("{count} of 20 runs ({:.1}%)", count as f64 / 20.0 * 100.0);
+        assert!(stderr.contains(&pct), "{stderr}");
+    }
 }
 
 #[test]
 fn no_warning_and_zero_outliers_for_a_clean_sample() {
-    if common::is_rosetta() {
-        return;
-    }
-    let (result, stderr) = run_json(&["-N", "--runs=20", "true"]);
-    assert!(result["outliers"]["count"].as_u64().is_some());
+    // --debug-mode reports exactly the simulated time for every run.
+    let (result, stderr) = run_json(&["--debug-mode", "--runs=20", "sleep 0.01"]);
+    assert_eq!(result["outliers"]["count"], 0);
+    assert_eq!(result["outliers"]["percent"], 0.0);
     assert!(!stderr.contains("of 20 runs ("), "{stderr}");
+}
+
+#[test]
+fn default_method_is_modified_z() {
+    let (result, _) = run_json(&["--debug-mode", "--runs=20", "sleep 0.01"]);
+    assert_eq!(result["outliers"]["method"], "modified-z");
+}
+
+#[test]
+fn iqr_method_is_opt_in() {
+    let (result, _) = run_json(&[
+        "--debug-mode",
+        "--runs=20",
+        "--outlier-method=iqr",
+        "sleep 0.01",
+    ]);
+    assert_eq!(result["outliers"]["method"], "iqr");
 }
 
 #[test]

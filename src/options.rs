@@ -746,8 +746,8 @@ impl Options {
         options.suppress_off_cpu_warnings = matches.get_flag("no-off-cpu-warning");
         if let Some(method) = matches.get_one::<String>("outlier-method") {
             options.outlier_method = match method.as_str() {
-                "modified-z" => crate::outlier_detection::OutlierMethod::ModifiedZ,
-                _ => crate::outlier_detection::OutlierMethod::Iqr,
+                "iqr" => crate::outlier_detection::OutlierMethod::Iqr,
+                _ => crate::outlier_detection::OutlierMethod::ModifiedZ,
             };
         }
 

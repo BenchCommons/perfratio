@@ -9,7 +9,9 @@ memory and energy. Tukey's fences (IQR) are the common non-parametric rule and a
 explain.
 
 ## Contract
-- **Method.** `--outlier-method <iqr|modified-z>`, default `iqr`.
+- **Method.** `--outlier-method <modified-z|iqr>`, default `modified-z` (the previous
+  behavior, so which runs are flagged by default does not change). `iqr` is opt-in because it
+  flags more runs, and any deviating run when IQR = 0.
   - `iqr`: Q1 and Q3 by linear interpolation (numpy default, `stats::summary::percentile`),
     IQR = Q3 - Q1, fences `[Q1 - 1.5·IQR, Q3 + 1.5·IQR]`. A value is an outlier if it is
     strictly outside the fences.
@@ -30,7 +32,7 @@ explain.
 - **JSON (additive, optional).** New field `outliers` on each result, omitted when absent:
   ```json
   "outliers": {
-    "method": "iqr",
+    "method": "modified-z",
     "count": 3, "percent": 6.0,
     "lower_fence": 0.0112, "upper_fence": 0.0136,
     "memory_usage_byte": { "count": 0, "percent": 0.0, "lower_fence": 1.0e6, "upper_fence": 2.0e6 },

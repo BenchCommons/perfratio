@@ -953,10 +953,10 @@ pub fn build_command() -> Command {
                 .action(ArgAction::Set)
                 .value_name("METHOD")
                 .value_parser(["iqr", "modified-z"])
-                .default_value("iqr")
+                .default_value("modified-z")
                 .help("How outliers are counted for the outlier warning and the 'outliers' export \
-                       field: 'iqr' (Tukey's fences, 1.5 × interquartile range) or 'modified-z' \
-                       (modified Z-score). Does not affect --discard-outliers."),
+                       field: 'modified-z' (modified Z-score, default) or 'iqr' (Tukey's fences, \
+                       1.5 × interquartile range). Does not affect --discard-outliers."),
         )
         .arg(
             Arg::new("suppress-outlier-warnings")

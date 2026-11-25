@@ -53,11 +53,11 @@ pub const SEVERE_OUTLIER_PERCENT: f64 = 10.0;
 /// How outliers are detected for the report and the warning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum OutlierMethod {
-    /// Tukey's fences (1.5 × IQR)
-    #[default]
+    /// Tukey's fences (1.5 × IQR), opt-in
     #[serde(rename = "iqr")]
     Iqr,
-    /// Modified Z-score (median and MAD)
+    /// Modified Z-score (median and MAD), the default
+    #[default]
     #[serde(rename = "modified-z")]
     ModifiedZ,
 }
