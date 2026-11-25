@@ -33,6 +33,8 @@ pub mod command;
 #[doc(hidden)]
 pub mod compare;
 #[doc(hidden)]
+pub mod counters;
+#[doc(hidden)]
 pub mod energy;
 #[doc(hidden)]
 pub mod error;
@@ -50,6 +52,8 @@ pub mod output;
 pub mod output_metric;
 #[doc(hidden)]
 pub mod parameter;
+#[doc(hidden)]
+pub mod pmu;
 #[doc(hidden)]
 pub mod stats;
 #[doc(hidden)]

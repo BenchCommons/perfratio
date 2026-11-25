@@ -52,7 +52,16 @@ pub fn measure(argv: &[&str], runs: u64) -> Result<Measurement> {
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         sampler.start();
-        let timing = execute_and_measure(command, None, Priority::Normal, false, None, None, None)?;
+        let timing = execute_and_measure(
+            command,
+            None,
+            Priority::Normal,
+            false,
+            None,
+            None,
+            None,
+            None,
+        )?;
         let energy = sampler.stop();
         result.real.push(timing.time_real);
         result.user.push(timing.time_user);
