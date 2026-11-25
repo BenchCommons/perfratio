@@ -233,7 +233,9 @@ jobs:
         # base compressed package. Reproducible given the same binary: fixed
         # mtime (the commit time), sorted entries, no owner info, no gzip name/time.
         SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
-        find "${PKG_STAGING}/${PKG_BASENAME}" -exec touch -d "@${SOURCE_DATE_EPOCH}" {} +
+        # `touch -d @epoch` is GNU-only; BSD date takes -r, GNU date takes -d.
+        TOUCH_STAMP=$(date -u -r "${SOURCE_DATE_EPOCH}" +%Y%m%d%H%M.%S 2>/dev/null || date -u -d "@${SOURCE_DATE_EPOCH}" +%Y%m%d%H%M.%S)
+        find "${PKG_STAGING}/${PKG_BASENAME}" -exec env TZ=UTC touch -t "${TOUCH_STAMP}" {} +
         pushd "${PKG_STAGING}/" >/dev/null
         case ${{ matrix.job.target }} in
           *-pc-windows-*) 7z -y a -mtc=off "${PKG_NAME}" "${PKG_BASENAME}"/* | tail -2 ;;
