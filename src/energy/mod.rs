@@ -171,6 +171,41 @@ impl EnergySampler for DummySampler {
     }
 }
 
+pub struct MockEnergySampler {
+    active: bool,
+}
+
+impl MockEnergySampler {
+    pub fn new() -> Self {
+        Self { active: false }
+    }
+}
+
+impl Default for MockEnergySampler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl EnergySampler for MockEnergySampler {
+    fn start(&mut self) {
+        self.active = true;
+    }
+
+    fn stop(&mut self) -> Option<f64> {
+        if self.active {
+            self.active = false;
+            Some(1.25)
+        } else {
+            None
+        }
+    }
+
+    fn is_available(&self) -> bool {
+        true
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #![cfg_attr(windows, allow(dead_code, unused_imports))]

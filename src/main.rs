@@ -63,6 +63,7 @@ fn run() -> Result<()> {
         &cli_arguments,
         options.time_unit,
         options.sort_order_exports,
+        options.metric,
     )?;
 
     // Load the baseline before benchmarking, so that a bad file fails fast
@@ -78,7 +79,10 @@ fn run() -> Result<()> {
     let mut imported_results = vec![];
     if let Some(files) = cli_arguments.get_many::<String>("import-json") {
         for file in files {
-            imported_results.extend(perfratio::import::import_json(file)?);
+            imported_results.extend(perfratio::import::import_json_for_metric(
+                file,
+                Some(options.metric),
+            )?);
         }
     }
 

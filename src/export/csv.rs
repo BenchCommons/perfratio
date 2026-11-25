@@ -6,6 +6,7 @@ use csv::WriterBuilder;
 use super::Exporter;
 use crate::benchmark::benchmark_result::BenchmarkResult;
 use crate::benchmark::relative_speed;
+use crate::metric::Metric;
 use crate::options::SortOrder;
 use crate::util::units::Unit;
 
@@ -46,6 +47,7 @@ impl Exporter for CsvExporter {
         reference: Option<&BenchmarkResult>,
         _unit: Option<Unit>,
         _sort_order: SortOrder,
+        metric: Metric,
     ) -> Result<Vec<u8>> {
         let mut writer = WriterBuilder::new().from_writer(vec![]);
 
@@ -103,8 +105,13 @@ impl Exporter for CsvExporter {
         let relative = if results.is_empty() {
             None
         } else {
-            let baseline = reference.unwrap_or_else(|| relative_speed::fastest_of(results));
-            relative_speed::compute_with_check_from_reference(results, baseline, SortOrder::Command)
+            let baseline = reference.unwrap_or_else(|| relative_speed::best_of(results, metric));
+            relative_speed::compute_with_check_from_reference(
+                results,
+                baseline,
+                SortOrder::Command,
+                metric,
+            )
         };
 
         for (i, res) in results.iter().enumerate() {
@@ -221,7 +228,13 @@ fn test_csv_efficiency_columns_only_when_present() {
     };
     let out = |r: &BenchmarkResult| {
         let b = CsvExporter::default()
-            .serialize(std::slice::from_ref(r), None, None, SortOrder::Command)
+            .serialize(
+                std::slice::from_ref(r),
+                None,
+                None,
+                SortOrder::Command,
+                crate::metric::Metric::Wall,
+            )
             .unwrap();
         String::from_utf8(b).unwrap()
     };
@@ -336,7 +349,13 @@ fn test_csv() {
 
     let actual = String::from_utf8(
         exporter
-            .serialize(&results, None, Some(Unit::Second), SortOrder::Command)
+            .serialize(
+                &results,
+                None,
+                Some(Unit::Second),
+                SortOrder::Command,
+                Metric::Wall,
+            )
             .unwrap(),
     )
     .unwrap();
@@ -399,7 +418,13 @@ fn test_csv_formula_injection_sanitization() {
 
     let actual = String::from_utf8(
         exporter
-            .serialize(&results, None, Some(Unit::Second), SortOrder::Command)
+            .serialize(
+                &results,
+                None,
+                Some(Unit::Second),
+                SortOrder::Command,
+                Metric::Wall,
+            )
             .unwrap(),
     )
     .unwrap();
@@ -540,6 +565,7 @@ fn test_csv_with_reference_command() {
                 Some(&results[0]),
                 Some(Unit::Second),
                 SortOrder::Command,
+                Metric::Wall,
             )
             .unwrap(),
     )
@@ -646,7 +672,13 @@ fn test_csv_heterogeneous_parameters() {
 
     let actual = String::from_utf8(
         exporter
-            .serialize(&results, None, Some(Unit::Second), SortOrder::Command)
+            .serialize(
+                &results,
+                None,
+                Some(Unit::Second),
+                SortOrder::Command,
+                Metric::Wall,
+            )
             .unwrap(),
     )
     .unwrap();
@@ -694,7 +726,13 @@ fn test_csv_with_custom_metrics() {
 
     let actual = String::from_utf8(
         exporter
-            .serialize(&results, None, Some(Unit::Second), SortOrder::Command)
+            .serialize(
+                &results,
+                None,
+                Some(Unit::Second),
+                SortOrder::Command,
+                Metric::Wall,
+            )
             .unwrap(),
     )
     .unwrap();

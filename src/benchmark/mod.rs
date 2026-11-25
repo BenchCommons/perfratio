@@ -9,8 +9,10 @@ use std::cmp;
 use crate::benchmark::executor::BenchmarkIteration;
 use crate::command::Command;
 use crate::energy::{get_energy_sampler, EnergySampler};
+use crate::metric::Metric;
 use crate::options::{
-    CmdFailureAction, CommandOutputPolicy, FirstRunPolicy, Options, OutputStyleOption, RunBounds,
+    CmdFailureAction, CommandOutputPolicy, ExecutorKind, FirstRunPolicy, Options,
+    OutputStyleOption, RunBounds,
 };
 use crate::outlier_detection::{
     detect_outliers, modified_zscores, outlier_indices, OutlierReport, MAX_DISCARD_FRACTION,
@@ -126,7 +128,11 @@ impl<'a> BenchmarkRunner<'a> {
         });
 
         let energy_sampler = if options.measure_energy {
-            Some(get_energy_sampler(options.energy_backend))
+            if matches!(options.executor_kind, ExecutorKind::Mock(_)) {
+                Some(Box::new(crate::energy::MockEnergySampler::new()) as Box<dyn EnergySampler>)
+            } else {
+                Some(get_energy_sampler(options.energy_backend))
+            }
         } else {
             None
         };
@@ -630,7 +636,42 @@ impl<'a> BenchmarkRunner<'a> {
         }
     }
 
+    fn metric_samples(&self) -> Vec<f64> {
+        match self.options.metric {
+            crate::metric::Metric::Wall => self.times_real.clone(),
+            crate::metric::Metric::User => self.times_user.clone(),
+            crate::metric::Metric::System => self.times_system.clone(),
+            crate::metric::Metric::Cpu => self
+                .times_user
+                .iter()
+                .zip(&self.times_system)
+                .map(|(&u, &s)| u + s)
+                .collect(),
+            // `finish()` guarantees a reading for every run under `--metric energy`
+            crate::metric::Metric::Energy => {
+                self.energy_measurements.iter().filter_map(|&e| e).collect()
+            }
+            crate::metric::Metric::Memory => {
+                self.memory_usage_byte.iter().map(|&b| b as f64).collect()
+            }
+        }
+    }
+
     pub fn finish(mut self, print_header: bool) -> Result<BenchmarkResult> {
+        if self.options.metric == crate::metric::Metric::Energy {
+            let missing = self
+                .energy_measurements
+                .iter()
+                .filter(|e| e.is_none())
+                .count();
+            if missing > 0 || self.energy_measurements.is_empty() {
+                bail!(
+                    "'--metric energy' requires an energy reading for every run, but {missing} of {} \
+                     runs have none. Check that RAPL (`energy_uj`) is readable.",
+                    self.energy_measurements.len()
+                );
+            }
+        }
         let timeout_sec = self.options.timeout.map(|t| t.as_secs_f64()).unwrap_or(0.0);
         let first_run_excluded = self.excludes_first_timing_run() && self.times_real.len() > 1;
         let first_run = self.take_first_run();
@@ -665,7 +706,8 @@ impl<'a> BenchmarkRunner<'a> {
         let mut too_many_outliers = false;
         if !self.timed_out {
             if let Some(threshold) = self.options.discard_outliers {
-                match outlier_indices(&self.times_real, threshold, MAX_DISCARD_FRACTION) {
+                let primary_samples = self.metric_samples();
+                match outlier_indices(&primary_samples, threshold, MAX_DISCARD_FRACTION) {
                     Some(drop) if !drop.is_empty() => {
                         let keep: Vec<usize> = (0..self.times_real.len())
                             .filter(|index| !drop.contains(index))
@@ -911,46 +953,124 @@ impl<'a> BenchmarkRunner<'a> {
                     );
                 }
 
-                if let Some(stddev_str) = stddev_display {
-                    crate::outln!(
-                    "  Time ({} ± {}):     {:>width$} ± {:>width$}    [User: {}, System: {}{}{}]",
-                    colors::green("mean").bold(),
-                    colors::green("σ"),
-                    colors::green(mean_display).bold(),
-                    colors::green(stddev_str),
-                    colors::blue(user_str),
-                    colors::blue(system_str),
-                    colors::blue(cpu_str),
-                    colors::blue(mem_str)
-                );
+                let header = self.options.metric.display_header();
+                if self.options.metric == Metric::Wall {
+                    if let Some(stddev_str) = stddev_display {
+                        crate::outln!(
+                            "  Time ({} ± {}):     {:>width$} ± {:>width$}    [User: {}, System: {}{}{}]",
+                            colors::green("mean").bold(),
+                            colors::green("σ"),
+                            colors::green(mean_display).bold(),
+                            colors::green(stddev_str),
+                            colors::blue(user_str),
+                            colors::blue(system_str),
+                            colors::blue(cpu_str),
+                            colors::blue(mem_str)
+                        );
 
-                    crate::outln!(
-                        "  Range ({} … {} … {}):   {:>width$} … {:>width$} … {:>width$}    {}",
-                        colors::cyan("min"),
-                        colors::yellow("median"),
-                        colors::purple("max"),
-                        colors::cyan(min_str),
-                        colors::yellow(median_str),
-                        colors::purple(max_str),
-                        num_str.dimmed()
-                    );
-                } else {
-                    let suffix = if !excluded.is_empty() {
-                        format!("    {}", num_str.dimmed())
+                        crate::outln!(
+                            "  Range ({} … {} … {}):   {:>width$} … {:>width$} … {:>width$}    {}",
+                            colors::cyan("min"),
+                            colors::yellow("median"),
+                            colors::purple("max"),
+                            colors::cyan(min_str),
+                            colors::yellow(median_str),
+                            colors::purple(max_str),
+                            num_str.dimmed()
+                        );
                     } else {
-                        String::new()
+                        let suffix = if !excluded.is_empty() {
+                            format!("    {}", num_str.dimmed())
+                        } else {
+                            String::new()
+                        };
+                        crate::outln!(
+                            "  Time ({} ≡):        {:>width$}  {:>width$}     [User: {}, System: {}{}{}]{}",
+                            colors::green("abs").bold(),
+                            colors::green(mean_str).bold(),
+                            "", // alignment
+                            colors::blue(user_str),
+                            colors::blue(system_str),
+                            colors::blue(cpu_str),
+                            colors::blue(mem_str),
+                            suffix,
+                        );
+                    }
+                } else {
+                    let p_samples = self.metric_samples();
+                    let p_mean = mean(&p_samples);
+                    let p_stddev = if p_samples.len() > 1 {
+                        Some(standard_deviation(&p_samples, Some(p_mean)))
+                    } else {
+                        None
                     };
-                    crate::outln!(
-                    "  Time ({} ≡):        {:>width$}  {:>width$}     [User: {}, System: {}{}{}]{}",
-                    colors::green("abs").bold(),
-                    colors::green(mean_str).bold(),
-                    "", // alignment
-                    colors::blue(user_str),
-                    colors::blue(system_str),
-                    colors::blue(cpu_str),
-                    colors::blue(mem_str),
-                    suffix,
-                );
+
+                    let (p_mean_str, p_stddev_str) = match self.options.metric {
+                        Metric::Cpu | Metric::User | Metric::System => {
+                            let m = format_duration(p_mean, Some(time_unit));
+                            let s = p_stddev.map(|sd| format_duration(sd, Some(time_unit)));
+                            (m, s)
+                        }
+                        Metric::Energy => {
+                            let m = format!("{p_mean:.3} J");
+                            let s = p_stddev.map(|sd| format!("{sd:.3} J"));
+                            (m, s)
+                        }
+                        Metric::Memory => {
+                            let m = format!("{:.1} MB", p_mean / (1024.0 * 1024.0));
+                            let s = p_stddev.map(|sd| format!("{:.1} MB", sd / (1024.0 * 1024.0)));
+                            (m, s)
+                        }
+                        Metric::Wall => unreachable!(),
+                    };
+
+                    let title = format!(
+                        "{} ({} ± {}):",
+                        header,
+                        colors::green("mean").bold(),
+                        colors::green("σ")
+                    );
+                    if let Some(s) = p_stddev_str {
+                        crate::outln!(
+                            "  {:<21}{:>width$} ± {:>width$}",
+                            title,
+                            colors::green(p_mean_str).bold(),
+                            colors::green(s),
+                        );
+                    } else {
+                        let title_abs = format!("{} ({}):", header, colors::green("mean").bold());
+                        crate::outln!(
+                            "  {:<21}{:>width$}",
+                            title_abs,
+                            colors::green(p_mean_str).bold(),
+                        );
+                    }
+
+                    // Secondary line: Wall Time
+                    if let Some(stddev_str) = stddev_display {
+                        crate::outln!(
+                            "  Time ({} ± {}):     {:>width$} ± {:>width$}    [User: {}, System: {}{}{}]",
+                            colors::green("mean").bold(),
+                            colors::green("σ"),
+                            colors::green(mean_display).bold(),
+                            colors::green(stddev_str),
+                            colors::blue(user_str),
+                            colors::blue(system_str),
+                            colors::blue(cpu_str),
+                            colors::blue(mem_str)
+                        );
+                    } else {
+                        crate::outln!(
+                            "  Time ({} ≡):        {:>width$}  {:>width$}     [User: {}, System: {}{}{}]",
+                            colors::green("abs").bold(),
+                            colors::green(mean_str).bold(),
+                            "",
+                            colors::blue(user_str),
+                            colors::blue(system_str),
+                            colors::blue(cpu_str),
+                            colors::blue(mem_str),
+                        );
+                    }
                 }
 
                 if let Some(summaries) = &custom_metrics_summary {
@@ -1001,7 +1121,7 @@ impl<'a> BenchmarkRunner<'a> {
                     }
                 }
 
-                if self.options.measure_energy {
+                if self.options.measure_energy && self.options.metric != Metric::Energy {
                     let valid_energy: Vec<f64> =
                         self.energy_measurements.iter().filter_map(|&e| e).collect();
                     if !valid_energy.is_empty() {
@@ -1147,8 +1267,10 @@ impl<'a> BenchmarkRunner<'a> {
                 });
             }
 
+            let metric_samples = self.metric_samples();
+
             // Run outlier detection
-            let scores = modified_zscores(&self.times_real);
+            let scores = modified_zscores(&metric_samples);
 
             let outlier_warning_options = OutlierWarningOptions {
                 warmup_in_use: self.options.warmup_count > 0 || self.options.warmup_auto,
@@ -1173,12 +1295,12 @@ impl<'a> BenchmarkRunner<'a> {
                 }
             }
 
-            let diag = Diagnostics::compute(&self.times_real, OUTLIER_THRESHOLD);
+            let diag = Diagnostics::compute(&metric_samples, OUTLIER_THRESHOLD);
 
             if !self.options.suppress_outlier_warnings {
                 if scores[0] > OUTLIER_THRESHOLD {
                     warnings.push(Warnings::SlowInitialRun(
-                        self.times_real[0],
+                        metric_samples[0],
                         outlier_warning_options,
                     ));
                 } else if diag.has_inflated_variance() && !diag.is_multimodal() {
@@ -1395,7 +1517,11 @@ pub fn measure_baseline(
         Ok(res)
     };
     let mut energy_sampler = if options.measure_energy {
-        Some(get_energy_sampler(options.energy_backend))
+        if matches!(options.executor_kind, ExecutorKind::Mock(_)) {
+            Some(Box::new(crate::energy::MockEnergySampler::new()) as Box<dyn EnergySampler>)
+        } else {
+            Some(get_energy_sampler(options.energy_backend))
+        }
     } else {
         None
     };
@@ -1880,6 +2006,40 @@ mod tests {
         assert_eq!(result.energy_joules, None);
         // But aggregate mean energy is still computed from the valid samples
         assert_eq!(result.mean_energy_joules, Some(1.5));
+    }
+
+    fn energy_metric_runner_result(energy: Vec<Option<f64>>) -> Result<BenchmarkResult> {
+        let cmd = Command::new(None, "true");
+        let options = Options {
+            command_output_policies: vec![CommandOutputPolicy::Null],
+            metric: crate::metric::Metric::Energy,
+            ..Default::default()
+        };
+        let executor = MockExecutor::new(None, None);
+        let mut runner = BenchmarkRunner::new(0, 0, &cmd, &options, &executor);
+        runner.times_real = vec![0.1, 0.2];
+        runner.times_user = vec![0.05, 0.05];
+        runner.times_system = vec![0.05, 0.05];
+        runner.memory_usage_byte = vec![100, 100];
+        runner.energy_measurements = energy;
+        runner.exit_codes = vec![Some(0), Some(0)];
+        runner.resource_counters = vec![None, None];
+        runner.all_succeeded = true;
+        runner.count = 2;
+        runner.finish(false)
+    }
+
+    #[test]
+    fn test_metric_energy_fails_on_partial_energy() {
+        let err = energy_metric_runner_result(vec![Some(1.5), None]).unwrap_err();
+        assert!(err.to_string().contains("--metric energy"), "{err}");
+    }
+
+    #[test]
+    fn test_metric_energy_fails_on_missing_energy() {
+        let err = energy_metric_runner_result(vec![None, None]).unwrap_err();
+        assert!(err.to_string().contains("--metric energy"), "{err}");
+        assert!(energy_metric_runner_result(vec![Some(1.0), Some(2.0)]).is_ok());
     }
 
     #[test]
