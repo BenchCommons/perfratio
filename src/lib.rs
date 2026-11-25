@@ -57,6 +57,8 @@ pub mod parameter;
 #[doc(hidden)]
 pub mod pmu;
 #[doc(hidden)]
+pub mod pmu_scaling;
+#[doc(hidden)]
 pub mod stats;
 #[doc(hidden)]
 pub mod system_check;
