@@ -1,395 +1,227 @@
 # perfratio
-[![CICD](https://github.com/UnitedOpen-Source/joulex/actions/workflows/CICD.yml/badge.svg)](https://github.com/UnitedOpen-Source/joulex/actions/workflows/CICD.yml)
-[![Version info](https://img.shields.io/crates/v/perfratio.svg)](https://crates.io/crates/perfratio)
 
-A multi-dimensional command-line benchmarking tool with **Hardware Performance Counters & Energy (RAPL)** and **Deep Statistics (Criterion-rs)**.
+[![CICD](https://github.com/BenchCommons/perfratio/actions/workflows/CICD.yml/badge.svg)](https://github.com/BenchCommons/perfratio/actions/workflows/CICD.yml)
 
-**perfratio** (formerly `joulex`) builds upon the heritage of [`sharkdp/hyperfine`](https://github.com/sharkdp/hyperfine) and incorporates statistical rigor inspired by [`Gabriella439/bench`](https://github.com/Gabriella439/bench) alongside hardware telemetry concepts from `perf stat` and `poop`. It is engineered for hardware-aware performance ratios, energy efficiency, and statistically robust systems benchmarking.
+perfratio is a command-line benchmarking tool that measures **time, peak memory and energy**
+for the same command and compares the results with statistics. It is the measurement engine
+of [BenchCommons](https://github.com/BenchCommons). It owns the versioned JSON output
+contract that other BenchCommons tools consume. The `schemaVersion` field is coming in 1.0 and is pending PR #262 (see [JSON export](#json-export-and-the-schemaversion-contract)).
 
-## Key Features
+perfratio was formerly called `joulex`.
 
-* **⚡ Performance per Watt & Energy Benchmarking (`-E`, `--energy`)**: Hardware RAPL microjoule counters (Linux sysfs powercap) to measure energy consumption in Joules (mean ± σ) and average active Power in Watts.
-* **🔬 Deep Statistical Rigor (`--deep-stats`)**: Direct integration with `criterion-stats` (Criterion.rs) computing 95% bootstrapped confidence intervals for mean and median, plus two-sample hypothesis testing ($p$-value significance) against reference commands.
-* **🧠 Peak Memory Usage Display**: Real-time process peak memory (RSS) formatted in `B`, `KB`, `MB`, `GB` and displayed in terminal output.
-* **🛡️ Hardened Robustness & Security**: Protection against CSV formula injection (CWE-1236), safe integer range iteration avoiding overflows near `i32::MAX`, and input validation preventing zero-run crashes.
-* **🔄 Environment Iteration Forwarding**: `$PERFRATIO_ITERATION`, `$JOULEX_ITERATION`, and `$HYPERFINE_ITERATION` forwarded to `--prepare` and `--conclude` commands.
-* **⚙️ Modern CLI & Completions**: Unified `-e, --export <FILE>` auto-detecting formats by file extension, `--filter-failed` for parameter scans, and built-in `--generate-completions <SHELL>`.
-* **Statistical analysis across multiple runs**: Mean, median, stddev, min, max, user, and kernel CPU time.
-* **Support for arbitrary shell commands**: Raw or custom shells.
-* **Outlier detection**: Modified Z-score outlier detection to identify caching or interference.
-* **Warmup runs & cache-clearing commands**: Set up before timing runs.
-* **Export results to various formats**: CSV, JSON, Markdown, AsciiDoc, Org-mode.
-* **Parameterized benchmarks**: Vary arguments or matrices of parameters.
-* **Cross-platform**: Linux, macOS, Windows.
+## How it differs from hyperfine
 
-## Usage
+perfratio is a fork of [`sharkdp/hyperfine`](https://github.com/sharkdp/hyperfine) by
+David Peter and contributors. The command-line model (shell commands, warmup, parameter scans,
+exports) comes from hyperfine, and the credit for it belongs upstream. The statistical ideas
+borrow from [`Gabriella439/bench`](https://github.com/Gabriella439/bench). perfratio adds:
 
-### Basic benchmarks
+- Energy (`-E`, `--energy`) from RAPL on Linux, and peak memory and CPU utilization for every run.
+- Deep statistics (`--deep-stats`): bootstrapped confidence intervals and hypothesis tests.
+- A regression gate against an earlier export (`--compare`, `--fail-if-regressed`).
+- Cross-language helpers: `--warmup auto`, `--first-run`, `--output-metric`, `--target-precision`.
+- Time-budgeted sampling (`--duration 5s`) and significance indicators on speedups and regressions.
+- A versioned JSON export for tools that consume the results. The `schemaVersion` field is coming in 1.0 (pending #262).
 
-To run a benchmark, you can simply call `perfratio <command>...` (or `hyperfine <command>...`). The argument(s) can be any
-shell command. For example:
+Run `perfratio --help` for every option. perfratio can read hyperfine and joulex JSON
+files (`--import-json`).
+
+## Install
+
+perfratio is not yet on crates.io or Homebrew. Both are coming soon (see
+[#93](https://github.com/BenchCommons/perfratio/issues/93)).
+
+**From source** (Rust 1.88 or newer):
+
 ```sh
-perfratio 'sleep 0.3'
+git clone https://github.com/BenchCommons/perfratio
+cd perfratio
+cargo install --path .
 ```
 
-perfratio will automatically determine the number of runs to perform for each command. By default,
-it will perform *at least* 10 benchmarking runs and measure for at least 3 seconds. To change this,
-you can use the `-r`/`--runs` option:
+**GitHub release assets.** Each release at
+<https://github.com/BenchCommons/perfratio/releases> contains one archive per target, named
+`perfratio-v<version>-<target>.tar.gz` (`.zip` on Windows), and Debian packages. Unpack the
+archive and put the `perfratio` binary on your `PATH`.
+
+## Quick start
+
+Benchmark one command, or compare several:
+
+```console
+$ perfratio --style basic -N --runs 5 'sleep 0.1' 'sleep 0.2'
+Benchmark 1: sleep 0.1
+  Time (mean ± σ):     108.8 ms ±   2.6 ms    [User: 0.7 ms, System: 1.2 ms, CPU: 2%, Peak Memory: 960.0 KB]
+  Range (min … median … max):   104.7 ms … 109.4 ms … 111.3 ms    5 runs
+
+Benchmark 2: sleep 0.2
+  Time (mean ± σ):     212.5 ms ±   4.6 ms    [User: 0.9 ms, System: 1.3 ms, CPU: 1%, Peak Memory: 960.0 KB]
+  Range (min … median … max):   207.1 ms … 210.7 ms … 218.2 ms    5 runs
+
+Summary
+  sleep 0.1 ran
+    1.95 ± 0.06 times faster than sleep 0.2 (212.5 ms, +103.7 ms)
+```
+
+(The off-CPU warnings that perfratio prints for `sleep` are left out here.) Commands run
+through a shell by default. `-N` (`--shell=none`) skips it, which matters for commands
+under about 5 ms. To pass an exact argument vector, put it after `--`:
+
 ```sh
-perfratio --runs 5 'sleep 0.3'
+perfratio -w 3 -- grep -E 'a|b' "my file.txt"
 ```
 
-If you want to compare the runtimes of different programs, you can pass multiple commands:
-```sh
-perfratio 'hexdump file' 'xxd file'
-```
+Common options:
 
-### Understanding the output
-
-What do *mean ± σ*, *User/System*, *CPU %*, *Peak Memory*, the energy line and the
-relative-speed summary mean exactly, and how do you get stable numbers? See
-[doc/understanding-output.md](doc/understanding-output.md). It also covers
-benchmarking across git branches and a checklist for reducing noise.
-
-### Warmup runs and preparation commands
-
-For programs that perform a lot of disk I/O, the benchmarking results can be heavily influenced
-by disk caches and whether they are cold or warm.
-
-If you want to run the benchmark on a warm cache, you can use the `-w`/`--warmup` option to
-perform a certain number of program executions before the actual benchmark:
-```sh
-hyperfine --warmup 3 'grep -R TODO *'
-```
-
-Conversely, if you want to run the benchmark for a cold cache, you can use the `-p`/`--prepare`
-option to run a special command before *each* timing run. For example, to clear harddisk caches
-on Linux, you can run
-```sh
-sync; echo 3 | sudo tee /proc/sys/vm/drop_caches
-```
-To use this specific command with hyperfine, call `sudo -v` to temporarily gain sudo permissions
-and then call:
-```sh
-hyperfine --prepare 'sync; echo 3 | sudo tee /proc/sys/vm/drop_caches' 'grep -R TODO *'
-```
-
-### Parameterized benchmarks
-
-If you want to run a series of benchmarks where a single parameter is varied (say, the number of
-threads), you can use the `-P`/`--parameter-scan` option and call:
-```sh
-hyperfine --prepare 'make clean' --parameter-scan num_threads 1 12 'make -j {num_threads}'
-```
-This also works with decimal numbers. The `-D`/`--parameter-step-size` option can be used
-to control the step size:
-```sh
-hyperfine --parameter-scan delay 0.3 0.7 -D 0.2 'sleep {delay}'
-```
-This runs `sleep 0.3`, `sleep 0.5` and `sleep 0.7`.
-
-For non-numeric parameters, you can also supply a list of values with the `-L`/`--parameter-list`
-option:
-```
-hyperfine -L compiler gcc,clang '{compiler} -O2 main.cpp'
-```
+| Option | Purpose |
+|---|---|
+| `-r, --runs <NUM>` | Run exactly NUM times. By default perfratio picks the count (at least 10 runs). |
+| `-w, --warmup <NUM\|auto>` | Warmup runs before timing. `auto` stops once the last 5 timings differ by at most 1%. |
+| `-p, --prepare <CMD>` | Run CMD before each timing run, for example to clear caches. |
+| `-s, --setup <CMD>` / `-c, --cleanup <CMD>` | Run CMD once before or after all runs of a command. |
+| `-P`, `-L`, `-F` | Parameter scans over a range, a list or a file. |
+| `-e, --export <FILE>` | Export results. The format follows the file extension. |
+| `--deep-stats` | Bootstrapped confidence intervals and hypothesis tests. |
 
 > [!WARNING]
-> Parameter values (from `-P`, `-L` and `-F/--parameter-file`) are inserted into the command
-> **verbatim**. They are not shell-escaped. With the default shell, a value such as
-> `a; rm -rf ~` or `$(curl …)` is executed as shell code. This is by design for values you
-> control, but be careful when the values come from somewhere else (file names, branch names,
-> PR titles, CI inputs, the lines of a `--parameter-file`):
->
-> - Prefer `-N`/`--shell=none`. The command is then split into arguments without a shell,
->   so a value can at most become extra arguments, never shell code.
-> - Or quote the placeholder in the command, e.g. `perfratio -L f "$files" "wc -l '{f}'"`. This only
->   helps if the values cannot contain a single quote themselves.
-> - Validate untrusted values (e.g. allow only `[A-Za-z0-9._/-]`) before passing them to perfratio.
+> Values from `-P`, `-L` and `-F/--parameter-file` are inserted into the command **verbatim**,
+> not shell-escaped. A value such as `a; rm -rf ~` runs as shell code. Prefer `-N`, quote the
+> placeholder, or validate values that come from outside your control.
 
-### Intermediate shell
+[doc/understanding-output.md](doc/understanding-output.md) explains each output field and
+how to reduce noise. The manual page is [doc/perfratio.1](doc/perfratio.1).
 
-By default, commands are executed using a predefined shell (`/bin/sh` on Unix, `cmd.exe` on Windows).
-If you want to use a different shell, you can use the `-S, --shell <SHELL>` option:
-```sh
-hyperfine --shell zsh 'for i in {1..10000}; do echo test; done'
+## Energy and memory
+
+**Memory.** Peak memory (RSS) of each run is always measured and shown as `Peak Memory`.
+`--resource-usage` (Unix only) adds context switches, page faults and block I/O per run.
+
+**Energy.** `-E, --energy` measures energy in joules and average power in watts. It reads RAPL
+counters through Linux powercap sysfs, so it needs **bare-metal Linux with a readable
+`energy_uj`** (`/sys/class/powercap/intel-rapl`). Containers, virtual machines, macOS and
+Windows usually cannot read it, and recent kernels restrict `energy_uj` to root. Continuous
+integration covers time and memory only.
+
+Without a readable counter, perfratio says so instead of printing a number. This is real output from
+a macOS machine:
+
+```console
+$ perfratio -N -E --resource-usage --style basic --runs 3 'sleep 0.1'
+Benchmark 1: sleep 0.1
+  Time (mean ± σ):     107.6 ms ±   1.1 ms    [User: 0.7 ms, System: 1.0 ms, CPU: 2%, Peak Memory: 960.0 KB]
+  Range (min … median … max):   106.6 ms … 107.4 ms … 108.8 ms    3 runs
+  Resources (mean):   ctx-sw 0 vol / 8.3 invol · faults 123 minor / 1 major · I/O 0 in / 0 out blocks
+  Energy:             RAPL unprivileged/unavailable on host
 ```
 
-Note that hyperfine always *corrects for the shell spawning time*. To do this, it performs a calibration
-procedure where it runs the shell with an empty command (multiple times), to measure the startup time
-of the shell. It will then subtract this time from the total to show the actual time used by the command
-in question.
+A backend based on the Linux perf PMU, which does not need root access to sysfs, is planned
+([#223](https://github.com/BenchCommons/perfratio/issues/223)).
 
-If you want to run a benchmark *without an intermediate shell*, you can use the `-N` or `--shell=none`
-option. This is helpful for very fast commands (< 5 ms) where the shell startup overhead correction would
-produce a significant amount of noise. Note that you cannot use shell syntax like `*` or `~` in this case.
-```
-hyperfine -N 'grep TODO /home/user'
-```
+`--check-system` reports conditions that add noise (frequency governor, turbo boost, load,
+power source). `--check-system=strict` aborts with exit code 4 if a check fails.
 
+## Compare runs and gate regressions in CI
 
-### Shell functions and aliases
-
-If you are using bash, you can export shell functions to directly benchmark them with hyperfine:
-
-```bash
-my_function() { sleep 1; }
-export -f my_function
-hyperfine --shell=bash my_function
-```
-
-Otherwise, inline them into or source them from the benchmarked program:
+Export a baseline on your main branch, then compare later runs against it:
 
 ```sh
-hyperfine 'my_function() { sleep 1; }; my_function'
-
-echo 'alias my_alias="sleep 1"' > /tmp/my_alias.sh
-hyperfine '. /tmp/my_alias.sh; my_alias'
+perfratio -n work --export-json baseline.json 'sleep 0.1'
+perfratio -n work --compare baseline.json --fail-if-regressed 5% 'sleep 0.2'
 ```
 
-### Exporting results
+Commands are matched by name, so give both runs the same command or `-n` name. A real run of
+the second command (`--style basic -N --suppress-warnings all --runs 8` added):
 
-Hyperfine has multiple options for exporting benchmark results to CSV, JSON, Markdown and other
-formats (see `--help` text for details).
+```console
+Benchmark 1: work
+  Time (mean ± σ):     209.1 ms ±   3.0 ms    [User: 0.6 ms, System: 0.7 ms, CPU: 1%, Peak Memory: 976.0 KB]
+  Range (min … median … max):   206.2 ms … 208.3 ms … 215.5 ms    8 runs
 
-#### Markdown
+Comparison with baseline.json
+  Command        Baseline         Current    Change  Significance
+  work     111.4 ms ± 2.9  209.1 ms ± 3.0  +87.7% ▲  p < 0.001     REGRESSION
 
-You can use the `--export-markdown <file>` option to create tables like the following:
-
-| Command | Mean [s] | Min [s] | Max [s] | Relative |
-|:---|---:|---:|---:|---:|
-| `find . -iregex '.*[0-9]\.jpg$'` | 2.275 ± 0.046 | 2.243 | 2.397 | 9.79 ± 0.22 |
-| `find . -iname '*[0-9].jpg'` | 1.427 ± 0.026 | 1.405 | 1.468 | 6.14 ± 0.13 |
-| `fd -HI '.*[0-9]\.jpg$'` | 0.232 ± 0.002 | 0.230 | 0.236 | 1.00 |
-
-#### JSON
-
-The JSON output is useful if you want to analyze the benchmark results in more detail. The
-[`scripts/`](https://github.com/sharkdp/hyperfine/tree/master/scripts) folder includes a lot
-of helpful Python programs to further analyze benchmark results and create helpful
-visualizations, like a histogram of runtimes or a whisker plot to compare
-multiple benchmarks:
-
-| ![](doc/histogram.png) | ![](doc/whisker.png) |
-|---:|---:|
-
-
-### Detailed benchmark flowchart
-
-The following chart explains the execution order of various timing runs when using options
-like `--warmup`, `--prepare <cmd>`, `--setup <cmd>` or `--cleanup <cmd>`:
-
-![](doc/execution-order.png)
-
-### Reducing noise
-
-Most "noisy" or irreproducible results come from the environment, not from the
-benchmarked command. `perfratio --check-system` reports the usual suspects before
-benchmarking, with a hint for each problem (`--check-system=strict` aborts with
-exit code 4, e.g. on a CI benchmark runner):
-
-```
-System check:
-  ✖ CPU governor     powersave on 8 CPUs  → sudo cpupower frequency-set -g performance
-  ✖ Turbo boost      enabled  → echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo
-  ✔ Load average     0.21 (8 CPUs)
-  ! Power source     battery  → connect the power adapter (on battery, CPUs are often clocked down)
-  ✔ Thermal          max 48 °C
+Error: 1 benchmark(s) regressed compared with the baseline ('--fail-if-regressed')
 ```
 
-Other things that help:
+The exit code is 3. A benchmark counts as regressed only if it is slower than the threshold
+**and** the difference is statistically significant (p < 0.05 on the per-run times), so noise
+alone does not fail the gate. When the command did not get slower, the same gate prints
+`-2.3%  p = 0.401  ~` and exits 0. `--export-diff-markdown <FILE>` writes the table for a pull
+request comment. A GitHub Actions example is in [doc/ci.md](doc/ci.md).
 
-- **Fixed CPU frequency:** use the `performance` governor, and disable turbo boost (see above).
-- **Pinning and priority:** `--affinity 2` keeps the command on one core, avoiding migrations and P-/E-core mixes; `--priority high` or `realtime` reduces preemption.
-- **Caches:** `--warmup N` (or `--warmup auto`) fills them. `--prepare 'sync; echo 3 | sudo tee /proc/sys/vm/drop_caches'` empties them before every run, for cold-cache benchmarks. `--first-run=separate` reports the cold first run on its own.
-- **Drift:** `--schedule round-robin` interleaves the commands, so slow drifts (thermal throttling, background jobs) affect all of them equally. perfratio warns about trends, multimodal distributions and outlier-inflated variance.
-- **Shell overhead:** for very fast commands, `-N`/`--shell=none` avoids the intermediate shell.
+## JSON export and the `schemaVersion` contract
 
-## Installation
+`--export-json <FILE>` (or `-e results.json`) writes the summary statistics and every run's
+timings. perfratio owns this output, and consumers such as `tools-benchmark` read it.
+**Status:** the `schemaVersion` key is not on `master` yet. It is pending PR #262 and
+planned for 1.0. Until then exports have no `schemaVersion` (the legacy shape).
 
-[![Packaging status](https://repology.org/badge/vertical-allrepos/hyperfine.svg?columns=3&exclude_unsupported=1)](https://repology.org/project/hyperfine/versions)
+The contract is a top-level `"schemaVersion": "MAJOR.MINOR"` string. Consumers must ignore
+unknown keys and accept any MINOR version of the MAJOR version they support. A removed or
+renamed field, or a changed unit, bumps MAJOR.
 
-### On Ubuntu
+The contract is specified in [docs/specs/output-schema-contract.md](docs/specs/output-schema-contract.md)
+(see [#240](https://github.com/BenchCommons/perfratio/issues/240)). Read that document for the
+field list. The `schemaVersion` key is part of the contract and may not be present in
+every build until it is implemented. Files without it are the legacy shape, and
+`--import-json` still reads them.
 
-On Ubuntu, hyperfine can be installed [from the official repositories](https://launchpad.net/ubuntu/+source/rust-hyperfine):
-```
-apt install hyperfine
-```
+## Recommended flags for cross-language runs
 
-Alternatively, for the latest version, you can download the appropriate `.deb` package from the [Release page](https://github.com/sharkdp/hyperfine/releases) and install it via `dpkg`:
-```
-wget https://github.com/sharkdp/hyperfine/releases/download/v1.20.0/hyperfine_1.20.0_amd64.deb
-sudo dpkg -i hyperfine_1.20.0_amd64.deb
-```
+When you compare the same algorithm across many languages
+([#240](https://github.com/BenchCommons/perfratio/issues/240)), startup cost and
+warmup effects differ a lot between runtimes. Use:
 
-### On Fedora
+| Flag | Why |
+|---|---|
+| `--warmup auto` | Warms up each command until timings are stable (at most 100 runs), so JIT-compiled and interpreted languages are not penalized by a fixed count. |
+| `--first-run=separate` | Reports the cold first run on its own line (`first_run` in the JSON) and keeps it out of the statistics. |
+| `--output-metric NAME=REGEX` | Reads a number from the command's stdout, or stderr with `--output-metric-stderr` (first capture group of the last match). Have the program time its algorithm and print it, so startup is separated from algorithm time. |
+| `--target-precision <PCT>` | Runs until the 95% confidence interval of the mean is within PCT of the mean, bounded by `--min-runs`, `--max-runs` and `--max-benchmarking-time`. Fast commands finish early. |
 
-On Fedora, hyperfine can be installed from the official repositories:
+Example (real output; the program prints `algo_ms=12.5` and sleeps 50 ms):
 
-```sh
-dnf install hyperfine
-```
-
-### On Alpine Linux
-
-On Alpine Linux, hyperfine can be installed [from the official repositories](https://pkgs.alpinelinux.org/packages?name=hyperfine):
-```
-apk add hyperfine
-```
-
-### On Arch Linux
-
-On Arch Linux, hyperfine can be installed [from the official repositories](https://archlinux.org/packages/extra/x86_64/hyperfine/):
-```
-pacman -S hyperfine
-```
-
-### On Debian Linux
-
-On Debian Linux, hyperfine can be installed [from the official repositories](https://packages.debian.org/hyperfine):
-```
-apt install hyperfine
+```console
+$ perfratio --style basic -N --suppress-warnings all --warmup auto --first-run=separate \
+    --target-precision 5% --output-metric 'algo_ms=algo_ms=([0-9.]+)' \
+    -- sh -c 'echo algo_ms=12.5; sleep 0.05'
+Benchmark 1: sh -c 'echo algo_ms=12.5; sleep 0.05'
+  Cold (warmup 1):      65.6 ms
+  Time (mean ± σ):      73.6 ms ±  15.3 ms    [User: 2.6 ms, System: 5.9 ms, CPU: 12%, Peak Memory: 2.4 MB]
+  Range (min … median … max):    60.1 ms …  68.8 ms … 153.1 ms    69 runs (±5.0% @95%, target 5%)
+  algo_ms (mean ± σ):      12.500 ±    0.000
+  Warmup (auto):      100 runs, last 5 within 12.7% (not stable)
 ```
 
-### On Exherbo Linux
+On this busy laptop `--warmup auto` hit its 100-run limit without the timings settling, and
+perfratio also printed a warning saying so. Other useful flags: `--affinity <CPUS>`,
+`--priority <POLICY>`, `--discard-outliers`, `--timeout <DURATION>`.
 
-On Exherbo Linux, hyperfine can be installed [from the rust repositories](https://gitlab.exherbo.org/exherbo/rust/-/tree/master/packages/sys-apps/hyperfine):
-```
-cave resolve -x repository/rust
-cave resolve -x hyperfine
-```
+## Platform support
 
-### On Funtoo Linux
+The CI builds and tests these targets and attaches them to releases. Features differ by platform.
 
-On Funtoo Linux, hyperfine can be installed [from core-kit](https://github.com/funtoo/core-kit/tree/1.4-release/app-benchmarks/hyperfine):
-```
-emerge app-benchmarks/hyperfine
-```
+| Feature | Linux | macOS | Windows |
+|---|---|---|---|
+| Time, CPU time, peak memory | yes | yes | yes |
+| Energy (`--energy`, RAPL) | bare metal with readable `energy_uj` only | no | no |
+| `--resource-usage` | yes | yes | no (Unix only) |
+| `--affinity` | yes | no | yes |
+| `--priority realtime` | yes (`SCHED_FIFO`) | no | yes |
+| `--check-system` | yes | yes (fewer checks) | no |
 
-### On NixOS
-
-On NixOS, hyperfine can be installed [from the official repositories](https://nixos.org/nixos/packages.html?query=hyperfine):
-```
-nix-env -i hyperfine
-```
-
-### On Flox
-
-On Flox, hyperfine can be installed as follows.
-```
-flox install hyperfine
-```
-Hyperfine's version in Flox follows that of Nix.
-
-### On openSUSE
-
-On openSUSE, hyperfine can be installed [from the official repositories](https://software.opensuse.org/package/hyperfine):
-```
-zypper install hyperfine
-```
-
-### On Void Linux
-
-Hyperfine can be installed via xbps
-
-```
-xbps-install -S hyperfine
-```
-
-### On macOS
-
-Hyperfine can be installed via [Homebrew](https://brew.sh):
-```
-brew install hyperfine
-```
-
-Or you can install using [MacPorts](https://www.macports.org):
-```
-sudo port selfupdate
-sudo port install hyperfine
-```
-
-### On FreeBSD
-
-Hyperfine can be installed via pkg:
-```
-pkg install hyperfine
-```
-
-### On OpenBSD
-
-```
-doas pkg_add hyperfine
-```
-
-### On Windows
-
-Hyperfine can be installed via [Chocolatey](https://community.chocolatey.org/packages/hyperfine), [Scoop](https://scoop.sh/#/apps?q=hyperfine&s=0&d=1&o=true&id=8f7c10f75ecf5f9e42a862c615257328e2f70f61), or [Winget](https://github.com/microsoft/winget-pkgs/tree/master/manifests/s/sharkdp/hyperfine):
-```
-choco install hyperfine
-```
-```
-scoop install hyperfine
-```
-```
-winget install hyperfine
-```
-
-### With conda
-
-Hyperfine can be installed via [`conda`](https://conda.io/en/latest/) from the [`conda-forge`](https://anaconda.org/conda-forge/hyperfine) channel:
-```
-conda install -c conda-forge hyperfine
-```
-
-### With cargo (Linux, macOS, Windows)
-
-perfratio can be installed from source via [cargo](https://doc.rust-lang.org/cargo/):
-```
-cargo install --locked perfratio
-```
-
-Make sure that you use Rust 1.88 or newer.
-
-### From binaries (Linux, macOS, Windows)
-
-Download the corresponding archive from the [Release page](https://github.com/UnitedOpen-Source/joulex/releases).
-
-## Alternative tools
-
-Hyperfine is inspired by [bench](https://github.com/Gabriella439/bench).
-
-## Integration with other tools
-
-[Chronologer](https://github.com/dandavison/chronologer) is a tool that uses `hyperfine` to
-visualize changes in benchmark timings across your Git history.
-
-[Bencher](https://github.com/bencherdev/bencher) is a continuous benchmarking tool that supports `hyperfine` to
-track benchmarks and catch performance regressions in CI.
-
-Drop hyperfine JSON outputs onto the [Venz](https://try.venz.dev) chart to visualize the results,
-and manage hyperfine configurations.
-
-Make sure to check out the [`scripts` folder](https://github.com/sharkdp/hyperfine/tree/master/scripts)
-in this repository for a set of tools to work with `hyperfine` benchmark results.
-
-## Origin of the name
-
-The name *hyperfine* was chosen in reference to the hyperfine levels of caesium 133 which play a crucial role in the
-[definition of our base unit of time](https://en.wikipedia.org/wiki/Second#History_of_definition)
-— the second.
-
-## Citing hyperfine
-
-Thank you for considering to cite hyperfine in your research work. Please see the information
-in the sidebar on how to properly cite hyperfine.
-
-## License
-
-`hyperfine` is dual-licensed under the terms of the MIT License and the Apache License 2.0.
-
-See the [LICENSE-APACHE](LICENSE-APACHE) and [LICENSE-MIT](LICENSE-MIT) files for details.
+Release targets: `x86_64`, `aarch64`, `i686` and `arm` Linux (gnu and musl), `x86_64` and
+`aarch64` macOS, and `x86_64`, `i686` and `aarch64` Windows (MSVC).
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the local checks and pull request workflow.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the local checks (`cargo fmt`,
+`cargo clippy -- -D warnings`) and the pull request workflow. Feature specs live in
+[docs/specs/](docs/specs/).
+
+## License
+
+perfratio is dual-licensed under the MIT License and the Apache License 2.0. See
+[LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE). The code derived from
+hyperfine is copyright David Peter and the hyperfine contributors.

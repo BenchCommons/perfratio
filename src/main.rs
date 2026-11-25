@@ -6,35 +6,17 @@
 
 use std::env;
 
-use benchmark::scheduler::Scheduler;
 use clap_complete::Shell;
-use cli::{build_command, get_cli_arguments};
-use command::Commands;
-use export::ExportManager;
-use options::Options;
+use perfratio::benchmark::scheduler::Scheduler;
+use perfratio::cli::{build_command, get_cli_arguments};
+use perfratio::command::Commands;
+use perfratio::export::ExportManager;
+use perfratio::options::Options;
 
 use anyhow::Result;
-use output::colors;
+use perfratio::output::colors;
 
-pub mod benchmark;
-pub mod cli;
-pub mod command;
-pub mod compare;
-pub mod counters;
-pub mod energy;
-pub mod error;
-pub mod export;
-pub mod import;
-pub mod options;
-pub mod outlier_detection;
-pub mod output;
-pub mod output_metric;
-pub mod parameter;
-pub mod pmu;
-pub mod stats;
-pub mod system_check;
-pub mod timer;
-pub mod util;
+use perfratio::{cli, compare, error, options, output, system_check, util};
 
 fn parse_shell(name: &str) -> Result<Shell> {
     match name {
@@ -48,7 +30,7 @@ fn parse_shell(name: &str) -> Result<Shell> {
 }
 
 fn run() -> Result<()> {
-    crate::util::interrupt::install()?;
+    perfratio::util::interrupt::install()?;
 
     // Enabled ANSI colors on Windows 10
     #[cfg(windows)]
@@ -62,7 +44,7 @@ fn run() -> Result<()> {
         let mut command = build_command();
         clap_complete::generate(shell, &mut command, "perfratio", &mut std::io::stdout());
         if shell == Shell::Fish {
-            crate::out!("{}", cli::FISH_COMMAND_COMPLETION);
+            perfratio::out!("{}", cli::FISH_COMMAND_COMPLETION);
         }
         return Ok(());
     }
@@ -85,7 +67,7 @@ fn run() -> Result<()> {
     // Load the baseline before benchmarking, so that a bad file fails fast
     let baseline = cli_arguments
         .get_one::<String>("compare")
-        .map(|path| crate::import::import_json(path).map(|results| (path.as_str(), results)))
+        .map(|path| perfratio::import::import_json(path).map(|results| (path.as_str(), results)))
         .transpose()?;
     let regression_threshold = cli_arguments
         .get_one::<String>("fail-if-regressed")
@@ -95,7 +77,7 @@ fn run() -> Result<()> {
     let mut imported_results = vec![];
     if let Some(files) = cli_arguments.get_many::<String>("import-json") {
         for file in files {
-            imported_results.extend(crate::import::import_json(file)?);
+            imported_results.extend(perfratio::import::import_json(file)?);
         }
     }
 
@@ -120,7 +102,7 @@ fn run() -> Result<()> {
         let checks = system_check::run_checks();
         let passed = system_check::all_passed(&checks);
         if options.output_style != options::OutputStyleOption::Disabled {
-            crate::outln!("{}", system_check::report(&checks));
+            perfratio::outln!("{}", system_check::report(&checks));
         } else if mode == "strict" && !passed {
             // '--style none' hides the report, but a failure must be explained
             eprint!("{}", system_check::report(&checks));
@@ -139,7 +121,7 @@ fn run() -> Result<()> {
     if let Some((baseline_path, baseline)) = &baseline {
         let comparison = compare::compare(baseline, scheduler.results());
         if options.output_style != options::OutputStyleOption::Disabled {
-            crate::outln!(
+            perfratio::outln!(
                 "{}",
                 compare::terminal_table(
                     &comparison,
@@ -158,13 +140,13 @@ fn run() -> Result<()> {
         }
         if let Some(threshold) = regression_threshold {
             let regressions = comparison.regressions(threshold).count();
-            if regressions > 0 && !crate::util::interrupt::interrupted() {
+            if regressions > 0 && !perfratio::util::interrupt::interrupted() {
                 return Err(error::RegressionDetected(regressions).into());
             }
         }
     }
 
-    if crate::util::interrupt::interrupted() {
+    if perfratio::util::interrupt::interrupted() {
         std::process::exit(130);
     }
 
@@ -175,19 +157,19 @@ fn main() {
     match run() {
         Ok(_) => {}
         Err(e) => {
-            if e.is::<crate::error::Interrupted>() {
+            if e.is::<perfratio::error::Interrupted>() {
                 std::process::exit(130);
             }
-            if e.is::<crate::error::RegressionDetected>() {
+            if e.is::<perfratio::error::RegressionDetected>() {
                 eprintln!("{} {:#}", colors::red("Error:"), e);
                 std::process::exit(3);
             }
-            if e.is::<crate::error::SystemCheckFailed>() {
+            if e.is::<perfratio::error::SystemCheckFailed>() {
                 eprintln!("{} {:#}", colors::red("Error:"), e);
                 std::process::exit(4);
             }
             eprintln!("{} {:#}", colors::red("Error:"), e);
-            if crate::util::interrupt::interrupted() {
+            if perfratio::util::interrupt::interrupted() {
                 std::process::exit(130);
             }
             std::process::exit(1);

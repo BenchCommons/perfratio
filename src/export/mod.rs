@@ -20,7 +20,7 @@ use self::csv::CsvExporter;
 use self::html::HtmlExporter;
 use self::json::JsonExporter;
 use self::markdown::MarkdownExporter;
-use self::metadata::{parse_labels, ExportMetadata};
+use self::metadata::{parse_labels, ExportMetadata, Measurements};
 use self::orgmode::OrgmodeExporter;
 use self::runs::RunsExporter;
 
@@ -108,8 +108,7 @@ impl ExportManager {
                 .flatten()
                 .map(String::as_str),
         )?;
-        let mut metadata = ExportMetadata::new(labels);
-        if matches.get_flag("energy") {
+        let energy = if matches.get_flag("energy") {
             let pref = crate::energy::BackendPreference::resolve(
                 matches
                     .get_one::<String>("energy-backend")
@@ -121,9 +120,15 @@ impl ExportManager {
             .map_err(|v| {
                 anyhow::anyhow!("Invalid energy backend '{v}': expected auto, sysfs or perf")
             })?;
-            metadata.energy_backend =
-                crate::energy::select_sampler(pref).map(|(_, backend)| backend.as_str());
-        }
+            Some(crate::energy::select_sampler_detailed(pref).map(|(_, backend)| backend))
+        } else {
+            None
+        };
+        let mut metadata = ExportMetadata::new(
+            labels,
+            Measurements::new(energy, matches.get_flag("resource-usage")),
+        );
+        metadata.energy_backend = energy.and_then(Result::ok).map(|b| b.as_str());
         let mut export_manager = Self {
             exporters: vec![],
             time_unit,
