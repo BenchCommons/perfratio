@@ -275,7 +275,11 @@ impl<'a> Scheduler<'a> {
                 _ => {
                     let per_round: f64 = runners.iter().map(|r| r.initial_total_time).sum();
                     let n = if per_round > 0.0 {
-                        (self.options.min_benchmarking_time / per_round) as u64
+                        (self
+                            .options
+                            .duration
+                            .unwrap_or(self.options.min_benchmarking_time)
+                            / per_round) as u64
                     } else {
                         self.options.run_bounds.min
                     };
@@ -305,7 +309,8 @@ impl<'a> Scheduler<'a> {
             // 4. Interleaved timing iterations. With --target-precision, each
             // command keeps running until its mean is precise enough; the
             // commands share the wall-clock time, and so the time budget.
-            let adaptive = self.options.target_precision.is_some();
+            let adaptive =
+                self.options.target_precision.is_some() || self.options.duration.is_some();
             let started = std::time::Instant::now();
             let budget = self.options.max_benchmarking_time * runners.len() as f64;
             let multiple_runners = runners.len() > 1;
