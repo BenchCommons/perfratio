@@ -1,5 +1,15 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
+## Status
+Partly shipped (schemaVersion 1.0): `schemaVersion` first key (`SCHEMA_VERSION` in
+`src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
+`src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
+`joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
+Not yet done: `energy_samples`, `schema/perfratio-output.schema.json` with CI validation,
+`doc/understanding-output.md` section, `.product` `CONTRACTS.md` link. Energy status
+was tested only through the probe against a fake powercap tree and on a host without RAPL
+(macOS: `unsupported_platform`); real RAPL needs bare-metal Linux.
+
 ## Problem / Motivation
 References: #240, #225, #48, #59, #92, #93, #212, #216, `BenchCommons/catalog-algorithms#11`,
 `BenchCommons/.product` `CONTRACTS.md` ("Measurement output: perfratio JSON schema, versioned").
@@ -152,15 +162,16 @@ Rules:
   and must be added to this table in the same PR.
 
 ### 4. Removing the legacy `joulex` key (#225)
-1. **Deprecation release** (first release with `schemaVersion: "1.0"`): `"joulex"` is still
-   written, identical to `"perfratio"`. The CHANGELOG and `doc/understanding-output.md` mark
-   it deprecated. `schemaVersion` 1.0 documents only `"perfratio"`; consumers of 1.x must
-   not read `"joulex"`.
-2. **Next release**: `"joulex"` is no longer written. Removing a key that 1.0 never
-   documented is not a schema change, so `schemaVersion` stays `1.x`. Files that only have
-   `"joulex"` (old exports) remain importable via `--import-json`.
-3. Tests that assert both keys (`tests/export_metadata_tests.rs`,
-   `tests/check_system_tests.rs`) assert only `"perfratio"` and the absence of `"joulex"`.
+**BREAKING for consumers:** the key is dropped in one step with no deprecation window, as
+issue #240 requires. Tools reading `json["joulex"]` must switch to `json["perfratio"]`
+(identical content). See `docs/MIGRATION.md`.
+
+Shipped as a single step (decision of the #240 implementation, replacing the earlier
+two-step plan): `schemaVersion` `"1.0"` is the first schema and it never documented
+`"joulex"`, so the key is **not written** from the first release that emits `schemaVersion`.
+Consumers of 1.x read only `"perfratio"`. Files that only have `"joulex"` (old exports)
+remain importable via `--import-json` (covered by a test). `tests/export_metadata_tests.rs`
+and `tests/check_system_tests.rs` assert the absence of `"joulex"`.
 
 ### 5. Recommended flags for cross-language runs
 Documented in `doc/understanding-output.md` (new section "Comparing implementations across
@@ -198,16 +209,16 @@ perfratio -N --warmup auto --first-run=separate \
   items are not part of this spec.
 
 ## Acceptance Criteria
-- [ ] Every `--export-json` file starts with `"schemaVersion": "1.0"`.
+- [x] Every `--export-json` file starts with `"schemaVersion": "1.0"`.
 - [ ] `schema/perfratio-output.schema.json` exists, and CI validates the export of the
       integration tests against it (with and without `--energy`, `--output-metric`,
       `--first-run=separate`, `--parameter-scan`, Ctrl-C).
-- [ ] `perfratio.measurements` is present; `energy` is `"unavailable"` with a reason when
+- [x] `perfratio.measurements` is present; `energy` is `"unavailable"` with a reason when
       `--energy` is given on a host without readable RAPL, and `"not_requested"` without
       `--energy`.
 - [ ] No result contains `0` in place of an unmeasured value.
 - [ ] `energy_samples` makes partial energy coverage visible.
-- [ ] `"joulex"` follows the two-step removal of §4; old exports with only `"joulex"`
+- [x] `"joulex"` is removed in one step (§4); old exports with only `"joulex"`
       still import.
 - [ ] `doc/understanding-output.md` documents the schema, units, compatibility rules and
       the recommended cross-language flags.
