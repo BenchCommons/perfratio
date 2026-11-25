@@ -334,6 +334,9 @@ pub struct Options {
     /// Measure energy consumption in Joules and display Performance per Watt
     pub measure_energy: bool,
 
+    /// Idle-power measurement window for net energy (--energy-baseline)
+    pub energy_baseline: Option<std::time::Duration>,
+
     /// Calculate deep statistics (confidence intervals, bootstrapping)
     pub deep_stats: bool,
 
@@ -406,6 +409,7 @@ impl Default for Options {
             time_unit: None,
             command_input_policy: CommandInputPolicy::Null,
             measure_energy: false,
+            energy_baseline: None,
             deep_stats: false,
             filter_failed: false,
             suppress_outlier_warnings: false,
@@ -655,6 +659,11 @@ impl Options {
                 crate::util::units::parse_duration(val)
                     .map_err(|e| OptionsError::InvalidTimeout(val.clone(), e))?,
             );
+        }
+        if let Some(val) = matches.get_one::<String>("energy-baseline") {
+            let d = crate::util::units::parse_duration(val)
+                .map_err(|e| OptionsError::InvalidEnergyBaseline(val.clone(), e))?;
+            options.energy_baseline = Some(d).filter(|d| !d.is_zero());
         }
         if let Some(val) = matches.get_one::<String>("until") {
             if val.is_empty() {

@@ -8,7 +8,7 @@ use std::cmp;
 
 use crate::benchmark::executor::BenchmarkIteration;
 use crate::command::Command;
-use crate::energy::{get_energy_sampler, EnergySampler};
+use crate::energy::{get_energy_sampler, idle_power, net_energy, EnergySampler, SHORT_RUN_SECONDS};
 use crate::options::{
     CmdFailureAction, CommandOutputPolicy, FirstRunPolicy, Options, OutputStyleOption, RunBounds,
 };
@@ -50,6 +50,8 @@ pub struct BenchmarkRunner<'a> {
     pub preparation_command: Option<Command<'a>>,
     pub conclusion_command: Option<Command<'a>>,
     pub energy_sampler: Option<Box<dyn EnergySampler>>,
+    /// Idle power from `--energy-baseline`, for net energy
+    pub idle_watts: Option<f64>,
     pub times_real: Vec<Second>,
     pub times_user: Vec<Second>,
     pub times_system: Vec<Second>,
@@ -130,6 +132,11 @@ impl<'a> BenchmarkRunner<'a> {
             None
         };
 
+        let idle_watts = match options.energy_baseline {
+            Some(d) if options.measure_energy => idle_power(d),
+            _ => None,
+        };
+
         BenchmarkRunner {
             number,
             display_number,
@@ -140,6 +147,7 @@ impl<'a> BenchmarkRunner<'a> {
             preparation_command,
             conclusion_command,
             energy_sampler,
+            idle_watts,
             times_real: vec![],
             times_user: vec![],
             times_system: vec![],
@@ -351,6 +359,18 @@ impl<'a> BenchmarkRunner<'a> {
             (Some(e), Some(base_e)) => Some((e - base_e).max(0.0)),
             (e, _) => e,
         }
+    }
+
+    /// Mean net energy over the runs that have a sample, if idle power is known.
+    fn net_energy_mean(&self) -> Option<f64> {
+        let idle = self.idle_watts?;
+        let nets: Vec<f64> = self
+            .energy_measurements
+            .iter()
+            .zip(&self.times_real)
+            .filter_map(|(e, &t)| e.map(|e| net_energy(e, idle, t)))
+            .collect();
+        (!nets.is_empty()).then(|| mean(&nets))
     }
 
     /// The run times that count for `--target-precision`: without a first run
@@ -997,11 +1017,21 @@ impl<'a> BenchmarkRunner<'a> {
                             format!("{mean_joules:.3} J")
                         };
 
+                        let net_str = self
+                            .net_energy_mean()
+                            .map(|n| format!("   net {n:.3} J"))
+                            .unwrap_or_default();
+                        let idle_str = self
+                            .idle_watts
+                            .map(|w| format!(", idle {w:.2} W"))
+                            .unwrap_or_default();
                         crate::outln!(
-                            "  Energy ({}):        {:>14}    [Power: {}]",
+                            "  Energy ({}):        {:>14}{}    [Power: {}{}]",
                             colors::yellow("mean").bold(),
                             colors::yellow(energy_str).bold(),
-                            colors::yellow(format!("{watts:.2} W"))
+                            colors::yellow(net_str),
+                            colors::yellow(format!("{watts:.2} W")),
+                            idle_str
                         );
                     } else {
                         crate::outln!(
@@ -1052,6 +1082,13 @@ impl<'a> BenchmarkRunner<'a> {
             if self.executor.uses_shell() && self.times_real.iter().any(|&t| t < MIN_EXECUTION_TIME)
             {
                 warnings.push(Warnings::FastExecutionTime);
+            }
+
+            if self.options.measure_energy
+                && t_mean < SHORT_RUN_SECONDS
+                && self.energy_measurements.iter().any(Option::is_some)
+            {
+                warnings.push(Warnings::ShortEnergyRuns);
             }
 
             // Check program exit codes
@@ -1179,6 +1216,7 @@ impl<'a> BenchmarkRunner<'a> {
         };
 
         let total_runs = self.times_real.len();
+        let mean_net_energy = self.net_energy_mean();
         let valid_energy: Vec<f64> = self.energy_measurements.into_iter().flatten().collect();
         let (mean_energy, mean_watts, energy_all) = if !valid_energy.is_empty() {
             let m_j = mean(&valid_energy);
@@ -1237,6 +1275,8 @@ impl<'a> BenchmarkRunner<'a> {
             mean_energy_joules: mean_energy,
             mean_watts,
             energy_joules: energy_all,
+            idle_watts: self.idle_watts,
+            mean_net_energy_joules: mean_net_energy,
             exit_codes: self.exit_codes,
             parameters: self
                 .command
@@ -1869,6 +1909,24 @@ mod tests {
             .net_mean_stderr
             .expect("net_mean_stderr should be present");
         assert!((actual_se - expected_se).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_net_energy_mean() {
+        let cmd = Command::new(None, "true");
+        let options = Options {
+            command_output_policies: vec![CommandOutputPolicy::Null],
+            ..Default::default()
+        };
+        let executor = MockExecutor::new(None, None);
+        let mut runner = BenchmarkRunner::new(0, 0, &cmd, &options, &executor);
+        runner.idle_watts = Some(2.0);
+        runner.times_real = vec![0.5, 0.1, 1.0];
+        runner.energy_measurements = vec![Some(2.0), None, Some(1.0)];
+        // net: 2.0 - 1.0 = 1.0 and max(1.0 - 2.0, 0) = 0.0
+        assert_eq!(runner.net_energy_mean(), Some(0.5));
+        runner.idle_watts = None;
+        assert_eq!(runner.net_energy_mean(), None);
     }
 
     #[test]

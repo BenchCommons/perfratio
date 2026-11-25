@@ -12,6 +12,8 @@ pub struct OutlierWarningOptions {
 /// A list of all possible warnings
 pub enum Warnings {
     FastExecutionTime,
+    /// `--energy` with runs shorter than the RAPL resolution allows
+    ShortEnergyRuns,
     NonZeroExitCode,
     SlowInitialRun(Second, OutlierWarningOptions),
     OutliersDetected(OutlierWarningOptions),
@@ -51,6 +53,11 @@ pub enum Warnings {
 impl fmt::Display for Warnings {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
+            Warnings::ShortEnergyRuns => write!(
+                f,
+                "Runs are shorter than 10 ms; RAPL energy resolution is ~1 ms/≈60 µJ, \
+                 so energy values are dominated by quantization noise."
+            ),
             Warnings::FastExecutionTime => write!(
                 f,
                 "Command took less than {:.0} ms to complete. Note that the results might be \
