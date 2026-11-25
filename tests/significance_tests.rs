@@ -1,12 +1,12 @@
 //! Significance markers in the summary and the JSON export (#215).
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
-fn hyperfine_debug() -> assert_cmd::Command {
-    let mut cmd = hyperfine();
+fn perfratio_debug() -> assert_cmd::Command {
+    let mut cmd = perfratio();
     cmd.arg("--debug-mode");
     cmd
 }
@@ -14,7 +14,7 @@ fn hyperfine_debug() -> assert_cmd::Command {
 #[test]
 fn plain_markers_for_non_tty_output() {
     // stdout is a pipe here: no symbols, plain-text markers.
-    hyperfine_debug()
+    perfratio_debug()
         .arg("sleep 1")
         .arg("sleep 2")
         .arg("--sort=mean-time")
@@ -29,7 +29,7 @@ fn plain_markers_for_non_tty_output() {
 
 #[test]
 fn no_color_env_gives_plain_markers() {
-    hyperfine_debug()
+    perfratio_debug()
         .env("NO_COLOR", "1")
         .arg("sleep 1")
         .arg("sleep 2")
@@ -40,7 +40,7 @@ fn no_color_env_gives_plain_markers() {
 
 #[test]
 fn reference_faster_than_item_is_a_speedup() {
-    hyperfine_debug()
+    perfratio_debug()
         .arg("--reference=sleep 2")
         .arg("sleep 1")
         .arg("--sort=command")
@@ -53,7 +53,7 @@ fn reference_faster_than_item_is_a_speedup() {
 fn json_export_has_significance() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("out.json");
-    hyperfine_debug()
+    perfratio_debug()
         .arg("sleep 1")
         .arg("sleep 2")
         .arg("--export-json")

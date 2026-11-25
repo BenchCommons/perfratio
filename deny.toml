@@ -12,7 +12,7 @@ yanked = "deny"
 ignore = []
 
 [licenses]
-# joulex is MIT OR Apache-2.0; every dependency license must be compatible.
+# perfratio is MIT OR Apache-2.0; every dependency license must be compatible.
 allow = [
     "MIT",
     "Apache-2.0",

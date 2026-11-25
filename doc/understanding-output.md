@@ -88,7 +88,7 @@ Summary
 | `-C`, `--conclude CMD` (alias `--after`) | after **each** run | no |
 | `-c`, `--cleanup CMD` | once **after all runs** of a benchmark; once for all commands or once per command | no |
 
-`PERFRATIO_ITERATION` (alongside `JOULEX_ITERATION` and `HYPERFINE_ITERATION`) is set to the run index (`0`, `1`, … or
+`PERFRATIO_ITERATION` is set to the run index (`0`, `1`, … or
 `warmup-0`, …) for the command, `--prepare` and `--conclude`. The same value is available as
 the `{iteration}` placeholder, which also works with `-N`/`--shell=none`, e.g.
 `perfratio -N --prepare 'mkdir -p out/{iteration}' 'tool --out out/{iteration} input'`. It is

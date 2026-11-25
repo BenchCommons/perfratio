@@ -8,7 +8,7 @@
 # ]
 # ///
 
-"""This program shows `hyperfine` benchmark results in a sequential way
+"""This program shows `perfratio` benchmark results in a sequential way
 in order to debug possible background interference, caching effects,
 thermal throttling and similar effects.
 """

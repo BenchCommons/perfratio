@@ -1,7 +1,7 @@
 //! Tests for --subtract (#56).
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 use serde_json::Value;
@@ -9,7 +9,7 @@ use serde_json::Value;
 fn results(args: &[&str]) -> Vec<Value> {
     let dir = tempfile::tempdir().unwrap();
     let json = dir.path().join("out.json");
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--style=basic", "--export-json"])
         .arg(&json)
         .args(args)
@@ -46,7 +46,7 @@ fn the_baseline_mean_is_subtracted_from_every_run() {
 
 #[test]
 fn the_baseline_is_shown_and_marked() {
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--runs=3",
@@ -69,7 +69,7 @@ fn a_larger_baseline_clamps_to_zero_and_warns() {
     assert_eq!(results[0]["mean"], 0.0);
     assert_eq!(results[0]["baseline"]["clamped_runs"], 3);
 
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--runs=3",
@@ -108,7 +108,7 @@ fn without_the_option_nothing_changes() {
 #[cfg(unix)]
 #[test]
 fn a_failing_baseline_is_an_error() {
-    hyperfine()
+    perfratio()
         .args(["--runs=2", "--subtract", "exit 3", "true"])
         .assert()
         .failure()
@@ -143,14 +143,14 @@ fn subtract_works_with_target_precision() {
 fn subtract_works_with_compare() {
     let dir = tempfile::tempdir().unwrap();
     let base_json = dir.path().join("base.json");
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--style=basic", "--export-json"])
         .arg(&base_json)
         .args(["--runs=3", "--subtract", "sleep 0.05", "sleep 0.2"])
         .assert()
         .success();
 
-    hyperfine()
+    perfratio()
         .args([
             "--debug-mode",
             "--style=basic",
@@ -169,7 +169,7 @@ fn subtract_works_with_compare() {
 
 #[test]
 fn subtract_help_mentions_energy() {
-    hyperfine()
+    perfratio()
         .arg("--help")
         .assert()
         .success()

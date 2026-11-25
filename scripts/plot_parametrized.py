@@ -7,7 +7,7 @@
 # ]
 # ///
 
-"""This program shows parametrized `hyperfine` benchmark results as an
+"""This program shows parametrized `perfratio` benchmark results as an
 errorbar plot."""
 
 import argparse
