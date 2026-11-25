@@ -6,16 +6,36 @@ use crate::util::sanitize::escape_control_chars;
 
 #[derive(Deserialize, Debug)]
 struct HyperfineSummary {
+    /// Primary metric the file was exported with (absent in older files)
+    #[serde(default)]
+    metric: Option<crate::metric::Metric>,
     results: Vec<BenchmarkResult>,
 }
 
 /// Import previously exported JSON benchmark results from the given file path.
 pub fn import_json(path: &str) -> Result<Vec<BenchmarkResult>> {
+    import_json_for_metric(path, None)
+}
+
+/// Like [`import_json`], but rejects a file whose top-level `metric` differs
+/// from the active `--metric`, because its ordering and ratios would not match.
+pub fn import_json_for_metric(
+    path: &str,
+    expected: Option<crate::metric::Metric>,
+) -> Result<Vec<BenchmarkResult>> {
     let file = std::fs::File::open(path)
         .with_context(|| format!("Could not open import file '{path}'"))?;
     let reader = std::io::BufReader::new(file);
     let mut summary: HyperfineSummary = serde_json::from_reader(reader)
         .with_context(|| format!("Failed to parse import JSON '{path}'"))?;
+    if let (Some(file_metric), Some(cli_metric)) = (summary.metric, expected) {
+        if file_metric != cli_metric {
+            bail!(
+                "Import file '{path}' was exported with '--metric {file_metric}' but the current \
+                 run uses '--metric {cli_metric}'. Re-export it or pass the same '--metric'."
+            );
+        }
+    }
     if summary.results.is_empty() {
         bail!("Import file '{path}' contains no benchmark results");
     }
@@ -27,6 +47,16 @@ pub fn import_json(path: &str) -> Result<Vec<BenchmarkResult>> {
                 crate::util::sanitize::escape_control_chars(&res.command)
             )
         })?;
+    }
+    if let Some(cli_metric) = expected {
+        for res in &summary.results {
+            if res.primary_mean(cli_metric).is_none() {
+                bail!(
+                    "Import file '{path}': result '{}' has no data for '--metric {cli_metric}'",
+                    escape_control_chars(&res.command)
+                );
+            }
+        }
     }
     for res in &mut summary.results {
         if res.command_with_unused_parameters.is_empty() {

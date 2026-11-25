@@ -18,9 +18,13 @@ pub fn compare_metric(l: &BenchmarkResult, r: &BenchmarkResult, metric: Metric) 
         (true, false) => Ordering::Greater,
         (false, true) => Ordering::Less,
         _ => {
-            let l_val = l.primary_mean(metric);
-            let r_val = r.primary_mean(metric);
-            l_val.partial_cmp(&r_val).unwrap_or(Ordering::Equal)
+            match (l.primary_mean(metric), r.primary_mean(metric)) {
+                (Some(l_val), Some(r_val)) => l_val.partial_cmp(&r_val).unwrap_or(Ordering::Equal),
+                // a result without data for the metric never ranks above one with data
+                (None, Some(_)) => Ordering::Greater,
+                (Some(_), None) => Ordering::Less,
+                (None, None) => Ordering::Equal,
+            }
         }
     }
 }
@@ -52,7 +56,9 @@ fn compute_relative_speeds<'a>(
     sort_order: SortOrder,
     metric: Metric,
 ) -> Vec<BenchmarkResultWithRelativeSpeed<'a>> {
-    let ref_mean = reference.primary_mean(metric);
+    let Some(ref_mean) = reference.primary_mean(metric) else {
+        return compute_without_ratios(results, reference, sort_order, metric);
+    };
     let ref_stddev = reference.primary_stddev(metric);
 
     let mut results: Vec<_> = results
@@ -71,7 +77,15 @@ fn compute_relative_speeds<'a>(
                 };
             }
 
-            let res_mean = result.primary_mean(metric);
+            let Some(res_mean) = result.primary_mean(metric) else {
+                return BenchmarkResultWithRelativeSpeed {
+                    result,
+                    relative_speed: f64::NAN,
+                    relative_speed_stddev: None,
+                    is_reference,
+                    relative_ordering,
+                };
+            };
             let res_stddev = result.primary_stddev(metric);
 
             if res_mean == 0.0 {
@@ -132,8 +146,8 @@ pub fn compute_with_check_from_reference<'a>(
         return Some(Vec::new());
     }
 
-    if best_of(results, metric).primary_mean(metric) == 0.0 || reference.primary_mean(metric) == 0.0
-    {
+    let is_zero_or_missing = |r: &BenchmarkResult| r.primary_mean(metric).is_none_or(|m| m == 0.0);
+    if is_zero_or_missing(best_of(results, metric)) || is_zero_or_missing(reference) {
         return None;
     }
 
@@ -153,7 +167,7 @@ pub fn compute_with_check<'a>(
 
     let fastest = best_of(results, metric);
 
-    if fastest.primary_mean(metric) == 0.0 {
+    if fastest.primary_mean(metric).is_none_or(|m| m == 0.0) {
         return None;
     }
 
@@ -245,6 +259,9 @@ fn create_result(name: &str, mean: Scalar) -> BenchmarkResult {
         percentiles: None,
         geometric_mean: None,
         warmup_runs: None,
+        target_duration_seconds: None,
+        total_sampling_seconds: None,
+        runs_done: None,
         runs_planned: None,
         first_run: None,
         diagnostics: None,

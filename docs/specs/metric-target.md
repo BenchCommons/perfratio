@@ -87,6 +87,11 @@ perfratio owns the JSON export contract (`output-schema-contract.md`, `BenchComm
 - Version impact: new optional fields are a **MINOR** bump. Once `schemaVersion` lands on master (#240), this PR's fields ship with the first MINOR after `"1.0"` (`"1.1"`), and the field table in `output-schema-contract.md` must list `metric` and `primary_metric` in the same PR. Until then the export is unversioned (legacy shape) and consumers must ignore unknown keys.
 - Dependency: `--metric custom:<name>` (#90, `--output-metric` values) would add a new `metric` enum value; `metric` is therefore an open enum for consumers, and `primary_metric.metric` would carry `custom:<name>`.
 
+### 7. Missing data and import
+- `BenchmarkResult::primary_mean` returns `Option<f64>`. `None` means the result has no data for the metric (no energy reading, no memory samples). It is never replaced by 0, and a `None` result sorts after every result with data. Its relative speed is NaN, and `primary_metric` is omitted from its JSON entry.
+- Under `--metric energy`, every run needs an energy reading. If any run (partial) or all runs (none) lack one, `finish()` fails with an error naming `--metric energy`. Outlier detection therefore never falls back to wall time.
+- `--import-json` reads the top-level `metric`. A file whose `metric` differs from the CLI `--metric` is rejected. Files without the field (older exports) are accepted. Under `--metric energy|memory`, an imported result lacking data for the metric is rejected.
+
 ## Verification Plan
 - Unit tests:
   - CLI argument parsing for `--metric` with all valid variants and aliases.
@@ -97,3 +102,5 @@ perfratio owns the JSON export contract (`output-schema-contract.md`, `BenchComm
   - `--metric memory` verifies memory-based summary comparison.
   - `--metric energy` requires energy availability or exits with error code 1.
   - JSON export contains the top-level `"metric"` attribute.
+
+  - Missing and partial energy fail the run (`benchmark/mod.rs` unit tests); import with mismatched `metric` or missing energy fails (`tests/metric_tests.rs`).

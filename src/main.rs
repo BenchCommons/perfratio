@@ -20,6 +20,7 @@ pub mod benchmark;
 pub mod cli;
 pub mod command;
 pub mod compare;
+pub mod counters;
 pub mod energy;
 pub mod error;
 pub mod export;
@@ -30,6 +31,7 @@ pub mod outlier_detection;
 pub mod output;
 pub mod output_metric;
 pub mod parameter;
+pub mod pmu;
 pub mod stats;
 pub mod system_check;
 pub mod timer;
@@ -95,7 +97,10 @@ fn run() -> Result<()> {
     let mut imported_results = vec![];
     if let Some(files) = cli_arguments.get_many::<String>("import-json") {
         for file in files {
-            imported_results.extend(crate::import::import_json(file)?);
+            imported_results.extend(crate::import::import_json_for_metric(
+                file,
+                Some(options.metric),
+            )?);
         }
     }
 

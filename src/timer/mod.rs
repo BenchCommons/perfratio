@@ -412,6 +412,7 @@ pub unsafe fn pre_exec_write_timestamp(raw_write: libc::c_int) -> std::io::Resul
 }
 
 /// Execute the given command and return a timing summary
+#[allow(clippy::too_many_arguments)]
 pub fn execute_and_measure(
     mut command: Command,
     affinity: Option<&[usize]>,
@@ -420,6 +421,7 @@ pub fn execute_and_measure(
     timeout: Option<std::time::Duration>,
     until: Option<&crate::options::UntilSettings>,
     stdout_capture_limit: Option<usize>,
+    stderr_capture_limit: Option<usize>,
 ) -> Result<TimerResult> {
     // On Linux the affinity is applied by the caller (pre_exec); on other
     // Unix systems --affinity is rejected during option validation. The
@@ -641,8 +643,11 @@ pub fn execute_and_measure(
         let stderr_tail = child
             .stderr
             .take()
-            .filter(|_| capture)
-            .map(|stderr| std::thread::spawn(move || read_tail(stderr, CAPTURE_LIMIT)));
+            .filter(|_| capture || stderr_capture_limit.is_some())
+            .map(|stderr| {
+                let limit = stderr_capture_limit.unwrap_or(CAPTURE_LIMIT);
+                std::thread::spawn(move || read_tail(stderr, limit))
+            });
         let stdout_tail = match child.stdout.take() {
             Some(stdout) if capture || stdout_capture_limit.is_some() => {
                 let limit = stdout_capture_limit.unwrap_or(CAPTURE_LIMIT);
@@ -685,7 +690,7 @@ pub fn execute_and_measure(
             counters = None;
         }
 
-        captured = if capture || stdout_capture_limit.is_some() {
+        captured = if capture || stdout_capture_limit.is_some() || stderr_capture_limit.is_some() {
             Some(CapturedOutput {
                 stdout: stdout_tail.unwrap_or_default(),
                 stderr: stderr_tail
@@ -974,6 +979,7 @@ mod tests {
             None,
             crate::util::priority::Priority::Normal,
             false,
+            None,
             None,
             None,
             None,

@@ -76,6 +76,8 @@ struct ProcessSettings<'a> {
     until: Option<&'a crate::options::UntilSettings>,
     /// --output-metric
     output_metrics: &'a [crate::output_metric::OutputMetric],
+    /// --output-metric-stderr
+    output_metrics_stderr: bool,
 }
 
 impl<'a> ProcessSettings<'a> {
@@ -86,6 +88,7 @@ impl<'a> ProcessSettings<'a> {
             timeout: options.timeout,
             until: options.until.as_ref(),
             output_metrics: &options.output_metrics,
+            output_metrics_stderr: options.output_metrics_stderr,
         }
     }
 }
@@ -105,6 +108,7 @@ fn run_command_and_measure_common(
         timeout,
         until,
         output_metrics,
+        output_metrics_stderr,
     } = process;
     let (until, capture_metrics) = match iteration {
         BenchmarkIteration::NonBenchmarkRun => (None, false),
@@ -119,8 +123,13 @@ fn run_command_and_measure_common(
         Some(_) => (std::process::Stdio::null(), std::process::Stdio::piped()),
         None => {
             let (mut out, err) = command_output_policy.get_stdout_stderr()?;
+            let mut err = err;
             if capture_metrics {
-                out = std::process::Stdio::piped();
+                if output_metrics_stderr {
+                    err = std::process::Stdio::piped();
+                } else {
+                    out = std::process::Stdio::piped();
+                }
             }
             (out, err)
         }
@@ -148,8 +157,10 @@ fn run_command_and_measure_common(
 
     let interrupted_before = crate::util::interrupt::interrupted();
     let capture = *command_output_policy == CommandOutputPolicy::CaptureTail;
-    let stdout_capture_limit = if capture_metrics {
-        Some(1 << 20)
+    let metrics_limit = capture_metrics.then_some(1 << 20);
+    let stderr_capture_limit = metrics_limit.filter(|_| output_metrics_stderr);
+    let stdout_capture_limit = if capture_metrics && !output_metrics_stderr {
+        metrics_limit
     } else if capture {
         Some(crate::timer::CAPTURE_LIMIT)
     } else {
@@ -163,6 +174,7 @@ fn run_command_and_measure_common(
         timeout,
         until,
         stdout_capture_limit,
+        stderr_capture_limit,
     )
     .map_err(|error| {
         // A priority that needs privileges fails in the child: explain how
@@ -252,7 +264,13 @@ fn run_command_and_measure_common(
         let stdout = result
             .captured
             .as_ref()
-            .map(|c| c.stdout.as_slice())
+            .map(|c| {
+                if output_metrics_stderr {
+                    c.stderr.as_slice()
+                } else {
+                    c.stdout.as_slice()
+                }
+            })
             .unwrap_or(&[]);
         for metric in output_metrics {
             if let Some(val) = metric.extract(stdout) {

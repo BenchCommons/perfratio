@@ -281,3 +281,78 @@ fn metric_memory_sorting_selects_least_memory_as_reference() {
         .stdout(predicate::str::contains("sleep 0.5 0 0 1000 used"))
         .stdout(predicate::str::contains("less memory than"));
 }
+
+fn write_export(dir: &tempfile::TempDir, name: &str, json: &str) -> String {
+    let path = dir.path().join(name);
+    std::fs::write(&path, json).unwrap();
+    path.to_string_lossy().into_owned()
+}
+
+fn result_json(extra: &str) -> String {
+    format!(
+        r#"{{"command":"a","mean":0.1,"stddev":0.0,"median":0.1,"user":0.05,"system":0.05,
+        "min":0.1,"max":0.1,"times":[0.1],"exit_codes":[0]{extra}}}"#
+    )
+}
+
+#[test]
+fn import_json_rejects_metric_mismatch() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = write_export(
+        &dir,
+        "wall.json",
+        &format!(r#"{{"metric":"wall","results":[{}]}}"#, result_json("")),
+    );
+    hyperfine()
+        .args(["--metric=cpu", "--import-json", &file])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--metric wall"))
+        .stderr(predicate::str::contains("--metric cpu"));
+}
+
+#[test]
+fn import_json_accepts_matching_metric() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = write_export(
+        &dir,
+        "cpu.json",
+        &format!(r#"{{"metric":"cpu","results":[{}]}}"#, result_json("")),
+    );
+    hyperfine()
+        .args(["--metric=cpu", "--import-json", &file])
+        .assert()
+        .success();
+}
+
+#[test]
+fn metric_energy_rejects_imported_result_without_energy() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = write_export(
+        &dir,
+        "noenergy.json",
+        &format!(r#"{{"results":[{}]}}"#, result_json("")),
+    );
+    hyperfine()
+        .args(["--debug-mode", "--metric=energy", "--import-json", &file])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("no data for '--metric energy'"));
+}
+
+#[test]
+fn metric_energy_accepts_imported_result_with_energy() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = write_export(
+        &dir,
+        "energy.json",
+        &format!(
+            r#"{{"metric":"energy","results":[{}]}}"#,
+            result_json(r#","mean_energy_joules":2.0,"energy_joules":[2.0]"#)
+        ),
+    );
+    hyperfine()
+        .args(["--debug-mode", "--metric=energy", "--import-json", &file])
+        .assert()
+        .success();
+}

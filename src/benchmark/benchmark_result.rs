@@ -36,6 +36,18 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub warmup_runs: Option<u64>,
 
+    /// `--duration`: the sampling budget in seconds
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_duration_seconds: Option<f64>,
+
+    /// `--duration`: summed run time in seconds of the runs performed
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total_sampling_seconds: Option<f64>,
+
+    /// `--duration`: number of runs performed
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runs_done: Option<u64>,
+
     /// Geometric mean of the run times (omitted if a run took 0 s)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub geometric_mean: Option<Second>,
@@ -134,6 +146,11 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shell: Option<String>,
 
+    /// Derived hardware-counter metrics (IPC, CPI, miss rates), see
+    /// `docs/specs/derived-counter-metrics.md`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub efficiency: Option<crate::counters::Efficiency>,
+
     /// `--subtract`: the baseline whose mean was subtracted from every run
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub baseline: Option<Baseline>,
@@ -146,9 +163,10 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<Second>,
 
-    /// Custom metrics extracted via --output-metric
+    /// Custom metrics extracted via --output-metric, one entry per run
+    /// (`null` where an ignored failure left the metric out)
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub custom_metrics: Option<BTreeMap<String, Vec<f64>>>,
+    pub custom_metrics: Option<BTreeMap<String, Vec<Option<f64>>>>,
 
     /// Statistical summary of custom metrics
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -363,21 +381,23 @@ impl BenchmarkResult {
     }
 
     /// Computes the mean value for the specified metric.
-    pub fn primary_mean(&self, metric: Metric) -> f64 {
+    ///
+    /// Returns `None` when the result carries no data for the metric (e.g. no
+    /// energy reading), so that such a result is never ranked on a fake 0.
+    pub fn primary_mean(&self, metric: Metric) -> Option<f64> {
         match metric {
-            Metric::Wall => self.mean,
-            Metric::User => self.user,
-            Metric::System => self.system,
-            Metric::Cpu => self.user + self.system,
-            Metric::Energy => self.mean_energy_joules.unwrap_or(0.0),
+            Metric::Wall => Some(self.mean),
+            Metric::User => Some(self.user),
+            Metric::System => Some(self.system),
+            Metric::Cpu => Some(self.user + self.system),
+            Metric::Energy => self.mean_energy_joules,
             Metric::Memory => {
-                if let Some(mem) = &self.memory_usage_byte {
-                    if !mem.is_empty() {
-                        let sum: u64 = mem.iter().sum();
-                        return sum as f64 / mem.len() as f64;
-                    }
+                let mem = self.memory_usage_byte.as_ref()?;
+                if mem.is_empty() {
+                    return None;
                 }
-                0.0
+                let sum: u64 = mem.iter().sum();
+                Some(sum as f64 / mem.len() as f64)
             }
         }
     }
@@ -428,7 +448,7 @@ impl BenchmarkResult {
             }),
             Metric::Memory => self.primary_samples(Metric::Memory).and_then(|samples| {
                 if samples.len() > 1 {
-                    let mean = self.primary_mean(Metric::Memory);
+                    let mean = self.primary_mean(Metric::Memory)?;
                     Some(crate::stats::basic::standard_deviation(
                         &samples,
                         Some(mean),
@@ -570,12 +590,12 @@ fn test_primary_samples_and_metrics() {
     );
 
     // Primary mean
-    assert_eq!(result.primary_mean(Metric::Wall), 10.0);
-    assert_eq!(result.primary_mean(Metric::User), 6.0);
-    assert_eq!(result.primary_mean(Metric::System), 4.0);
-    assert_eq!(result.primary_mean(Metric::Cpu), 10.0);
-    assert_eq!(result.primary_mean(Metric::Energy), 50.0);
-    assert_eq!(result.primary_mean(Metric::Memory), 1500.0);
+    assert_eq!(result.primary_mean(Metric::Wall), Some(10.0));
+    assert_eq!(result.primary_mean(Metric::User), Some(6.0));
+    assert_eq!(result.primary_mean(Metric::System), Some(4.0));
+    assert_eq!(result.primary_mean(Metric::Cpu), Some(10.0));
+    assert_eq!(result.primary_mean(Metric::Energy), Some(50.0));
+    assert_eq!(result.primary_mean(Metric::Memory), Some(1500.0));
 
     // Primary stddev
     assert!(result.primary_stddev(Metric::Wall).is_some());

@@ -75,7 +75,7 @@ pub struct BenchmarkRunner<'a> {
     /// Whether this runner timed out (--timeout <DURATION>)
     pub timed_out: bool,
     /// Extracted custom metrics per run
-    pub custom_metrics: std::collections::BTreeMap<String, Vec<f64>>,
+    pub custom_metrics: std::collections::BTreeMap<String, Vec<Option<f64>>>,
 }
 
 /// "1%", "0.5%"
@@ -375,6 +375,18 @@ impl<'a> BenchmarkRunner<'a> {
     /// `--aggregate-parameter-runs`, and never after `--max-runs` or when
     /// `budget` seconds have passed since `started`.
     pub fn needs_more_runs(&self, started: std::time::Instant, budget: Second) -> bool {
+        if let Some(duration) = self.options.duration {
+            // `--duration`: the budget is the summed run time, not the wall
+            // clock, so that it is reproducible with `--debug-mode`.
+            let runs = self.times_real.len() as u64;
+            if self.options.run_bounds.max.is_some_and(|max| runs >= max) {
+                return false;
+            }
+            let whole_cycles = runs.is_multiple_of(self.command.runs_multiple());
+            return runs < self.options.run_bounds.min
+                || !whole_cycles
+                || self.times_real.iter().sum::<Second>() < duration - 1e-9; // float sum slack
+        }
         let Some(target) = self.options.target_precision else {
             return false;
         };
@@ -473,7 +485,11 @@ impl<'a> BenchmarkRunner<'a> {
             + conclusion_overhead;
         self.initial_total_time = total_time;
 
-        let runs_in_min_time = (self.options.min_benchmarking_time / total_time) as u64;
+        let runs_in_min_time = (self
+            .options
+            .duration
+            .unwrap_or(self.options.min_benchmarking_time)
+            / total_time) as u64;
 
         let count = {
             let min = cmp::max(runs_in_min_time, self.options.run_bounds.min);
@@ -505,9 +521,7 @@ impl<'a> BenchmarkRunner<'a> {
             self.command
                 .per_run_values(&BenchmarkIteration::Benchmark(0)),
         );
-        for (name, val) in res.custom_metrics {
-            self.custom_metrics.entry(name).or_default().push(val);
-        }
+        self.push_custom_metrics(&res.custom_metrics);
         self.all_succeeded = self.all_succeeded && success;
 
         Ok(())
@@ -547,9 +561,7 @@ impl<'a> BenchmarkRunner<'a> {
             self.command
                 .per_run_values(&BenchmarkIteration::Benchmark(iteration)),
         );
-        for (name, val) in res.custom_metrics {
-            self.custom_metrics.entry(name).or_default().push(val);
-        }
+        self.push_custom_metrics(&res.custom_metrics);
         self.all_succeeded = self.all_succeeded && success;
 
         self.run_conclusion(BenchmarkIteration::Benchmark(iteration))?;
@@ -581,6 +593,18 @@ impl<'a> BenchmarkRunner<'a> {
             mean_of(|c| c.block_input_ops),
             mean_of(|c| c.block_output_ops),
         ))
+    }
+
+    /// Record one entry per configured `--output-metric` for this run: the
+    /// extracted value, or `None` (JSON `null`) if an ignored failure left it
+    /// out, so that every list stays aligned with `times`.
+    fn push_custom_metrics(&mut self, extracted: &std::collections::BTreeMap<String, f64>) {
+        for metric in &self.options.output_metrics {
+            self.custom_metrics
+                .entry(metric.name.clone())
+                .or_default()
+                .push(extracted.get(&metric.name).copied());
+        }
     }
 
     /// Keep only the runs at `keep` (ascending indices) in every per-run vector.
@@ -622,13 +646,9 @@ impl<'a> BenchmarkRunner<'a> {
                 .zip(&self.times_system)
                 .map(|(&u, &s)| u + s)
                 .collect(),
+            // `finish()` guarantees a reading for every run under `--metric energy`
             crate::metric::Metric::Energy => {
-                let v: Vec<f64> = self.energy_measurements.iter().filter_map(|&e| e).collect();
-                if !v.is_empty() && v.len() == self.times_real.len() {
-                    v
-                } else {
-                    self.times_real.clone()
-                }
+                self.energy_measurements.iter().filter_map(|&e| e).collect()
             }
             crate::metric::Metric::Memory => {
                 self.memory_usage_byte.iter().map(|&b| b as f64).collect()
@@ -637,6 +657,20 @@ impl<'a> BenchmarkRunner<'a> {
     }
 
     pub fn finish(mut self, print_header: bool) -> Result<BenchmarkResult> {
+        if self.options.metric == crate::metric::Metric::Energy {
+            let missing = self
+                .energy_measurements
+                .iter()
+                .filter(|e| e.is_none())
+                .count();
+            if missing > 0 || self.energy_measurements.is_empty() {
+                bail!(
+                    "'--metric energy' requires an energy reading for every run, but {missing} of {} \
+                     runs have none. Check that RAPL (`energy_uj`) is readable.",
+                    self.energy_measurements.len()
+                );
+            }
+        }
         let timeout_sec = self.options.timeout.map(|t| t.as_secs_f64()).unwrap_or(0.0);
         let first_run_excluded = self.excludes_first_timing_run() && self.times_real.len() > 1;
         let first_run = self.take_first_run();
@@ -811,7 +845,8 @@ impl<'a> BenchmarkRunner<'a> {
         let (custom_metrics, custom_metrics_summary) = if !self.custom_metrics.is_empty() {
             let mut summary_map = std::collections::BTreeMap::new();
             for (name, values) in &self.custom_metrics {
-                if let Some(summary) = benchmark_result::MetricSummary::from_values(values) {
+                let present: Vec<f64> = values.iter().flatten().copied().collect();
+                if let Some(summary) = benchmark_result::MetricSummary::from_values(&present) {
                     summary_map.insert(name.clone(), summary);
                 }
             }
@@ -1337,6 +1372,9 @@ impl<'a> BenchmarkRunner<'a> {
                 .map(|[p05, p25, p75, p95]| benchmark_result::Percentiles { p05, p25, p75, p95 }),
             geometric_mean: crate::stats::summary::geometric_mean(&self.times_real),
             warmup_runs: self.warmup.filter(|w| w.auto).map(|w| w.runs),
+            target_duration_seconds: self.options.duration,
+            total_sampling_seconds: self.options.duration.map(|_| self.times_real.iter().sum()),
+            runs_done: self.options.duration.map(|_| self.times_real.len() as u64),
             user: user_mean,
             system: system_mean,
             cpu_percent,
@@ -1364,6 +1402,7 @@ impl<'a> BenchmarkRunner<'a> {
             diagnostics: (!diagnostics.is_empty()).then_some(diagnostics),
             per_run_parameters,
             baseline,
+            efficiency: None,
             shell: self
                 .options
                 .has_per_command_shells()
@@ -1738,7 +1777,7 @@ impl<'a> Benchmark<'a> {
         // Gather statistics (perform the actual benchmark). With
         // --target-precision, the runs continue until the mean is precise
         // enough instead of stopping after the planned count.
-        let adaptive = self.options.target_precision.is_some();
+        let adaptive = self.options.target_precision.is_some() || self.options.duration.is_some();
         let started = std::time::Instant::now();
         let mut i = 0;
         loop {
@@ -1917,6 +1956,40 @@ mod tests {
         assert_eq!(result.energy_joules, None);
         // But aggregate mean energy is still computed from the valid samples
         assert_eq!(result.mean_energy_joules, Some(1.5));
+    }
+
+    fn energy_metric_runner_result(energy: Vec<Option<f64>>) -> Result<BenchmarkResult> {
+        let cmd = Command::new(None, "true");
+        let options = Options {
+            command_output_policies: vec![CommandOutputPolicy::Null],
+            metric: crate::metric::Metric::Energy,
+            ..Default::default()
+        };
+        let executor = MockExecutor::new(None, None);
+        let mut runner = BenchmarkRunner::new(0, 0, &cmd, &options, &executor);
+        runner.times_real = vec![0.1, 0.2];
+        runner.times_user = vec![0.05, 0.05];
+        runner.times_system = vec![0.05, 0.05];
+        runner.memory_usage_byte = vec![100, 100];
+        runner.energy_measurements = energy;
+        runner.exit_codes = vec![Some(0), Some(0)];
+        runner.resource_counters = vec![None, None];
+        runner.all_succeeded = true;
+        runner.count = 2;
+        runner.finish(false)
+    }
+
+    #[test]
+    fn test_metric_energy_fails_on_partial_energy() {
+        let err = energy_metric_runner_result(vec![Some(1.5), None]).unwrap_err();
+        assert!(err.to_string().contains("--metric energy"), "{err}");
+    }
+
+    #[test]
+    fn test_metric_energy_fails_on_missing_energy() {
+        let err = energy_metric_runner_result(vec![None, None]).unwrap_err();
+        assert!(err.to_string().contains("--metric energy"), "{err}");
+        assert!(energy_metric_runner_result(vec![Some(1.0), Some(2.0)]).is_ok());
     }
 
     #[test]

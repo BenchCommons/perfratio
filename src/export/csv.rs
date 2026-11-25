@@ -12,6 +12,9 @@ use crate::util::units::Unit;
 
 use anyhow::Result;
 
+/// Derived counter columns (#213), appended only when a result has them.
+const EFFICIENCY_COLUMNS: [&str; 4] = ["ipc", "cpi", "cache_miss_rate", "branch_miss_rate"];
+
 #[derive(Default)]
 pub struct CsvExporter {
     /// `--label KEY=VALUE` pairs, exported as `label_KEY` columns
@@ -48,6 +51,7 @@ impl Exporter for CsvExporter {
     ) -> Result<Vec<u8>> {
         let mut writer = WriterBuilder::new().from_writer(vec![]);
 
+        let has_efficiency = results.iter().any(|r| r.efficiency.is_some());
         let mut all_param_names = BTreeSet::new();
         let mut all_metric_names = BTreeSet::new();
         for res in results {
@@ -87,6 +91,12 @@ impl Exporter for CsvExporter {
                 headers.push(Cow::Owned(format!("median_{metric_name}").into_bytes()));
                 headers.push(Cow::Owned(format!("min_{metric_name}").into_bytes()));
                 headers.push(Cow::Owned(format!("max_{metric_name}").into_bytes()));
+            }
+
+            if has_efficiency {
+                for name in EFFICIENCY_COLUMNS {
+                    headers.push(Cow::Borrowed(name.as_bytes()));
+                }
             }
 
             writer.write_record(headers)?;
@@ -196,11 +206,51 @@ impl Exporter for CsvExporter {
                     fields.push(Cow::Borrowed(b""));
                 }
             }
+            if has_efficiency {
+                let e = res.efficiency.unwrap_or_default();
+                for v in [e.ipc, e.cpi, e.cache_miss_rate, e.branch_miss_rate] {
+                    fields.push(optional(v));
+                }
+            }
             writer.write_record(fields)?;
         }
 
         Ok(writer.into_inner()?)
     }
+}
+
+#[test]
+fn test_csv_efficiency_columns_only_when_present() {
+    use crate::counters::Efficiency;
+    let mut r = BenchmarkResult {
+        command: "a".into(),
+        ..Default::default()
+    };
+    let out = |r: &BenchmarkResult| {
+        let b = CsvExporter::default()
+            .serialize(
+                std::slice::from_ref(r),
+                None,
+                None,
+                SortOrder::Command,
+                crate::metric::Metric::Wall,
+            )
+            .unwrap();
+        String::from_utf8(b).unwrap()
+    };
+    assert!(!out(&r).contains("cache_miss_rate"));
+    r.efficiency = Some(Efficiency {
+        ipc: Some(2.0),
+        cache_miss_rate: Some(0.25),
+        ..Default::default()
+    });
+    let text = out(&r);
+    let mut lines = text.lines();
+    assert!(lines
+        .next()
+        .unwrap()
+        .ends_with(",ipc,cpi,cache_miss_rate,branch_miss_rate"));
+    assert!(lines.next().unwrap().ends_with(",2,,0.25,"));
 }
 
 #[test]
@@ -240,6 +290,9 @@ fn test_csv() {
             percentiles: None,
             geometric_mean: None,
             warmup_runs: None,
+            target_duration_seconds: None,
+            total_sampling_seconds: None,
+            runs_done: None,
             runs_planned: None,
             first_run: None,
             diagnostics: None,
@@ -280,6 +333,9 @@ fn test_csv() {
             percentiles: None,
             geometric_mean: None,
             warmup_runs: None,
+            target_duration_seconds: None,
+            total_sampling_seconds: None,
+            runs_done: None,
             runs_planned: None,
             first_run: None,
             diagnostics: None,
@@ -347,6 +403,9 @@ fn test_csv_formula_injection_sanitization() {
         percentiles: None,
         geometric_mean: None,
         warmup_runs: None,
+        target_duration_seconds: None,
+        total_sampling_seconds: None,
+        runs_done: None,
         runs_planned: None,
         first_run: None,
         diagnostics: None,
@@ -443,6 +502,9 @@ fn test_csv_with_reference_command() {
             percentiles: None,
             geometric_mean: None,
             warmup_runs: None,
+            target_duration_seconds: None,
+            total_sampling_seconds: None,
+            runs_done: None,
             runs_planned: None,
             first_run: None,
             diagnostics: None,
@@ -482,6 +544,9 @@ fn test_csv_with_reference_command() {
             percentiles: None,
             geometric_mean: None,
             warmup_runs: None,
+            target_duration_seconds: None,
+            total_sampling_seconds: None,
+            runs_done: None,
             runs_planned: None,
             first_run: None,
             diagnostics: None,
@@ -549,6 +614,9 @@ fn test_csv_heterogeneous_parameters() {
             percentiles: None,
             geometric_mean: None,
             warmup_runs: None,
+            target_duration_seconds: None,
+            total_sampling_seconds: None,
+            runs_done: None,
             runs_planned: None,
             first_run: None,
             diagnostics: None,
@@ -588,6 +656,9 @@ fn test_csv_heterogeneous_parameters() {
             percentiles: None,
             geometric_mean: None,
             warmup_runs: None,
+            target_duration_seconds: None,
+            total_sampling_seconds: None,
+            runs_done: None,
             runs_planned: None,
             first_run: None,
             diagnostics: None,
