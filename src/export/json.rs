@@ -22,9 +22,13 @@ pub struct PrimaryMetricStats {
 }
 
 #[derive(Serialize, Debug)]
-struct JoulexSummary<'a> {
+struct PerfratioSummary<'a> {
+    /// Metric used for ranking and relative speed (`wall` unless `--metric` is set)
     metric: Metric,
-    /// Information about the joulex run (version, command line, date, labels, system)
+    /// Information about the perfratio run (version, command line, date, labels, system)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    perfratio: Option<&'a ExportMetadata>,
+    /// Backwards compatibility alias for older consumers
     #[serde(skip_serializing_if = "Option::is_none")]
     joulex: Option<&'a ExportMetadata>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -98,8 +102,9 @@ impl Exporter for JsonExporter {
             })
             .collect();
 
-        let mut output = to_vec_pretty(&JoulexSummary {
+        let mut output = to_vec_pretty(&PerfratioSummary {
             metric,
+            perfratio: self.metadata.as_ref(),
             joulex: self.metadata.as_ref(),
             interrupted: crate::util::interrupt::interrupted(),
             results,

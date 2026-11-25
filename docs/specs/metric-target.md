@@ -79,6 +79,14 @@ pub fn primary_samples(&self, metric: Metric) -> Option<Vec<f64>>
   - Keeps existing `mean`, `stddev`, `times` (wall time) intact for backwards compatibility.
   - Adds `"primary_metric": { "metric": "...", "mean": ..., "stddev": ..., "samples": [...] }` if metric is not `wall`.
 
+### 6. JSON contract note (`schemaVersion`, #240)
+perfratio owns the JSON export contract (`output-schema-contract.md`, `BenchCommons/.product` `CONTRACTS.md`). This feature changes it additively:
+- Top-level `"metric"` (string, `wall|cpu|user|system|energy|memory`), always emitted, `"wall"` by default.
+- Per-result `"primary_metric"` object (`metric`, `mean`, `stddev`?, `samples`?), emitted only when `metric != wall`. Units: seconds (time metrics), joules (energy), bytes (memory).
+- Existing fields (`mean`, `times`, `relative_speed`, ...) keep their meaning and stay wall-clock based. Only `relative_speed[_stddev]` and result ordering follow the active metric, which is why `metric` is exported.
+- Version impact: new optional fields are a **MINOR** bump. Once `schemaVersion` lands on master (#240), this PR's fields ship with the first MINOR after `"1.0"` (`"1.1"`), and the field table in `output-schema-contract.md` must list `metric` and `primary_metric` in the same PR. Until then the export is unversioned (legacy shape) and consumers must ignore unknown keys.
+- Dependency: `--metric custom:<name>` (#90, `--output-metric` values) would add a new `metric` enum value; `metric` is therefore an open enum for consumers, and `primary_metric.metric` would carry `custom:<name>`.
+
 ## Verification Plan
 - Unit tests:
   - CLI argument parsing for `--metric` with all valid variants and aliases.
