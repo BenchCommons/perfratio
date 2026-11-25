@@ -61,6 +61,8 @@ pub struct SendHandle(pub windows_sys::Win32::Foundation::HANDLE);
 // SAFETY: Win32 HANDLEs to Job Objects can be safely referenced across threads.
 unsafe impl Send for SendHandle {}
 #[cfg(windows)]
+// SAFETY: see the `Send` impl above; the handle is only passed to thread-safe
+// Win32 calls (TerminateJobObject) and never dereferenced.
 unsafe impl Sync for SendHandle {}
 
 pub struct Watchdog {
