@@ -80,7 +80,7 @@ pub struct EnergyMeter(Box<dyn EnergySampler>);
 impl EnergyMeter {
     /// Pick the best sampler available on this system.
     pub fn new() -> Self {
-        EnergyMeter(get_energy_sampler())
+        EnergyMeter(get_energy_sampler(crate::energy::BackendPreference::Auto))
     }
 
     /// Whether energy readings are available.

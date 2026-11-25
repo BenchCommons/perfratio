@@ -126,7 +126,7 @@ impl<'a> BenchmarkRunner<'a> {
         });
 
         let energy_sampler = if options.measure_energy {
-            Some(get_energy_sampler())
+            Some(get_energy_sampler(options.energy_backend))
         } else {
             None
         };
@@ -1395,7 +1395,7 @@ pub fn measure_baseline(
         Ok(res)
     };
     let mut energy_sampler = if options.measure_energy {
-        Some(get_energy_sampler())
+        Some(get_energy_sampler(options.energy_backend))
     } else {
         None
     };

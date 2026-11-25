@@ -459,6 +459,17 @@ pub fn build_command() -> Command {
                 .help("Measure energy consumption (Joules) and average power draw (Watts) using hardware sensors."),
         )
         .arg(
+            Arg::new("energy-backend")
+                .long("energy-backend")
+                .value_name("BACKEND")
+                .value_parser(["auto", "sysfs", "perf"])
+                .help(
+                    "Energy backend for '--energy' (Linux): 'auto' (default) uses sysfs powercap \
+                     and falls back to the perf power PMU when energy_uj is unreadable, 'sysfs' \
+                     and 'perf' force one. Can also be set with PERFRATIO_ENERGY_BACKEND.",
+                ),
+        )
+        .arg(
             Arg::new("deep-stats")
                 .long("deep-stats")
                 .action(ArgAction::SetTrue)
