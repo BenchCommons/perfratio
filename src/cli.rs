@@ -788,6 +788,18 @@ pub fn build_command() -> Command {
                 ),
         )
         .arg(
+            Arg::new("delta-table")
+                .long("delta-table")
+                .action(ArgAction::SetTrue)
+                .help(
+                    "Print a table comparing every measured dimension (wall time, peak memory, \
+                     energy, power, CPU time) of each command with the reference command: mean ± σ, \
+                     the relative delta with its 95% confidence interval, and the p-value. \
+                     Dimensions that were not measured are left out. With '--export-markdown', \
+                     the tables are appended to the exported file.",
+                ),
+        )
+        .arg(
             Arg::new("show-output-on-failure")
                 .long("show-output-on-failure")
                 .action(ArgAction::SetTrue)

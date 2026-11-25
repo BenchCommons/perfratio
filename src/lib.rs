@@ -35,6 +35,8 @@ pub mod compare;
 #[doc(hidden)]
 pub mod counters;
 #[doc(hidden)]
+pub mod delta_table;
+#[doc(hidden)]
 pub mod energy;
 #[doc(hidden)]
 pub mod error;

@@ -464,6 +464,24 @@ impl<'a> Scheduler<'a> {
             })
     }
 
+    /// `--delta-table`: compare every measured dimension with the reference.
+    pub fn print_delta_table(&self) {
+        if self.options.output_style == OutputStyleOption::Disabled {
+            return;
+        }
+        let results: Vec<BenchmarkResult> = self
+            .results
+            .iter()
+            .filter(|r| !(self.options.filter_failed && r.has_failure()))
+            .cloned()
+            .collect();
+        let reference = self.get_reference_result(&results);
+        let table = crate::delta_table::terminal(&results, reference);
+        if !table.is_empty() {
+            crate::out!("{table}");
+        }
+    }
+
     pub fn print_relative_speed_comparison(&self) {
         if self.options.output_style == OutputStyleOption::Disabled {
             return;
