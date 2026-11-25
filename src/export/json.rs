@@ -6,6 +6,7 @@ use super::Exporter;
 use crate::benchmark::benchmark_result::BenchmarkResult;
 use crate::benchmark::relative_speed;
 use crate::options::SortOrder;
+use crate::stats::significance::{self, Significance};
 use crate::util::units::Unit;
 
 use anyhow::Result;
@@ -33,6 +34,13 @@ struct ResultEntry<'a> {
     relative_speed: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     relative_speed_stddev: Option<f64>,
+    /// Significance of the difference to the reference (#215). Omitted for the
+    /// reference itself and if the test is undefined (fewer than 3 runs, no per-run times).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    significance: Option<Significance>,
+    /// p-value of the bootstrap Welch test against the reference
+    #[serde(skip_serializing_if = "Option::is_none")]
+    p_value: Option<f64>,
 }
 
 #[derive(Default)]
@@ -54,11 +62,16 @@ impl Exporter for JsonExporter {
             let baseline = reference.unwrap_or_else(|| relative_speed::fastest_of(results));
             relative_speed::compute_with_check_from_reference(results, baseline, SortOrder::Command)
         };
+        let reference_result = reference
+            .or_else(|| (!results.is_empty()).then(|| relative_speed::fastest_of(results)));
         let results = results
             .iter()
             .enumerate()
             .map(|(i, result)| {
                 let entry = relative.as_ref().map(|r| &r[i]);
+                let assessment = reference_result
+                    .filter(|r| !std::ptr::eq(*r, result))
+                    .and_then(|r| significance::assess(r, result));
                 ResultEntry {
                     result,
                     relative_speed: entry.map(|e| e.relative_speed).filter(|r| r.is_finite()),
@@ -66,6 +79,8 @@ impl Exporter for JsonExporter {
                     relative_speed_stddev: entry
                         .filter(|e| !e.is_reference)
                         .and_then(|e| e.relative_speed_stddev),
+                    significance: assessment.map(|a| a.significance),
+                    p_value: assessment.map(|a| a.p_value),
                 }
             })
             .collect();

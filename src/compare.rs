@@ -89,7 +89,7 @@ pub fn compare<'a>(
 /// Two-sided p-value of the difference in mean run time (bootstrap Welch
 /// test, accounting for any subtracted baseline uncertainty). Two constant
 /// samples with different means and no baseline uncertainty are certainly different.
-fn p_value(baseline: &BenchmarkResult, current: &BenchmarkResult) -> Option<f64> {
+pub(crate) fn p_value(baseline: &BenchmarkResult, current: &BenchmarkResult) -> Option<f64> {
     let (a, b) = (baseline.times.as_deref()?, current.times.as_deref()?);
     let var_base_a = baseline
         .baseline
