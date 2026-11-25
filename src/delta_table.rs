@@ -7,7 +7,7 @@
 use crate::benchmark::benchmark_result::BenchmarkResult;
 use crate::benchmark::relative_speed::fastest_of;
 use crate::output::colors;
-use crate::stats::{basic, deep, precision::t_975};
+use crate::stats::basic;
 use crate::util::units::format_bytes;
 
 /// Significance level for the verdict column
@@ -112,7 +112,10 @@ pub struct DeltaRow {
     pub target: Stat,
     /// (target − reference) / reference; `None` if the reference mean is 0
     pub relative: Option<f64>,
-    /// Half-width of the 95% confidence interval of `relative`
+    /// Half-width of the 95% Welch confidence interval of the difference of
+    /// means, divided by the reference mean. It is not a ratio (delta-method)
+    /// interval: the uncertainty of the reference mean in the denominator is
+    /// ignored.
     pub ci_half_width: Option<f64>,
     pub p_value: Option<f64>,
     pub verdict: Verdict,
@@ -129,35 +132,119 @@ fn stat(dimension: Dimension, r: &BenchmarkResult) -> Option<Stat> {
     Some(Stat { mean, stddev })
 }
 
-/// Two-sided p-value; two constant, different samples are certainly different.
-fn p_value(a: &[f64], b: &[f64]) -> Option<f64> {
-    if let Some(s) = deep::compare_samples(a, b) {
-        return Some(s.p_value);
-    }
-    let constant = |xs: &[f64]| xs.len() >= 3 && xs.iter().all(|&x| x == xs[0]);
-    (constant(a) && constant(b) && a[0] != b[0]).then_some(0.0)
+/// ln Γ(x) (Lanczos approximation, g = 7)
+fn ln_gamma(x: f64) -> f64 {
+    const C: [f64; 9] = [
+        0.999_999_999_999_809_9,
+        676.520_368_121_885_1,
+        -1_259.139_216_722_402_8,
+        771.323_428_777_653_1,
+        -176.615_029_162_140_6,
+        12.507_343_278_686_905,
+        -0.138_571_095_265_720_12,
+        9.984_369_578_019_572e-6,
+        1.505_632_735_149_311_6e-7,
+    ];
+    let x = x - 1.0;
+    let t = x + 7.5;
+    let sum = C[0]
+        + C[1..]
+            .iter()
+            .enumerate()
+            .map(|(i, c)| c / (x + i as f64 + 1.0))
+            .sum::<f64>();
+    0.5 * (2.0 * std::f64::consts::PI).ln() + (x + 0.5) * t.ln() - t + sum.ln()
 }
 
-/// Half-width of the 95% CI of the difference of means (pooled variance,
-/// Student's t with n₁ + n₂ − 2 degrees of freedom), relative to the
-/// reference mean.
-fn relative_ci(a: &[f64], b: &[f64], reference_mean: f64) -> Option<f64> {
-    let (n1, n2) = (a.len(), b.len());
-    if n1 + n2 < 3 || n1 == 0 || n2 == 0 || reference_mean <= 0.0 {
+/// Regularized incomplete beta function I_x(a, b) (continued fraction)
+fn inc_beta(x: f64, a: f64, b: f64) -> f64 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    if x >= 1.0 {
+        return 1.0;
+    }
+    if x > (a + 1.0) / (a + b + 2.0) {
+        return 1.0 - inc_beta(1.0 - x, b, a);
+    }
+    let front =
+        (ln_gamma(a + b) - ln_gamma(a) - ln_gamma(b) + a * x.ln() + b * (1.0 - x).ln()).exp() / a;
+    let tiny = 1e-300;
+    let (mut c, mut d) = (1.0, 1.0 - (a + b) * x / (a + 1.0));
+    if d.abs() < tiny {
+        d = tiny;
+    }
+    d = 1.0 / d;
+    let mut f = d;
+    for m in 1..500 {
+        let m = m as f64;
+        for numerator in [
+            m * (b - m) * x / ((a + 2.0 * m - 1.0) * (a + 2.0 * m)),
+            -(a + m) * (a + b + m) * x / ((a + 2.0 * m) * (a + 2.0 * m + 1.0)),
+        ] {
+            d = 1.0 + numerator * d;
+            if d.abs() < tiny {
+                d = tiny;
+            }
+            c = 1.0 + numerator / c;
+            if c.abs() < tiny {
+                c = tiny;
+            }
+            d = 1.0 / d;
+            f *= c * d;
+        }
+        if (c * d - 1.0).abs() < 1e-14 {
+            break;
+        }
+    }
+    front * f
+}
+
+/// Two-sided tail probability P(|T| ≥ |t|) of Student's t with `df` degrees
+/// of freedom (`df` may be fractional).
+fn t_two_sided_p(t: f64, df: f64) -> f64 {
+    inc_beta(df / (df + t * t), df / 2.0, 0.5)
+}
+
+/// 97.5% quantile of Student's t with fractional `df` (bisection)
+fn t_quantile_975(df: f64) -> f64 {
+    let (mut lo, mut hi) = (0.0, 1e3);
+    for _ in 0..200 {
+        let mid = 0.5 * (lo + hi);
+        if t_two_sided_p(mid, df) > ALPHA {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    0.5 * (lo + hi)
+}
+
+/// Welch's t-test of `b` against `a`: the two-sided p-value and the
+/// half-width of the 95% confidence interval of the difference of means
+/// (absolute units). Both come from the same statistic, the
+/// Welch-Satterthwaite degrees of freedom and Student's t, so that
+/// `p < 0.05` exactly when the interval excludes 0.
+///
+/// Two constant samples have no variance: they are different with certainty
+/// (p = 0, width 0) or identical (p = 1).
+fn welch(a: &[f64], b: &[f64]) -> Option<(f64, f64)> {
+    let (n1, n2) = (a.len() as f64, b.len() as f64);
+    if a.len() < 2 || b.len() < 2 {
         return None;
     }
-    let var = |xs: &[f64]| {
-        if xs.len() < 2 {
-            0.0
-        } else {
-            basic::standard_deviation(xs, None).powi(2)
-        }
-    };
-    let df = n1 + n2 - 2;
-    let pooled = (((n1 - 1) as f64) * var(a) + ((n2 - 1) as f64) * var(b)) / df as f64;
-    let se = (pooled * (1.0 / n1 as f64 + 1.0 / n2 as f64)).sqrt();
-    let half = t_975(df) * se / reference_mean;
-    half.is_finite().then_some(half)
+    let (m1, m2) = (basic::mean(a), basic::mean(b));
+    let v1 = basic::standard_deviation(a, Some(m1)).powi(2) / n1;
+    let v2 = basic::standard_deviation(b, Some(m2)).powi(2) / n2;
+    let se2 = v1 + v2;
+    if se2 == 0.0 {
+        return Some((if m1 == m2 { 1.0 } else { 0.0 }, 0.0));
+    }
+    let df = se2 * se2 / (v1 * v1 / (n1 - 1.0) + v2 * v2 / (n2 - 1.0));
+    let se = se2.sqrt();
+    let p = t_two_sided_p((m2 - m1) / se, df);
+    let half = t_quantile_975(df) * se;
+    (p.is_finite() && half.is_finite()).then_some((p, half))
 }
 
 /// One row per dimension measured for both commands. Lower is better in every
@@ -170,7 +257,11 @@ pub fn compute_rows(reference: &BenchmarkResult, target: &BenchmarkResult) -> Ve
             let relative = (rs.mean != 0.0).then(|| (ts.mean - rs.mean) / rs.mean);
             let (a, b) = (dimension.samples(reference), dimension.samples(target));
             let (p_value, ci_half_width) = match (&a, &b) {
-                (Some(a), Some(b)) => (p_value(a, b), relative_ci(a, b, rs.mean)),
+                (Some(a), Some(b)) => match welch(a, b) {
+                    // Relative to the reference mean (not a ratio interval)
+                    Some((p, half)) => (Some(p), (rs.mean > 0.0).then(|| half / rs.mean)),
+                    None => (None, None),
+                },
                 _ => (None, None),
             };
             let verdict = match (p_value, relative) {
@@ -416,6 +507,47 @@ mod tests {
         assert_eq!(rows.len(), 6);
     }
 
+    // Reference values computed independently with SciPy 1.x
+    // (`scipy.stats.ttest_ind(b, a, equal_var=False)`):
+    //   a = [10.0, 10.2, 9.9, 10.1, 10.3, 9.8], b = [9.0, 9.4, 8.8, 9.1, 9.6, 8.9, 9.2, 9.0]
+    //   df = 11.982014403689236, t = -7.636386686301188, p = 6.0883526276694205e-06
+    //   95% CI of mean(b) - mean(a): (-1.188964820799797, -0.661035179200201)
+    //   half-width / mean(a) (= 10.05) = 0.02626515629848736
+    #[test]
+    fn welch_ci_and_p_value_match_scipy() {
+        let a = [10.0, 10.2, 9.9, 10.1, 10.3, 9.8];
+        let b = [9.0, 9.4, 8.8, 9.1, 9.6, 8.9, 9.2, 9.0];
+        let (p, half) = welch(&a, &b).unwrap();
+        assert!((p / 6.0883526276694205e-6 - 1.0).abs() < 1e-6, "p = {p}");
+        assert!((half - 0.263_964_82).abs() < 1e-6, "half = {half}");
+        let rows = compute_rows(&result("a", &a), &result("b", &b));
+        let wall = &rows[0];
+        assert!((wall.p_value.unwrap() / 6.0883526276694205e-6 - 1.0).abs() < 1e-6);
+        assert!((wall.ci_half_width.unwrap() - 0.02626515629848736).abs() < 1e-9);
+    }
+
+    #[test]
+    fn welch_p_value_and_ci_agree() {
+        // p < 0.05 exactly when the CI excludes 0
+        let a = [1.0, 1.1, 0.9, 1.05, 0.95];
+        for shift in [0.0, 0.02, 0.05, 0.1, 0.2, 0.5] {
+            let b: Vec<f64> = [1.0, 1.2, 0.8, 1.1, 0.9, 1.0]
+                .iter()
+                .map(|x| x + shift)
+                .collect();
+            let (p, half) = welch(&a, &b).unwrap();
+            let diff = (basic::mean(&b) - basic::mean(&a)).abs();
+            assert_eq!(p < ALPHA, diff > half, "shift {shift}: p {p}, half {half}");
+        }
+    }
+
+    #[test]
+    fn welch_constant_samples() {
+        assert_eq!(welch(&[1.0; 4], &[1.0; 4]), Some((1.0, 0.0)));
+        assert_eq!(welch(&[1.0; 4], &[2.0; 4]), Some((0.0, 0.0)));
+        assert_eq!(welch(&[1.0], &[2.0, 3.0]), None);
+    }
+
     #[test]
     fn regression_and_noise() {
         let rows = compute_rows(&full("a", 1.0), &full("b", 2.0));
@@ -513,7 +645,7 @@ Benchmark comparison (Reference: 'cmd_a')
 Benchmark comparison (Reference: 'cmd_a')
   Measurement        'cmd_a' (mean ± σ)  'cmd_b' (mean ± σ)  Delta (%)       p-val
   ────────────────────────────────────────────────────────────────────────────────────
-  Wall time          107.5 ms ± 9.6 ms   200.0 ms ± 8.2 ms   +86.0% ± 14.3%  0.007  🔻
+  Wall time          107.5 ms ± 9.6 ms   200.0 ms ± 8.2 ms   +86.0% ± 14.4%  0.000  🔻
   CPU time (user)    53.8 ms             100.0 ms            +86.0%          -
   CPU time (system)  26.9 ms             50.0 ms             +86.0%          -
 "#);

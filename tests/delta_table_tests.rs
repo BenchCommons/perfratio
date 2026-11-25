@@ -66,3 +66,29 @@ fn markdown_export_gets_the_table_only_with_the_flag() {
     assert!(with.contains("| Wall time |"));
     assert!(!std::fs::read_to_string(without).unwrap().contains("Delta"));
 }
+
+/// `--filter-failed` applies to the terminal table and the Markdown export alike
+#[cfg(unix)]
+#[test]
+fn filter_failed_applies_to_terminal_and_markdown() {
+    let dir = tempfile::tempdir().unwrap();
+    let md = dir.path().join("out.md");
+    hyperfine()
+        .arg("--runs=3")
+        .arg("--ignore-failure")
+        .arg("--filter-failed")
+        .arg("--delta-table")
+        .arg("--export-markdown")
+        .arg(&md)
+        .args(["sleep 0.05", "sleep 0.1; exit 1", "sleep 0.15"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Benchmark comparison (Reference: 'sleep 0.05')",
+        ))
+        .stdout(predicate::str::contains("'sleep 0.1; exit 1' (mean").not());
+    let content = std::fs::read_to_string(&md).unwrap();
+    assert!(content.contains("### Delta: `sleep 0.15` vs reference `sleep 0.05`"));
+    assert!(!content.contains("### Delta: `sleep 0.1; exit 1`"));
+    assert!(!content.contains("vs reference `sleep 0.1; exit 1`"));
+}

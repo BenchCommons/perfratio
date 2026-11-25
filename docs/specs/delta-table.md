@@ -23,12 +23,20 @@ one row per measured dimension, comparing each command with the reference.
   Mean-only values (average power, energy without per-run samples, CPU time of imported
   results) show the delta with no σ, no confidence interval, `-` as p-value and no marker.
   A reference mean of 0 shows `n/a` as delta.
-- **Delta:** `(mean_command − mean_reference) / mean_reference`. Confidence interval: the
-  95% half-width of the difference of means with pooled variance and Student's t with
-  n₁ + n₂ − 2 degrees of freedom, divided by the reference mean (the reference mean's own
-  uncertainty is ignored). Shown as `-26.0% ± 1.7%`.
-- **p-value:** `stats::deep::compare_samples`, as in `--compare` (needs ≥ 3 runs per side;
-  constant, different samples give p = 0).
+- **Delta:** `(mean_command − mean_reference) / mean_reference`.
+- **Confidence interval and p-value (one test):** Welch's t-test on the per-run samples
+  (needs ≥ 2 runs per side). Standard error `sqrt(s₁²/n₁ + s₂²/n₂)`, Welch-Satterthwaite
+  degrees of freedom (fractional), Student's t distribution. The p-value is the two-sided tail
+  probability of `t = Δ / SE`; the interval is `Δ ± t₀.₉₇₅(df) · SE`. Both use the same
+  statistic and df, so `p < 0.05` exactly when the interval excludes 0 (no bootstrap, so
+  the result is deterministic). Two constant samples have no variance: p = 0 if the values
+  differ, 1 if equal, interval width 0.
+- **Relative interval:** the half-width is divided by the reference mean. This is not a
+  ratio (delta-method) interval: the uncertainty of the reference mean in the denominator is
+  ignored, which is a good approximation when the reference's relative standard error is
+  small. Shown as `-26.0% ± 1.7%`.
+- **Failed runs:** `--filter-failed` removes failing commands before the terminal table
+  and the Markdown export are built, so both show the same rows.
 - **Marker:** `⚡` significant improvement (p < 0.05, delta < 0), `🔻` significant regression,
   `~` not significant, none without a p-value. In the terminal the delta cell is green/red
   for the first two; colors follow `NO_COLOR` and `--style`.
@@ -44,5 +52,6 @@ touch `src/metric.rs`. A future metric selection can filter `Dimension::ALL`.
 
 ## Tests
 Unit and snapshot tests in `src/delta_table.rs` (terminal, Markdown, wall time with
-mean-only CPU time, missing and mean-only dimensions, zero reference);
-`tests/delta_table_tests.rs` (CLI and Markdown export).
+mean-only CPU time, missing and mean-only dimensions, zero reference, CI and p-value
+against SciPy reference values, p/CI agreement, constant samples);
+`tests/delta_table_tests.rs` (CLI, Markdown export, `--filter-failed` in both outputs).
