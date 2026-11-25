@@ -29,6 +29,7 @@ pub mod outlier_detection;
 pub mod output;
 pub mod output_metric;
 pub mod parameter;
+pub mod pmu_scaling;
 pub mod stats;
 pub mod system_check;
 pub mod timer;
