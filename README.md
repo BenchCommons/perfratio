@@ -22,7 +22,7 @@ borrow from [`Gabriella439/bench`](https://github.com/Gabriella439/bench). perfr
 - Cross-language helpers: `--warmup auto`, `--first-run`, `--output-metric`, `--target-precision`.
 - A versioned JSON export (`schemaVersion`) for tools that consume the results.
 
-Run `perfratio --help` for every option. The exports can read hyperfine and joulex JSON
+Run `perfratio --help` for every option. perfratio can read hyperfine and joulex JSON
 files (`--import-json`).
 
 ## Install
@@ -136,7 +136,7 @@ Benchmark 1: work
   Time (mean ± σ):     209.1 ms ±   3.0 ms    [User: 0.6 ms, System: 0.7 ms, CPU: 1%, Peak Memory: 976.0 KB]
   Range (min … median … max):   206.2 ms … 208.3 ms … 215.5 ms    8 runs
 
-Comparison with base.json
+Comparison with baseline.json
   Command        Baseline         Current    Change  Significance
   work     111.4 ms ± 2.9  209.1 ms ± 3.0  +87.7% ▲  p < 0.001     REGRESSION
 
@@ -205,7 +205,7 @@ The CI builds and tests these targets and attaches them to releases. Features di
 | `--resource-usage` | yes | yes | no (Unix only) |
 | `--affinity` | yes | no | yes |
 | `--priority realtime` | yes (`SCHED_FIFO`) | no | yes |
-| `--check-system` | yes | yes (reduced checks) | not documented in `--help` |
+| `--check-system` | yes | yes (fewer checks) | no |
 
 Release targets: `x86_64`, `aarch64`, `i686` and `arm` Linux (gnu and musl), `x86_64` and
 `aarch64` macOS, and `x86_64`, `i686` and `aarch64` Windows (MSVC).
