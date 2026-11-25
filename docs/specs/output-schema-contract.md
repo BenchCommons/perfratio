@@ -162,6 +162,10 @@ Rules:
   and must be added to this table in the same PR.
 
 ### 4. Removing the legacy `joulex` key (#225)
+**BREAKING for consumers:** the key is dropped in one step with no deprecation window, as
+issue #240 requires. Tools reading `json["joulex"]` must switch to `json["perfratio"]`
+(identical content). See `docs/MIGRATION.md`.
+
 Shipped as a single step (decision of the #240 implementation, replacing the earlier
 two-step plan): `schemaVersion` `"1.0"` is the first schema and it never documented
 `"joulex"`, so the key is **not written** from the first release that emits `schemaVersion`.

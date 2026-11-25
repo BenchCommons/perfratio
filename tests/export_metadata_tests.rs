@@ -306,9 +306,21 @@ fn import_json_reads_legacy_files_with_only_joulex_key() {
 "results": [{"command": "sleep 0.1", "mean": 0.1, "stddev": null, "median": 0.1, "user": 0.0, "system": 0.0, "min": 0.1, "max": 0.1, "times": [0.1], "exit_codes": [0]}]}"#,
     )
     .unwrap();
+    let out = dir.path().join("out.json");
     hyperfine()
         .arg("--import-json")
         .arg(&legacy)
+        .arg("--export-json")
+        .arg(&out)
         .assert()
-        .success();
+        .success()
+        .stdout(predicates::str::contains("sleep 0.1"));
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
+    let results = json["results"].as_array().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["command"], "sleep 0.1");
+    assert_eq!(results[0]["mean"].as_f64().unwrap(), 0.1);
+    assert_eq!(results[0]["times"].as_array().unwrap().len(), 1);
+    assert!(json.get("joulex").is_none());
 }
