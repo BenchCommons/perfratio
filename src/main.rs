@@ -20,6 +20,7 @@ pub mod benchmark;
 pub mod cli;
 pub mod command;
 pub mod compare;
+pub mod counters;
 pub mod energy;
 pub mod error;
 pub mod export;

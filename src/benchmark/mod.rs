@@ -1252,6 +1252,7 @@ impl<'a> BenchmarkRunner<'a> {
             diagnostics: (!diagnostics.is_empty()).then_some(diagnostics),
             per_run_parameters,
             baseline,
+            efficiency: None,
             shell: self
                 .options
                 .has_per_command_shells()
