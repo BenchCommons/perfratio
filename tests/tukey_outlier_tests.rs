@@ -44,7 +44,8 @@ fn reports_count_and_percentage() {
     assert_eq!(o["percent"].as_f64().unwrap(), count as f64 / 20.0 * 100.0);
     assert!(o["lower_fence"].as_f64().unwrap() <= o["upper_fence"].as_f64().unwrap());
     assert!(o["memory_usage_byte"]["count"].is_u64());
-    if count > 0 {
+    // A slow first run (noisy CI) is reported by its own, more specific warning.
+    if count > 0 && !stderr.contains("first benchmarking run") {
         let pct = format!("{count} of 20 runs ({:.1}%)", count as f64 / 20.0 * 100.0);
         assert!(stderr.contains(&pct), "{stderr}");
     }
