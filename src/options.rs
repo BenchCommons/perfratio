@@ -280,6 +280,10 @@ pub struct Options {
     /// fraction of the mean (0.01 = ±1%)
     pub target_precision: Option<f64>,
 
+    /// `--duration`: sample each command until its summed run time (seconds)
+    /// reaches this budget
+    pub duration: Option<Second>,
+
     /// `--max-benchmarking-time`: time budget per command for
     /// `--target-precision`
     pub max_benchmarking_time: Second,
@@ -392,6 +396,7 @@ impl Default for Options {
             first_run: FirstRunPolicy::default(),
             min_benchmarking_time: 3.0,
             target_precision: None,
+            duration: None,
             max_benchmarking_time: 60.0,
             command_failure_action: CmdFailureAction::RaiseError,
             reference_command: None,
@@ -486,6 +491,17 @@ impl Options {
             }
             (None, None) => {}
         };
+
+        if let Some(val) = matches.get_one::<String>("duration") {
+            let budget = crate::util::units::parse_duration(val)
+                .map_err(|e| OptionsError::InvalidDuration(val.clone(), e))?;
+            options.duration = Some(budget.as_secs_f64());
+            // 3 runs are enough for a mean and a standard deviation; the
+            // default minimum of 10 would defeat short budgets.
+            if min_runs.is_none() {
+                options.run_bounds.min = options.run_bounds.max.map_or(3, |max| max.min(3));
+            }
+        }
 
         options.setup_command = matches
             .get_many::<String>("setup")
