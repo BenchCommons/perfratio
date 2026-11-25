@@ -145,6 +145,11 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shell: Option<String>,
 
+    /// Derived hardware-counter metrics (IPC, CPI, miss rates), see
+    /// `docs/specs/derived-counter-metrics.md`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub efficiency: Option<crate::counters::Efficiency>,
+
     /// `--subtract`: the baseline whose mean was subtracted from every run
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub baseline: Option<Baseline>,
