@@ -259,7 +259,7 @@ pub struct UntilSettings {
     pub match_stderr: bool,
 }
 
-/// The main settings for a hyperfine benchmark session
+/// The main settings for a perfratio benchmark session
 pub struct Options {
     /// Upper and lower bound for the number of benchmark runs
     pub run_bounds: RunBounds,

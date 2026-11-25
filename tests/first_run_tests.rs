@@ -1,7 +1,7 @@
 //! Tests for --first-run include|separate|discard.
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 use serde_json::Value;
@@ -10,7 +10,7 @@ use serde_json::Value;
 fn run(args: &[&str]) -> (String, Vec<Value>) {
     let dir = tempfile::tempdir().unwrap();
     let json = dir.path().join("out.json");
-    let output = hyperfine()
+    let output = perfratio()
         .args(["--style=basic", "--export-json"])
         .arg(&json)
         .args(args)
@@ -113,7 +113,7 @@ fn separate_in_round_robin_mode() {
 
 #[test]
 fn invalid_mode_is_rejected() {
-    hyperfine()
+    perfratio()
         .args(["--first-run=cold", "echo"])
         .assert()
         .failure()

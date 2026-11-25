@@ -16,7 +16,6 @@ pub const SHELLS: [&str; 5] = ["bash", "zsh", "fish", "powershell", "elvish"];
 pub const FISH_COMMAND_COMPLETION: &str = "
 # Complete executables from $PATH for the benchmarked command (hyperfine#872)
 complete -c perfratio -n \"__fish_use_subcommand\" -x -a \"(__fish_complete_command)\"
-complete -c joulex -n \"__fish_use_subcommand\" -x -a \"(__fish_complete_command)\"
 ";
 
 pub fn get_cli_arguments<'a, I, T>(args: I) -> ArgMatches
@@ -81,7 +80,7 @@ pub fn build_command() -> Command {
                 .long("import-json")
                 .action(ArgAction::Append)
                 .value_name("FILE")
-                .help("Import timing results from a JSON file previously exported by perfratio/joulex/hyperfine. \
+                .help("Import timing results from a JSON file previously exported by perfratio (or hyperfine, for the shared result format). \
                        Multiple files can be specified. Can be combined with commands to benchmark or used \
                        on its own to re-export existing results to another format.\n\n\
                        Example:  perfratio --import-json baseline.json 'sleep 1'\n"),
@@ -785,7 +784,7 @@ pub fn build_command() -> Command {
                        <FILE>:   Write the output to the given file.\n\n\
                     This option can be specified once for all commands or multiple times, once for \
                     each command. Note: If you want to log the output of each and every iteration, \
-                    you can use a shell redirection and the '$PERFRATIO_ITERATION' (or '$JOULEX_ITERATION', '$HYPERFINE_ITERATION') environment variable:\n    \
+                    you can use a shell redirection and the '$PERFRATIO_ITERATION' environment variable:\n    \
                     perfratio 'my-command > output-${PERFRATIO_ITERATION}.log'\n\n",
                 ),
         )

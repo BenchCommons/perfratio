@@ -2,14 +2,14 @@
 //! value each run used (#192).
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use serde_json::Value;
 
 fn export(args: &[&str]) -> Value {
     let dir = tempfile::tempdir().unwrap();
     let json = dir.path().join("out.json");
-    hyperfine()
+    perfratio()
         .args(["--style=basic", "--export-json"])
         .arg(&json)
         .args(args)
@@ -73,7 +73,7 @@ fn omitted_runs_keep_the_values_aligned() {
 
 #[test]
 fn runs_table_has_a_column_per_parameter() {
-    hyperfine()
+    perfratio()
         .args(["--debug-mode", "--runs=2", "--aggregate-parameter-runs"])
         .args([
             "-L",

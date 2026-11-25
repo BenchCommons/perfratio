@@ -1,14 +1,14 @@
 //! Tests for --affinity.
 
 mod common;
-use common::hyperfine;
+use common::perfratio;
 
 use predicates::prelude::*;
 
 #[cfg(target_os = "linux")]
 #[test]
 fn benchmarked_process_runs_only_on_the_given_cpu() {
-    hyperfine()
+    perfratio()
         .args(["--runs=1", "-N", "--affinity=0", "--show-output"])
         .arg("grep Cpus_allowed_list /proc/self/status")
         .assert()
@@ -19,7 +19,7 @@ fn benchmarked_process_runs_only_on_the_given_cpu() {
 #[cfg(target_os = "linux")]
 #[test]
 fn affinity_also_applies_through_the_shell() {
-    hyperfine()
+    perfratio()
         .args(["--runs=1", "--affinity=0", "--show-output"])
         .arg("grep Cpus_allowed_list /proc/self/status")
         .assert()
@@ -30,7 +30,7 @@ fn affinity_also_applies_through_the_shell() {
 #[cfg(any(target_os = "linux", windows))]
 #[test]
 fn rejects_cpus_that_do_not_exist() {
-    hyperfine()
+    perfratio()
         .args(["--runs=1", "--affinity=100000", "echo"])
         .assert()
         .failure()
@@ -40,7 +40,7 @@ fn rejects_cpus_that_do_not_exist() {
 #[cfg(not(any(target_os = "linux", windows)))]
 #[test]
 fn is_rejected_where_unsupported() {
-    hyperfine()
+    perfratio()
         .args(["--runs=1", "--affinity=0", "echo"])
         .assert()
         .failure()
@@ -51,7 +51,7 @@ fn is_rejected_where_unsupported() {
 
 #[test]
 fn rejects_malformed_cpu_lists() {
-    hyperfine()
+    perfratio()
         .args(["--runs=1", "--affinity=3-1", "echo"])
         .assert()
         .failure()

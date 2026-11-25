@@ -38,6 +38,7 @@ fn run() -> Result<()> {
     let _ = colored::control::set_virtual_terminal(true);
 
     let cli_arguments = get_cli_arguments(env::args_os());
+    util::legacy::warn_legacy_iteration_vars(env::args_os());
 
     if let Some(shell) = cli_arguments.get_one::<String>("generate-completions") {
         let shell = parse_shell(shell)?;
