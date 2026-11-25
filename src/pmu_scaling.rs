@@ -150,7 +150,7 @@ pub fn multiplex_warning(counters: &[(&str, Vec<ScaledCounter>)]) -> Option<Stri
         return None;
     }
     Some(format!(
-        "Warning: PMU counters were multiplexed and scaled (lowest coverage): {}. \
+        "Warning: PMU counters were multiplexed, so values are scaled or missing (lowest coverage): {}. \
          Request fewer counters for exact values.",
         affected.join(", ")
     ))
