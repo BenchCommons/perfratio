@@ -774,6 +774,31 @@ fn summary_line(
                     crate::benchmark::format_count(mean(kind, Scope::Kernel).unwrap_or_default()),
                 ),
             };
+            // miss rate next to the raw misses (#213): mean of the per-run
+            // ratios where it exists, else the ratio of the means
+            let miss_rate = |denominator: CounterKind, mean_rate: Option<f64>| {
+                let total = slot_value(denominator, slot)?;
+                match slot {
+                    Slot::Single(scope) if Some(scope) == rate_scope && mean_rate.is_some() => {
+                        mean_rate
+                    }
+                    _ => (total > 0.0).then(|| value / total),
+                }
+            };
+            let rate = match kind {
+                CounterKind::CacheMisses => miss_rate(
+                    CounterKind::CacheReferences,
+                    efficiency.and_then(|e| e.cache_miss_rate),
+                ),
+                CounterKind::BranchMisses => miss_rate(
+                    CounterKind::Branches,
+                    efficiency.and_then(|e| e.branch_miss_rate),
+                ),
+                _ => None,
+            };
+            if let Some(rate) = rate {
+                s.push_str(&format!(" (miss rate {:.1}%)", rate * 100.0));
+            }
             if kind == CounterKind::Cycles {
                 if let Some(instr) = slot_value(CounterKind::Instructions, slot) {
                     let ipc = match slot {
@@ -1349,6 +1374,32 @@ mod tests {
             mock: false,
             simd: None,
         }
+    }
+
+    #[test]
+    fn terminal_line_shows_miss_rates_next_to_the_raw_counts() {
+        let cfg = config(&all(&[
+            CounterKind::CacheReferences,
+            CounterKind::CacheMisses,
+            CounterKind::Branches,
+            CounterKind::BranchMisses,
+        ]));
+        let run = vec![
+            sc(1000, 10, 10),
+            sc(182, 10, 10),
+            sc(2000, 10, 10),
+            sc(62, 10, 10),
+        ];
+        let line = export(&cfg, &[Some(run)]).unwrap().line.unwrap();
+        assert!(line.contains("cache-miss 182 (miss rate 18.2%)"), "{line}");
+        assert!(line.contains("branch-miss 62 (miss rate 3.1%)"), "{line}");
+        // no denominator, no rate
+        let cfg = config(&all(&[CounterKind::CacheMisses]));
+        let line = export(&cfg, &[Some(vec![sc(5, 1, 1)])])
+            .unwrap()
+            .line
+            .unwrap();
+        assert!(!line.contains("miss rate"), "{line}");
     }
 
     #[test]
