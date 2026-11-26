@@ -13,7 +13,7 @@ use perfratio::command::Commands;
 use perfratio::export::ExportManager;
 use perfratio::options::Options;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use perfratio::output::colors;
 
 use perfratio::{cli, compare, error, options, output, system_check, util};
@@ -139,11 +139,12 @@ fn run() -> Result<()> {
             );
         }
         if let Some(path) = cli_arguments.get_one::<String>("export-diff-markdown") {
-            std::fs::write(
+            perfratio::export::write_to_file(
                 path,
-                compare::markdown_table(&comparison, regression_threshold, options.time_unit),
+                compare::markdown_table(&comparison, regression_threshold, options.time_unit)
+                    .as_bytes(),
             )
-            .map_err(|e| anyhow::anyhow!("Could not write '{path}': {e}"))?;
+            .with_context(|| format!("Could not write '{path}'"))?;
         }
         if let Some(threshold) = regression_threshold {
             let regressions = comparison.regressions(threshold).count();

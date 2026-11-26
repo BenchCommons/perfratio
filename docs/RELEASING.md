@@ -9,7 +9,9 @@ Release assets are built by `.github/workflows/CICD.yml` when a tag `vX.Y.Z` is 
 | Archive | `perfratio-vX.Y.Z-<target>.tar.gz` (`.zip` for `*-pc-windows-msvc`) |
 | Archive layout | `perfratio-vX.Y.Z-<target>/perfratio(.exe)`, man page, `autocomplete/`, licenses, README, CHANGELOG |
 | Debian | `perfratio[-musl]_X.Y.Z_<arch>.deb` |
-| Checksums | `SHA256SUMS` (all archives and `.deb`, `sha256sum` format) |
+| Checksums | `SHA256SUMS` (all archives, `.deb` and the SBOM, `sha256sum` format) |
+| SBOM | `perfratio-X.Y.Z.cdx.json` (CycloneDX 1.5, from `Cargo.lock`) |
+| Attestations | GitHub artifact attestations (build provenance) for every asset above; verify with `gh attestation verify <file> --repo BenchCommons/perfratio` |
 
 `[package.metadata.binstall]` in `Cargo.toml` must match the archive name and layout. Archives are
 reproducible for a given binary: mtime is the commit time, entries are sorted, owner is 0, gzip has no name or timestamp.

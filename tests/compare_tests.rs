@@ -134,3 +134,27 @@ fn invalid_inputs_fail_before_benchmarking() {
         .failure()
         .stderr(predicate::str::contains("--compare"));
 }
+
+/// `--export-diff-markdown` uses the atomic export writer: a symlink at the
+/// target is replaced, and the file it pointed to is left untouched.
+#[cfg(unix)]
+#[test]
+fn export_diff_markdown_replaces_symlinks() {
+    let dir = tempfile::tempdir().unwrap();
+    let base = baseline(dir.path());
+    let victim = dir.path().join("victim.txt");
+    std::fs::write(&victim, "keep me").unwrap();
+    let diff = dir.path().join("diff.md");
+    std::os::unix::fs::symlink(&victim, &diff).unwrap();
+    perfratio()
+        .args(["--debug-mode", "--runs=5", "--compare"])
+        .arg(&base)
+        .arg("--export-diff-markdown")
+        .arg(&diff)
+        .args(["-n", "app", "sleep 0.1", "-n", "other", "sleep 0.05"])
+        .assert()
+        .success();
+    assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep me");
+    assert!(!diff.symlink_metadata().unwrap().file_type().is_symlink());
+    assert!(std::fs::read_to_string(&diff).unwrap().contains("`app`"));
+}
