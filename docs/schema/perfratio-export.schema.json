@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.26 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.27 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.26",
+      "const": "1.27",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -314,6 +314,34 @@
           "items": {
             "$ref": "#/$defs/metricDescriptor"
           }
+        },
+        "calibration": {
+          "type": "object",
+          "properties": {
+            "wall_floor": {
+              "$ref": "#/$defs/seconds",
+              "description": "Median wall time of a trivial command, net of the shell spawn time, in seconds."
+            },
+            "wall_floor_mad": {
+              "$ref": "#/$defs/seconds",
+              "description": "Median absolute deviation of the calibration wall times."
+            },
+            "rss_floor": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Median peak RSS of the trivial command in bytes. Omitted when the platform reports none."
+            },
+            "runs": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "wall_floor",
+            "wall_floor_mad",
+            "runs"
+          ],
+          "description": "Runner floor measured by --calibrate (new in 1.27, #313). Omitted with --calibrate=off, with --debug-mode, or when it could not be measured."
         },
         "statistics": {
           "type": "object",
@@ -868,6 +896,10 @@
               "status"
             ]
           }
+        },
+        "below_resolution": {
+          "type": "boolean",
+          "description": "The mean is within the runner floor (new in 1.27, #313). Omitted when no floor was measured."
         }
       },
       "required": [

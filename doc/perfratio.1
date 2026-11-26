@@ -121,6 +121,9 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR MODE ]
 .RB [ \-\-fail\-on\-quality
 .IR GRADE ]
+.RB [ \-\-calibrate [ =auto|off ]]
+.RB [ \-\-below\-floor
+.IR ACTION ]
 .RB [ \-\-expect\-output\-sha256
 .IR HEX ]
 .RB [ \-\-validate
@@ -455,6 +458,14 @@ Print the measurement quality report of each benchmark: off, summary (the grade 
 \fB\-\-fail\-on\-quality\fR \fIGRADE\fP
 .IP
 Exit with code 5 if the quality grade of any benchmark is worse than GRADE (comparable, with_caveats or unreliable, best first). A CI gate on how trustworthy a measurement is; \fB\-\-fail\-if\-regressed\fR gates on the size of a change.
+.HP
+\fB\-\-calibrate\fR[=\fIauto|off\fP]
+.IP
+Measure the runner floor before benchmarking: about 20 runs of a trivial command (true, or exit 0 through a shell) started like the benchmarks, once per session and shell. A command whose mean is under 3 floors, or whose 95% CI reaches the floor, is below resolution: flagged in the quality report and the summary, numbers kept. Default: auto. The floor is exported as perfratio.calibration.
+.HP
+\fB\-\-below\-floor\fR \fIACTION\fP
+.IP
+Action for a result within the runner floor: warn (default) or fail. With fail the statistics are printed and exported, then the exit code is 6.
 .HP
 \fB\-\-expect\-output\-sha256\fR \fIHEX\fP
 .IP
@@ -793,6 +804,9 @@ A benchmark regressed beyond the threshold given to \fB\-\-fail\-if\-regressed\f
 .TP
 .B 5
 \fB\-\-fail\-on\-quality\fR found a benchmark with a worse quality grade.
+.TP
+.B 6
+\fB\-\-below\-floor fail\fR found a benchmark within the runner floor.
 .TP
 .B 130
 Interrupted by SIGINT / Ctrl-C (partial results and exports preserved).

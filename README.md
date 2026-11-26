@@ -187,7 +187,7 @@ alone does not fail the gate. When the command did not get slower, the same gate
 `-2.3%  p = 0.401  ~` and exits 0. `--export-diff-markdown <FILE>` writes the table for a pull
 request comment. A GitHub Actions example is in [doc/ci.md](doc/ci.md).
 
-Every benchmark also gets a measurement quality report (`results[].quality` in the JSON, a summary in the terminal when a check warns or fails): sample sufficiency, CI precision, outliers, trend, clusters, counter and energy coverage, workload validation. `--fail-on-quality with_caveats` exits with code 5 if a measurement is `unreliable`, next to `--fail-if-regressed` ([spec](docs/specs/measurement-quality.md)).
+Every benchmark also gets a measurement quality report (`results[].quality` in the JSON, a summary in the terminal when a check warns or fails): sample sufficiency, CI precision, outliers, trend, clusters, counter and energy coverage, workload validation. `--fail-on-quality with_caveats` exits with code 5 if a measurement is `unreliable`, next to `--fail-if-regressed` ([spec](docs/specs/measurement-quality.md)). A command within the runner floor (measured at start with a trivial command, `--calibrate`) is flagged as below resolution, `--below-floor fail` exits with code 6 ([spec](docs/specs/measurement-floor.md)).
 
 ## JSON export and the `schemaVersion` contract
 

@@ -149,6 +149,7 @@ fn run() -> Result<()> {
     scheduler.add_imported_results(imported_results);
     scheduler.run_benchmarks()?;
     scheduler.print_relative_speed_comparison();
+    scheduler.print_below_floor_warning();
     scheduler.print_raw_ratios();
     if cli_arguments.get_flag("delta-table") {
         scheduler.print_delta_table();
@@ -197,6 +198,18 @@ fn run() -> Result<()> {
         }
     }
 
+    if options.below_floor == perfratio::calibration::BelowFloorAction::Fail {
+        let below = scheduler
+            .results()
+            .iter()
+            .filter_map(|r| r.quality.as_ref())
+            .filter(|q| q.below_resolution == Some(true))
+            .count();
+        if below > 0 && !perfratio::util::interrupt::interrupted() {
+            return Err(error::BelowFloor(below).into());
+        }
+    }
+
     if perfratio::util::interrupt::interrupted() {
         std::process::exit(130);
     }
@@ -218,6 +231,10 @@ fn main() {
             if e.is::<perfratio::error::QualityGateFailed>() {
                 eprintln!("{} {:#}", colors::red("Error:"), e);
                 std::process::exit(5);
+            }
+            if e.is::<perfratio::error::BelowFloor>() {
+                eprintln!("{} {:#}", colors::red("Error:"), e);
+                std::process::exit(6);
             }
             if e.is::<perfratio::error::SystemCheckFailed>() {
                 eprintln!("{} {:#}", colors::red("Error:"), e);
