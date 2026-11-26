@@ -38,7 +38,7 @@ pub struct Execution {
     pub schedule_policy: &'static str,
     /// The runs disturbed each other; always `true`
     pub contended: bool,
-    /// CPUs of every worker and the CPUs kept for perfratio (new in 1.17);
+    /// CPUs of every worker and the CPUs kept for perfratio (new in 1.23);
     /// absent when the workers were not pinned
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cpu_partition: Option<crate::util::cpu_partition::Partition>,
