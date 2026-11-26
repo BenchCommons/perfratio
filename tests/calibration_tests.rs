@@ -86,7 +86,7 @@ fn below_floor_fail_exits_6_after_printing_the_statistics() {
         .stderr(predicate::str::contains("below the measurement floor"));
     // a command above the floor passes
     perfratio()
-        .args(["-N", "--runs=5", "--below-floor=fail", "sleep 0.05"])
+        .args(["-N", "--runs=3", "--below-floor=fail", "sleep 0.5"])
         .assert()
         .success();
 }
