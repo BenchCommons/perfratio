@@ -233,7 +233,7 @@ Benchmark 1: sh -c 'echo algo_ms=12.5; sleep 0.05'
 On this busy laptop `--warmup auto` hit its 100-run limit without the timings settling, and
 perfratio also printed a warning saying so. Other useful flags: `--affinity <CPUS>`,
 `--priority <POLICY>`, `--discard-outliers`, `--timeout <DURATION>`,
-`--concurrency <N>` (N simultaneous instances per run, see [docs/specs/concurrency.md](docs/specs/concurrency.md)).
+`--concurrency <N>` (N simultaneous instances per run, `{param}` allowed for a scaling curve, see [docs/specs/concurrency.md](docs/specs/concurrency.md)).
 
 ## Platform support
 

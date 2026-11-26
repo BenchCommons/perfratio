@@ -1,6 +1,6 @@
 # Spec: `--concurrency <N>` concurrent load mode (#53)
 
-**Status:** Shipped in 1.x (first iteration, schemaVersion 1.5). See "As shipped" at the end for the differences from this proposal.
+**Status:** Shipped in 1.x (first iteration, schemaVersion 1.5; follow-ups under "As shipped"). See "As shipped" at the end for the differences from this proposal.
 
 ## Problem / Motivation
 References: #53, `sharkdp/hyperfine#58`, `megafine`, #46 (per-run rusage), #240 (JSON contract).
@@ -158,6 +158,27 @@ Per result, only when `N > 1`:
   `energy_per_instance_joules` is the mean divided by N. Not run on real RAPL hardware.
 - **Mock executor (`--debug-mode`).** Instance `i` takes `(1 + 0.01 i)` x the requested time, so tests
   are deterministic.
-- **Not done (follow-ups).** `{param}` in the option value; per-instance capture for `--until` /
-  `--output-metric`; per-instance rusage in JSON; killing the already started instances when a
-  later spawn fails (the batch waits for them); other exports (CSV/Markdown `concurrency` column).
+- **`{param}` in the value (follow-up, shipped).** `--concurrency '{c}'` with `-L c 1,2,4,8`
+  gives one benchmark per value. The value is parameter-expanded once per benchmark
+  (`Command::with_concurrency_template`) and stored on the command, so executors and the runner read
+  `command.concurrency_or(options.concurrency)`. Every combination is resolved before anything runs;
+  a value that is not an integer >= 1 (or an unknown parameter) is an error, and a warning is printed
+  once when a value exceeds the logical CPU count. A benchmark that resolves to 1 has no concurrency
+  fields in the JSON, as without the option. Combining a `{param}` value with `--reference` is
+  rejected: the reference command has no parameters to substitute.
+- **`--until`, `--output-metric`, `--show-output-on-failure`: decision.** They stay rejected with
+  `--concurrency` (clap conflict). The semantics are ambiguous (the pattern of which instance stops
+  the timer? one metric value per instance or one per run?), and no consumer asks for them. Reopen
+  with a concrete use case.
+- **Spawn failure.** When an instance fails to spawn (descriptor or process limit), the instances of
+  the run that already started are killed (`src/timer/batch.rs`: a per-batch registry of started pids,
+  reached through a thread-local), instances that did not start yet are not started, and the error
+  says how many were killed. Process group (Unix) or the process (Windows) is killed; descendants of a
+  process started without a timeout are not. A registered pid is released only after the process was
+  reaped.
+- **CSV / Markdown.** A `concurrency` (CSV, appended after the existing columns) / `Concurrency`
+  (Markdown, last column) column appears only when a benchmark used more than one instance; rows
+  without it show 1. Other exports are unchanged. This does not change the JSON, so `schemaVersion`
+  is unchanged.
+- **Not done.** Per-instance rusage in JSON; killing descendants of instances on spawn failure when no
+  process group exists; Windows run of the spawn-failure path (unit-tested on Unix only).
