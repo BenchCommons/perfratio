@@ -5,6 +5,7 @@ use super::metadata::ExportMetadata;
 use super::Exporter;
 use crate::benchmark::benchmark_result::BenchmarkResult;
 use crate::benchmark::relative_speed;
+use crate::calibration::Floor;
 use crate::metric::Metric;
 use crate::options::SortOrder;
 use crate::pareto::{Analysis, ParetoConfig};
@@ -24,7 +25,7 @@ pub struct PrimaryMetricStats {
 }
 
 /// Version of the JSON output contract (`docs/specs/output-schema-contract.md`).
-pub const SCHEMA_VERSION: &str = "1.27";
+pub const SCHEMA_VERSION: &str = "1.32";
 
 #[derive(Serialize, Debug)]
 struct PerfratioSummary<'a> {
@@ -82,6 +83,7 @@ fn with_metrics(
     metadata: &ExportMetadata,
     results: &[BenchmarkResult],
     schedule: Option<serde_json::Value>,
+    compare: Option<serde_json::Value>,
 ) -> serde_json::Value {
     let mut value = serde_json::to_value(metadata).unwrap_or(serde_json::Value::Null);
     if let (Some(object), Ok(metrics)) = (
@@ -92,6 +94,9 @@ fn with_metrics(
     }
     if let (Some(object), Some(schedule)) = (value.as_object_mut(), schedule) {
         object.insert("schedule".into(), schedule);
+    }
+    if let (Some(object), Some(compare)) = (value.as_object_mut(), compare) {
+        object.insert("compare".into(), compare);
     }
     value
 }
@@ -128,8 +133,12 @@ pub struct JsonExporter {
     pub optimize: std::sync::Mutex<Option<serde_json::Value>>,
     /// Pareto analysis of the results being serialized
     pub pareto: std::sync::Mutex<Option<Analysis>>,
+    /// Runner floor measured by `--calibrate`
+    pub calibration: std::sync::Mutex<Option<Floor>>,
     /// `perfratio.schedule` (new in 1.23, #324)
     pub schedule: std::sync::Mutex<Option<serde_json::Value>>,
+    /// `perfratio.compare` (#325)
+    pub compare: std::sync::Mutex<Option<serde_json::Value>>,
 }
 
 impl Exporter for JsonExporter {
@@ -164,12 +173,23 @@ impl Exporter for JsonExporter {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone();
+        let compare = self
+            .compare
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         let mut perfratio = self
             .metadata
             .as_ref()
-            .map(|m| with_metrics(m, results, schedule));
-        if let (Some(value), Some(assessments)) = (perfratio.as_mut(), assessments.as_ref()) {
-            add_correction(value, &settings, assessments);
+            .map(|m| with_metrics(m, results, schedule, compare));
+        // Runner floor of `--calibrate` (new in 1.27, #313)
+        if let (Some(serde_json::Value::Object(object)), Some(floor)) = (
+            perfratio.as_mut(),
+            *self.calibration.lock().unwrap_or_else(|e| e.into_inner()),
+        ) {
+            if let Ok(floor) = serde_json::to_value(floor) {
+                object.insert("calibration".into(), floor);
+            }
         }
         let results = results
             .iter()
@@ -233,6 +253,14 @@ impl Exporter for JsonExporter {
 
     fn set_optimize(&self, value: Option<&serde_json::Value>) {
         *self.optimize.lock().unwrap_or_else(|e| e.into_inner()) = value.cloned();
+    }
+
+    fn set_compare(&self, value: Option<&serde_json::Value>) {
+        *self.compare.lock().unwrap_or_else(|e| e.into_inner()) = value.cloned();
+    }
+
+    fn set_calibration(&self, floor: Option<&Floor>) {
+        *self.calibration.lock().unwrap_or_else(|e| e.into_inner()) = floor.copied();
     }
 
     fn set_schedule(&self, value: Option<&serde_json::Value>) {

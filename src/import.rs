@@ -10,6 +10,59 @@ struct PerfratioSummary {
     #[serde(default)]
     metric: Option<crate::metric::Metric>,
     results: Vec<BenchmarkResult>,
+    /// Run metadata with the metric descriptors (absent in older files, #317)
+    #[serde(default)]
+    perfratio: Option<serde_json::Value>,
+}
+
+/// Unit and direction declared by the `custom.<name>` descriptors of an imported file, for the
+/// custom metrics that its results contain. A declaration made on the command line wins.
+/// The file is untrusted: malformed descriptors and unknown values are ignored, and the unit is
+/// held to the same rules as in `--output-metric`.
+fn adopt_custom_descriptors(perfratio: Option<&serde_json::Value>, results: &[BenchmarkResult]) {
+    let Some(descriptors) = perfratio
+        .and_then(|p| p.get("metrics"))
+        .and_then(|m| m.as_array())
+    else {
+        return;
+    };
+    for descriptor in descriptors {
+        let Some(name) = descriptor
+            .get("id")
+            .and_then(|v| v.as_str())
+            .and_then(|id| id.strip_prefix("custom."))
+        else {
+            continue;
+        };
+        let known = results.iter().any(|r| {
+            r.custom_metrics
+                .as_ref()
+                .is_some_and(|m| m.contains_key(name))
+        });
+        if !known {
+            continue;
+        }
+        let unit = descriptor
+            .get("unit")
+            .and_then(|v| v.as_str())
+            .filter(|u| *u != "unitless")
+            .filter(|u| {
+                !u.is_empty()
+                    && u.chars().count() <= 16
+                    && u.chars()
+                        .all(|c| !c.is_control() && !c.is_whitespace() && !"[]=,".contains(c))
+            })
+            .map(str::to_string);
+        let higher_is_better =
+            descriptor.get("direction").and_then(|v| v.as_str()) == Some("higher_is_better");
+        crate::metric::set_custom_meta_if_absent(
+            name,
+            crate::metric::CustomMeta {
+                unit,
+                higher_is_better,
+            },
+        );
+    }
 }
 
 /// Import previously exported JSON benchmark results from the given file path.
@@ -39,6 +92,7 @@ pub fn import_json_for_metric(
     if summary.results.is_empty() {
         bail!("Import file '{path}' contains no benchmark results");
     }
+    adopt_custom_descriptors(summary.perfratio.as_ref(), &summary.results);
     for (index, res) in summary.results.iter().enumerate() {
         validate(res).with_context(|| {
             format!(
@@ -304,5 +358,40 @@ mod tests {
     fn test_import_json_missing_file() {
         let err = import_json("non_existent_json_file.json");
         assert!(err.is_err());
+    }
+}
+
+/// The `perfratio.environment` of an exported file. `None` when the file has
+/// none (exported before 1.19, or without metadata) or cannot be read.
+pub fn import_environment(path: &str) -> Option<crate::environment::Environment> {
+    let file = std::fs::File::open(path).ok()?;
+    let value: serde_json::Value = serde_json::from_reader(std::io::BufReader::new(file)).ok()?;
+    serde_json::from_value(value.get("perfratio")?.get("environment")?.clone()).ok()
+}
+
+#[cfg(test)]
+mod environment_tests {
+    use super::*;
+
+    #[test]
+    fn reads_the_environment_of_an_export() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.json");
+        std::fs::write(
+            &path,
+            r#"{"perfratio": {"environment": {"os_family": "linux", "arch": "x86_64", "smt": true}}, "results": []}"#,
+        )
+        .unwrap();
+        let env = import_environment(path.to_str().unwrap()).unwrap();
+        assert_eq!(env.os_family, "linux");
+        assert_eq!(env.smt, Some(true));
+
+        std::fs::write(
+            &path,
+            r#"{"perfratio": {"version": "1.0.0"}, "results": []}"#,
+        )
+        .unwrap();
+        assert!(import_environment(path.to_str().unwrap()).is_none());
+        assert!(import_environment("/nonexistent/x.json").is_none());
     }
 }

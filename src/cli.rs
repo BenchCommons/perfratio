@@ -145,6 +145,40 @@ pub fn build_command() -> Command {
                        significant (p < 0.05, from the per-run times). Noise alone doesn't fail."),
         )
         .arg(
+            Arg::new("budget")
+                .long("budget")
+                .value_name("EXPR")
+                .action(ArgAction::Append)
+                .help("A regression budget, repeatable: '<METRIC><op><VALUE>'. A percentage \
+                       bounds the change against the '--compare' baseline ('wall=+5%', \
+                       'memory=+10%', 'wall<=+3%'; 'throughput=-2%' for a metric where higher \
+                       is better), a number with a unit bounds the value ('memory<=256MiB', \
+                       'wall<=50ms', 'energy<=3J'). '=' takes the direction of the metric; \
+                       '<=' and '>=' are literal. A relative budget fails only if the \
+                       difference is also significant (p < 0.05). Exit code 3 if any budget \
+                       fails. '--fail-if-regressed PCT' is '--budget wall=+PCT'."),
+        )
+        .arg(
+            Arg::new("budget-file")
+                .long("budget-file")
+                .value_name("FILE")
+                .value_hint(ValueHint::FilePath)
+                .action(ArgAction::Append)
+                .help("Read budgets from a TOML file ('budgets = [\"wall=+5%\", ...]') or a JSON \
+                       file (an array of strings, or {\"budgets\": [...]}), to check in with the code."),
+        )
+        .arg(
+            Arg::new("on-unavailable")
+                .long("on-unavailable")
+                .value_name("POLICY")
+                .value_parser(["fail", "warn", "skip"])
+                .default_value("warn")
+                .help("What to do with a budget that cannot be evaluated (the metric is missing \
+                       in the baseline or the current run, or there are too few runs): 'fail' \
+                       counts it as failed, 'warn' (default) reports it and keeps the exit code, \
+                       'skip' leaves it out of the report. Never treated as 0 or as a pass."),
+        )
+        .arg(
             Arg::new("export-diff-markdown")
                 .long("export-diff-markdown")
                 .action(ArgAction::Set)
@@ -531,6 +565,43 @@ pub fn build_command() -> Command {
                      Without the option, the summary is printed only when some check is 'warn', \
                      'fail' or 'unavailable'. The grade is 'unreliable' if any check fails, \
                      'with_caveats' if any warns, else 'comparable'.",
+                ),
+        )
+        .arg(
+            Arg::new("calibrate")
+                .long("calibrate")
+                .action(ArgAction::Set)
+                .value_name("MODE")
+                .num_args(0..=1)
+                .require_equals(true)
+                .default_missing_value("auto")
+                .value_parser(["auto", "off"])
+                .help("Measure the runner floor with a trivial command: auto (default) or off.")
+                .long_help(
+                    "Measure the runner floor before benchmarking: the wall time and peak memory \
+                     of a trivial command ('true', or 'exit 0' through a shell) started the same \
+                     way as the benchmarks (shell, affinity, priority, output policy). About 20 \
+                     runs, at most about 0.2 s, once per session and shell.\n\n  \
+                     auto  Measure the floor (default)\n  \
+                     off   Do not measure it\n\n\
+                     A command is 'below resolution' when its mean is less than 3 floors, or the \
+                     lower end of its 95% CI reaches the floor. It is flagged in the quality \
+                     report ('measurement_floor') and in the summary; the numbers are still \
+                     shown. The floor is exported as 'perfratio.calibration'.",
+                ),
+        )
+        .arg(
+            Arg::new("below-floor")
+                .long("below-floor")
+                .action(ArgAction::Set)
+                .value_name("ACTION")
+                .value_parser(["warn", "fail"])
+                .help("Action for a result within the runner floor: warn (default) or fail.")
+                .long_help(
+                    "What to do when a result is within the runner floor (see '--calibrate').\n\n  \
+                     warn  The quality check warns (default)\n  \
+                     fail  The quality check fails and perfratio exits with code 6 after \
+                     printing and exporting the statistics",
                 ),
         )
         .arg(
@@ -925,11 +996,14 @@ pub fn build_command() -> Command {
             Arg::new("output-metric")
                 .long("output-metric")
                 .action(ArgAction::Append)
-                .value_name("NAME=REGEX")
+                .value_name("NAME[unit,higher]=REGEX")
                 .conflicts_with_all(["show-output", "until"])
                 .help("Extract a custom numeric metric from the command's standard output using \
                        the regular expression REGEX, which must contain at least one capture group. \
                        The value is extracted from the first capture group of the last match in the output. \
+                       NAME may declare a unit and a direction in brackets: 'qps[ops/s,higher]=REGEX' \
+                       ('higher' means a larger value is better, 'lower' is the default); they drive ranking, \
+                       relative speed and the exported descriptor. \
                        Can be specified multiple times for different metrics. Works with the default \
                        '--output=null' and with '--output=pipe'. A run where an ignored \
                        failure ('-i') left the metric out is exported as null."),
@@ -1023,6 +1097,36 @@ pub fn build_command() -> Command {
                 .help("Attach a label to the JSON and CSV exports (can be given multiple times), \
                        e.g. --label commit=$GITHUB_SHA --label runner=graviton3. Labels appear \
                        under 'perfratio.labels' in JSON and as 'label_KEY' columns in CSV."),
+        )
+        .arg(
+            Arg::new("meta")
+                .long("meta")
+                .action(ArgAction::Append)
+                .value_name("KEY=VALUE|git")
+                .help("Record build provenance in the JSON export: KEY=VALUE, or 'git' for the \
+                       commit and dirty flag of the current directory.")
+                .long_help(
+                    "Record provenance of the benchmarked program under 'perfratio.meta' in the \
+                     JSON export (can be given multiple times).\n\n  \
+                     KEY=VALUE  A string, e.g. --meta compiler=gcc-14 --meta flags=-O3\n  \
+                     git        'git_commit' and 'git_dirty' (uncommitted changes) of the git \
+                                repository in the current directory\n\n\
+                     Nothing else about the host is exported by default: no host name, user name, \
+                     environment variables or working directory. Do not put secrets in values.",
+                ),
+        )
+        .arg(
+            Arg::new("require-compatible-env")
+                .long("require-compatible-env")
+                .action(ArgAction::SetTrue)
+                .help("Fail when '--compare' or '--import-json' files come from a different \
+                       environment.")
+                .long_help(
+                    "Fail instead of warning when the environment of a '--compare' baseline or \
+                     an '--import-json' file differs from this machine (CPU model, architecture, \
+                     OS, kernel major version, governor, SMT, container), or when the file records \
+                     no environment. See 'perfratio.environment_fingerprint'.",
+                ),
         )
         .arg(
             Arg::new("export-markdown-runs")

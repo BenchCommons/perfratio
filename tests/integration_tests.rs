@@ -1936,6 +1936,7 @@ fn test_ctrlc_interruption_recovers_timing_and_exports() {
 
     let child = Command::new(assert_cmd::cargo_bin!("perfratio"))
         .arg("--runs=50")
+        .arg("--calibrate=off")
         .arg("--shell=none")
         .arg("--export-json")
         .arg(&export_path)
@@ -1996,6 +1997,7 @@ fn test_ctrlc_round_robin_interruption() {
 
     let child = Command::new(assert_cmd::cargo_bin!("perfratio"))
         .arg("--runs=40")
+        .arg("--calibrate=off")
         .arg("--shell=none")
         .arg("--schedule=round-robin")
         .arg("--export-json")
@@ -2046,6 +2048,7 @@ fn test_ctrlc_unbenchmarked_count_with_imported_json() {
 
     let child = Command::new(assert_cmd::cargo_bin!("perfratio"))
         .arg("--runs=50")
+        .arg("--calibrate=off")
         .arg("--shell=none")
         .arg("--import-json")
         .arg(&import_path)

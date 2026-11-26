@@ -18,10 +18,14 @@ pub enum Direction {
     HigherIsBetter,
 }
 
-/// Direction of a metric. Every metric perfratio measures today improves downwards;
-/// the metric descriptors of #317 will replace this table.
-pub fn direction(_metric: Metric) -> Direction {
-    Direction::LowerIsBetter
+/// Direction of a metric. Every built-in metric improves downwards; a custom metric follows
+/// its descriptor (`--output-metric NAME[unit,higher]=REGEX`, #317).
+pub fn direction(metric: Metric) -> Direction {
+    if metric.higher_is_better() {
+        Direction::HigherIsBetter
+    } else {
+        Direction::LowerIsBetter
+    }
 }
 
 /// Statistic of the per-run samples that represents a command.
@@ -174,7 +178,7 @@ impl Constraint {
 }
 
 /// Parse a number with an optional unit, into the base unit of `metric`.
-fn parse_quantity(metric: Metric, s: &str) -> Result<f64, String> {
+pub(crate) fn parse_quantity(metric: Metric, s: &str) -> Result<f64, String> {
     let split = s
         .find(|c: char| !(c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E')))
         .unwrap_or(s.len());
@@ -551,7 +555,7 @@ pub fn analyze(config: &ParetoConfig, results: &[BenchmarkResult]) -> Analysis {
     }
 }
 
-fn format_value(metric: Metric, value: f64) -> String {
+pub(crate) fn format_value(metric: Metric, value: f64) -> String {
     match metric {
         m if m.is_time() => format_duration(value, None),
         Metric::Energy => format!("{value:.3} J"),

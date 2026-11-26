@@ -47,6 +47,9 @@ pub mod api;
 
 #[doc(hidden)]
 pub mod benchmark;
+#[doc(hidden)]
+pub mod budget;
+pub mod calibration;
 #[cfg(feature = "cli")]
 #[doc(hidden)]
 pub mod cli;
@@ -62,6 +65,8 @@ pub mod cpu_id;
 pub mod delta_table;
 #[doc(hidden)]
 pub mod energy;
+#[doc(hidden)]
+pub mod environment;
 #[doc(hidden)]
 pub mod error;
 #[doc(hidden)]

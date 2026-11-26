@@ -278,6 +278,17 @@ is different from an energy of `0`.
 | `run_ids`, `instance_run_ids` | `PERFRATIO_RUN_ID` of every run (with `--concurrency`: of every instance, one row per run; the position in the row is `PERFRATIO_WORKER_ID`). |
 | `leftover_processes` | Only when true: processes started by the command outlived it and were killed. |
 
+### Measurement floor
+
+At start perfratio runs a trivial command (`true`, or `exit 0` through a shell) about 20 times the way it
+starts your command and keeps the median wall time (`perfratio.calibration.wall_floor`), its spread
+(`wall_floor_mad`) and the peak memory (`rss_floor`). A command is *below resolution* when its mean is
+under 3 floors or its 95% CI reaches the floor; spawn cost and timer resolution then matter as much as
+the command. The result carries `quality.below_resolution: true` and a `measurement_floor` check, and the
+numbers stay. `perfratio -N true` is below resolution, `perfratio 'sleep 0.1'` is not. `--calibrate=off`
+skips the measurement; `--below-floor fail` exits with code 6. See
+[docs/specs/measurement-floor.md](../docs/specs/measurement-floor.md).
+
 ### Comparing implementations across languages
 
 Use the same flags for every language so that startup and runtime effects are handled the same way:

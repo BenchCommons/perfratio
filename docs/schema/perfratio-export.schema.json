@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.27 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.32 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.27",
+      "const": "1.32",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -315,6 +315,162 @@
             "$ref": "#/$defs/metricDescriptor"
           }
         },
+        "environment": {
+          "type": "object",
+          "properties": {
+            "os_family": {
+              "type": "string",
+              "description": "std::env::consts::OS: linux, macos, windows, ..."
+            },
+            "arch": {
+              "type": "string"
+            },
+            "kernel": {
+              "type": "string",
+              "description": "Kernel / OS release."
+            },
+            "kernel_major": {
+              "type": "string",
+              "description": "First component of the release."
+            },
+            "cpu_model": {
+              "type": "string"
+            },
+            "logical_cores": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "physical_cores": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "smt": {
+              "type": "boolean",
+              "description": "Simultaneous multithreading is on."
+            },
+            "governor": {
+              "type": "string",
+              "description": "cpufreq governor; 'mixed' when the CPUs differ."
+            },
+            "turbo": {
+              "type": "boolean"
+            },
+            "numa_nodes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "memory_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "container": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "description": "docker, podman, kubernetes or lxc"
+                }
+              },
+              "description": "Present when a container was detected."
+            },
+            "perfratio": {
+              "type": "object",
+              "properties": {
+                "version": {
+                  "type": "string"
+                },
+                "profile": {
+                  "enum": [
+                    "release",
+                    "debug"
+                  ]
+                },
+                "features": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "version",
+                "profile",
+                "features"
+              ]
+            },
+            "settings": {
+              "type": "object",
+              "properties": {
+                "affinity": {
+                  "type": "string"
+                },
+                "priority": {
+                  "type": "string"
+                },
+                "concurrency": {
+                  "type": "string"
+                }
+              }
+            },
+            "backends": {
+              "type": "object",
+              "properties": {
+                "energy": {
+                  "type": "string"
+                },
+                "counters": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "required": [
+            "os_family",
+            "arch",
+            "perfratio"
+          ],
+          "description": "Hardware and software the benchmarks ran on (new in 1.22, #314). A field the platform cannot report is omitted. No host name, user name, environment variables or working directory."
+        },
+        "environment_fingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "Hash over cpu_model, arch, os_family, kernel_major, governor, smt and container (docs/specs/environment-fingerprint.md)."
+        },
+        "meta": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "From --meta KEY=VALUE and --meta git (git_commit, git_dirty)."
+        },
+        "calibration": {
+          "type": "object",
+          "properties": {
+            "wall_floor": {
+              "$ref": "#/$defs/seconds",
+              "description": "Median wall time of a trivial command, net of the shell spawn time, in seconds."
+            },
+            "wall_floor_mad": {
+              "$ref": "#/$defs/seconds",
+              "description": "Median absolute deviation of the calibration wall times."
+            },
+            "rss_floor": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Median peak RSS of the trivial command in bytes. Omitted when the platform reports none."
+            },
+            "runs": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "wall_floor",
+            "wall_floor_mad",
+            "runs"
+          ],
+          "description": "Runner floor measured by --calibrate (new in 1.27, #313). Omitted with --calibrate=off, with --debug-mode, or when it could not be measured."
+        },
         "statistics": {
           "type": "object",
           "properties": {
@@ -343,7 +499,7 @@
             },
             "correction": {
               "type": "object",
-              "description": "New in 1.22 (#321): the multiple-comparison correction behind p_value_adjusted and significance. Present only with --correction other than none.",
+              "description": "New in 1.32 (#321): the multiple-comparison correction behind p_value_adjusted and significance. Present only with --correction other than none.",
               "properties": {
                 "method": { "type": "string", "enum": ["bonferroni", "holm", "bh"] },
                 "family": { "type": "string", "enum": ["reference", "all-pairs"] },
@@ -387,6 +543,93 @@
             "mode"
           ],
           "description": "New in 1.25 (#324): how the runs of several commands were ordered. Always written by 1.25 and later; not required here, so that a MINOR addition is not a breaking change for consumers of older exports."
+        },
+        "compare": {
+          "type": "object",
+          "properties": {
+            "baseline": {
+              "type": "string",
+              "description": "Path of the --compare baseline; absent for absolute budgets without a baseline."
+            },
+            "on_unavailable": {
+              "type": "string",
+              "description": "--on-unavailable policy: fail, warn or skip."
+            },
+            "verdict": {
+              "type": "string",
+              "description": "pass, fail, or not_evaluated (no budget could be evaluated). Open enum."
+            },
+            "budgets": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "description": "The metric with its statistic as written, e.g. wall, memory, wall.p95, throughput."
+                  },
+                  "kind": {
+                    "type": "string",
+                    "description": "relative or absolute. Open enum."
+                  },
+                  "op": {
+                    "type": "string",
+                    "description": "<= or >=."
+                  },
+                  "limit": {
+                    "type": "number",
+                    "description": "Relative: a fraction of the baseline (0.05 = +5%). Absolute: seconds, bytes, joules or a count."
+                  },
+                  "budget": {
+                    "type": "string",
+                    "description": "The budget as written."
+                  },
+                  "baseline": {
+                    "type": "number",
+                    "description": "Value in the baseline; omitted when unavailable, never 0."
+                  },
+                  "current": {
+                    "type": "number",
+                    "description": "Value of this run; omitted when unavailable, never 0."
+                  },
+                  "change": {
+                    "type": "number",
+                    "description": "current / baseline - 1; relative budgets only."
+                  },
+                  "p_value": {
+                    "type": "number",
+                    "description": "p-value of the difference of the per-run samples, when it was computed."
+                  },
+                  "verdict": {
+                    "type": "string",
+                    "description": "pass, fail, within_noise or not_evaluated. Open enum."
+                  },
+                  "reason": {
+                    "type": "string",
+                    "description": "Why the budget is not_evaluated: unavailable_in_baseline, unavailable_in_current, baseline_not_positive, too_few_runs. Open enum."
+                  }
+                },
+                "required": [
+                  "command",
+                  "metric",
+                  "kind",
+                  "op",
+                  "limit",
+                  "budget",
+                  "verdict"
+                ]
+              }
+            }
+          },
+          "required": [
+            "on_unavailable",
+            "verdict",
+            "budgets"
+          ],
+          "description": "New in 1.29 (#325): the outcome of --budget and --fail-if-regressed. Not required here, so that a MINOR addition is not a breaking change for consumers of older exports."
         }
       },
       "required": [
@@ -396,12 +639,12 @@
         "system",
         "measurements"
       ],
-      "description": "Run metadata."
+      "description": "Run metadata. `environment` and `environment_fingerprint` (new in 1.28, #314) are always written by 1.28 and later; not required here, so that a MINOR addition is not a breaking change for consumers of older exports."
     },
     "metric": {
       "type": "string",
       "pattern": "^(wall|cpu|user|system|energy|memory|instructions|cycles|custom:[A-Za-z0-9_]+|region:[A-Za-z0-9_]+)$",
-      "description": "Metric used for ranking. The built-in set is closed; `custom:<name>` is a pattern (unitless, lower is better); `region:<name>` ranks on the time inside an instrumented region (seconds, lower is better, 1.21)."
+      "description": "Metric used for ranking. The built-in set is closed; `custom:<name>` is a pattern (unit and direction in `perfratio.metrics[]`, from 1.30; unitless and lower is better if undeclared); `region:<name>` ranks on the time inside an instrumented region (seconds, lower is better, 1.21)."
     },
     "primaryMetric": {
       "type": "object",
@@ -879,6 +1122,10 @@
               "status"
             ]
           }
+        },
+        "below_resolution": {
+          "type": "boolean",
+          "description": "The mean is within the runner floor (new in 1.27, #313). Omitted when no floor was measured."
         }
       },
       "required": [
@@ -991,7 +1238,7 @@
           "type": "number",
           "minimum": 0,
           "maximum": 1,
-          "description": "New in 1.22 (#321): p_value after statistics.correction; significance is decided on this value. Omitted without a correction."
+          "description": "New in 1.32 (#321): p_value after statistics.correction; significance is decided on this value. Omitted without a correction."
         },
         "percentiles": {
           "$ref": "#/$defs/percentiles"
@@ -1760,7 +2007,7 @@
         },
         "unit": {
           "type": "string",
-          "description": "`s`, `bytes`, `J`, `W`, `Hz`, `count`, `ns`, `ratio`, `percent`, `runs/s` or `unitless` (custom metrics)."
+          "description": "`s`, `bytes`, `J`, `W`, `Hz`, `count`, `ns`, `ratio`, `percent`, `runs/s` or `unitless` (custom metrics, or the unit declared with `--output-metric NAME[unit,higher]=REGEX`, 1.30)."
         },
         "direction": {
           "type": "string",

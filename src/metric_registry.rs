@@ -715,7 +715,7 @@ pub fn descriptors(
         });
     }
 
-    // `--output-metric`: unitless, lower is better (the documented default)
+    // `--output-metric`: unitless and lower is better unless declared (`NAME[unit,higher]`)
     for name in keys_of(results, |r| {
         r.custom_metrics
             .as_ref()
@@ -726,10 +726,18 @@ pub fn descriptors(
             .iter()
             .filter_map(|r| r.custom_metrics.as_ref()?.get(&name))
             .any(|runs| runs.iter().any(Option::is_none));
+        let meta = crate::metric::custom_meta(&name);
         out.push(MetricDescriptor {
             id: format!("custom.{name}"),
-            unit: "unitless".into(),
-            direction: LowerIsBetter,
+            unit: meta
+                .as_ref()
+                .and_then(|m| m.unit.clone())
+                .unwrap_or_else(|| "unitless".into()),
+            direction: if meta.as_ref().is_some_and(|m| m.higher_is_better) {
+                HigherIsBetter
+            } else {
+                LowerIsBetter
+            },
             scope: Scope::Process,
             source: "command_output".into(),
             kind: Measured,

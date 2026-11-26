@@ -187,7 +187,7 @@ alone does not fail the gate. When the command did not get slower, the same gate
 `-2.3%  p = 0.401  ~` and exits 0. `--export-diff-markdown <FILE>` writes the table for a pull
 request comment. A GitHub Actions example is in [doc/ci.md](doc/ci.md).
 
-Every benchmark also gets a measurement quality report (`results[].quality` in the JSON, a summary in the terminal when a check warns or fails): sample sufficiency, CI precision, outliers, trend, clusters, counter and energy coverage, workload validation. `--fail-on-quality with_caveats` exits with code 5 if a measurement is `unreliable`, next to `--fail-if-regressed` ([spec](docs/specs/measurement-quality.md)).
+Every benchmark also gets a measurement quality report (`results[].quality` in the JSON, a summary in the terminal when a check warns or fails): sample sufficiency, CI precision, outliers, trend, clusters, counter and energy coverage, workload validation. `--fail-on-quality with_caveats` exits with code 5 if a measurement is `unreliable`, next to `--fail-if-regressed` ([spec](docs/specs/measurement-quality.md)). Exports carry an environment block and a fingerprint (`perfratio.environment_fingerprint`); `--compare` and `--import-json` warn when the hardware class differs, `--meta git` records the commit ([spec](docs/specs/environment-fingerprint.md)). A command within the runner floor (measured at start with a trivial command, `--calibrate`) is flagged as below resolution, `--below-floor fail` exits with code 6 ([spec](docs/specs/measurement-floor.md)).
 
 ## JSON export and the `schemaVersion` contract
 
@@ -222,8 +222,8 @@ warmup effects differ a lot between runtimes. Use:
 |---|---|
 | `--warmup auto` | Warms up each command until timings are stable (at most 100 runs), so JIT-compiled and interpreted languages are not penalized by a fixed count. |
 | `--first-run=separate` | Reports the cold first run on its own line (`first_run` in the JSON) and keeps it out of the statistics. |
-| `--output-metric NAME=REGEX` | Reads a number from the command's stdout, or stderr with `--output-metric-stderr` (first capture group of the last match). Have the program time its algorithm and print it, so startup is separated from algorithm time. |
-| `--region[=NAME]` | Times only the code the program brackets with the region SDK (`sdk/`), so start-up, JIT warm-up and shutdown stay out. Rank on it with `--metric region:NAME`. See [docs/specs/region-protocol.md](docs/specs/region-protocol.md). |
+| `--output-metric NAME[unit,higher]=REGEX` | Reads a number from the command's stdout, or stderr with `--output-metric-stderr` (first capture group of the last match). Have the program time its algorithm and print it, so startup is separated from algorithm time. `[unit,higher]` is optional: it declares the unit and that a larger value is better (ranking and the exported descriptor follow). |
+| `--region[=NAME]` | Times only the code the program brackets with the region SDK (clients in [`sdk/`](sdk/README.md), [guide](docs/region-sdk.md)), so start-up, JIT warm-up and shutdown stay out. Rank on it with `--metric region:NAME`. See [docs/specs/region-protocol.md](docs/specs/region-protocol.md). |
 | `--duration <DURATION>` | Samples each command until the summed run time reaches DURATION (at least 3 runs), for example `--duration 5s`. Conflicts with `--runs` and `--target-precision`. |
 | `--target-precision <PCT>` | Runs until the 95% confidence interval of the mean is within PCT of the mean, bounded by `--min-runs`, `--max-runs` and `--max-benchmarking-time`. Fast commands finish early. |
 

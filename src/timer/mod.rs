@@ -747,7 +747,8 @@ pub fn execute_and_measure(
     #[cfg(not(windows))]
     let found = tracked.finish(None);
     #[cfg(windows)]
-    let found = tracked.finish(cpu_timer.active_processes());
+    let found =
+        tracked.finish(cpu_timer.settled_active_processes(std::time::Duration::from_millis(200)));
     let leftover_processes = found && !timed_out && until_matched != Some(true);
 
     Ok(TimerResult {

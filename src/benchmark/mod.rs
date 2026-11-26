@@ -1578,6 +1578,13 @@ impl<'a> BenchmarkRunner<'a> {
                         colors::green("mean").bold(),
                         colors::green("σ")
                     );
+                    // a long metric name (`region:<name>`) must not touch the value
+                    let title =
+                        if self.options.metric.is_region() && header.chars().count() + 12 >= 21 {
+                            format!("{title} ")
+                        } else {
+                            title
+                        };
                     if let Some(s) = p_stddev_str {
                         crate::outln!(
                             "  {:<21}{:>width$} ± {:>width$}",
@@ -1644,10 +1651,14 @@ impl<'a> BenchmarkRunner<'a> {
                         if self.options.metric.custom_name() == Some(name.as_str()) {
                             continue;
                         }
+                        let label = match crate::metric::custom_meta(name).and_then(|m| m.unit) {
+                            Some(unit) => format!("{name} [{unit}]"),
+                            None => name.clone(),
+                        };
                         if let Some(stddev) = summary.stddev {
                             crate::outln!(
                                 "  {} ({} ± {}):    {:>width$} ± {:>width$}",
-                                name,
+                                label,
                                 colors::green("mean").bold(),
                                 colors::green("σ"),
                                 colors::green(format!("{:.3}", summary.mean)).bold(),
@@ -1657,7 +1668,7 @@ impl<'a> BenchmarkRunner<'a> {
                         } else {
                             crate::outln!(
                                 "  {} ({}):        {:>width$}",
-                                name,
+                                label,
                                 colors::green("mean").bold(),
                                 colors::green(format!("{:.3}", summary.mean)).bold(),
                                 width = width
@@ -2243,6 +2254,8 @@ impl<'a> BenchmarkRunner<'a> {
                 metric: self.options.metric,
                 counters_requested: self.options.counters.is_some(),
                 energy_requested: self.options.measure_energy,
+                floor: self.executor.floor(),
+                below_floor: self.options.below_floor,
             },
         );
         if report.is_some() && self.options.output_style != OutputStyleOption::Disabled {

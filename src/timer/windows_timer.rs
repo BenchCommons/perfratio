@@ -227,6 +227,21 @@ impl CPUTimer {
         (ok != 0).then(|| unsafe { info.assume_init() }.ActiveProcesses)
     }
 
+    /// [`active_processes`](Self::active_processes) after giving processes
+    /// that are already exiting (the shell, `conhost.exe`) up to `grace` to
+    /// leave the job. Without it a plain `echo` under `cmd.exe` can be reported
+    /// as having left processes behind.
+    pub fn settled_active_processes(&self, grace: std::time::Duration) -> Option<u32> {
+        let deadline = std::time::Instant::now() + grace;
+        loop {
+            let count = self.active_processes()?;
+            if count == 0 || std::time::Instant::now() >= deadline {
+                return Some(count);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
     pub fn raw_job_handle(&self) -> HANDLE {
         self.job_object
     }

@@ -469,6 +469,12 @@ pub struct Options {
     /// `--fail-on-quality`: exit non-zero when a benchmark's grade is worse
     pub fail_on_quality: Option<crate::quality::Grade>,
 
+    /// `--calibrate`: measure the runner floor before benchmarking
+    pub calibrate: crate::calibration::CalibrateMode,
+
+    /// `--below-floor`: what a result within the runner floor does
+    pub below_floor: crate::calibration::BelowFloorAction,
+
     /// Modified Z-score above which runs are discarded (--discard-outliers)
     pub discard_outliers: Option<f64>,
 
@@ -573,6 +579,8 @@ impl Default for Options {
             validation: None,
             quality_mode: Default::default(),
             fail_on_quality: None,
+            calibrate: Default::default(),
+            below_floor: Default::default(),
             discard_outliers: None,
             show_resource_usage: false,
             counters: None,
@@ -935,6 +943,7 @@ impl Options {
                         parsed.name
                     )));
                 }
+                parsed.declare();
                 options.output_metrics.push(parsed);
             }
         }
@@ -1061,6 +1070,14 @@ impl Options {
         options.fail_on_quality = matches
             .get_one::<String>("fail-on-quality")
             .and_then(|value| crate::quality::Grade::parse(value));
+        options.calibrate = matches
+            .get_one::<String>("calibrate")
+            .and_then(|value| crate::calibration::CalibrateMode::parse(value))
+            .unwrap_or_default();
+        options.below_floor = matches
+            .get_one::<String>("below-floor")
+            .and_then(|value| crate::calibration::BelowFloorAction::parse(value))
+            .unwrap_or_default();
         options.show_resource_usage = matches.get_flag("resource-usage");
         let simd = matches.get_flag("simd");
         // `--metric instructions|cycles` collects its own counter

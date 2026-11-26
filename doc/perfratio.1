@@ -121,6 +121,12 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR MODE ]
 .RB [ \-\-fail\-on\-quality
 .IR GRADE ]
+.RB [ \-\-meta
+.IR KEY=VALUE|git ]
+.RB [ \-\-require\-compatible\-env ]
+.RB [ \-\-calibrate [ =auto|off ]]
+.RB [ \-\-below\-floor
+.IR ACTION ]
 .RB [ \-\-expect\-output\-sha256
 .IR HEX ]
 .RB [ \-\-validate
@@ -154,6 +160,12 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR FILE ]
 .RB [ \-\-fail\-if\-regressed
 .IR PCT ]
+.RB [ \-\-budget
+.IR EXPR ]
+.RB [ \-\-budget\-file
+.IR FILE ]
+.RB [ \-\-on\-unavailable
+.IR POLICY ]
 .RB [ \-\-export\-diff\-markdown
 .IR FILE ]
 .RB [ \-\-parameter\-scan
@@ -348,6 +360,18 @@ Compare each benchmark with the result of the same command (name) in a JSON file
 .IP
 With \fB\-\-compare\fR: exit with code 3 if any benchmark is slower than its baseline by more than PCT (e.g. '5%') and the difference is statistically significant (p < 0.05, from the per-run times). Noise alone doesn't fail.
 .HP
+\fB\-\-budget\fR \fIEXPR\fP
+.IP
+A regression budget, repeatable: <METRIC><op><VALUE>. A percentage bounds the change against the \fB\-\-compare\fR baseline (\(aqwall=+5%\(aq, \(aqmemory=+10%\(aq, \(aqwall<=+3%\(aq; \(aqthroughput=\-2%\(aq for a metric where higher is better), a number with a unit bounds the value (\(aqmemory<=256MiB\(aq, \(aqwall<=50ms\(aq, \(aqenergy<=3J\(aq). = takes the direction of the metric; <= and >= are literal. A relative budget fails only if the difference is also significant (p < 0.05). Exit code 3 if any budget fails. \fB\-\-fail\-if\-regressed\fR PCT is \fB\-\-budget\fR wall=+PCT.
+.HP
+\fB\-\-budget\-file\fR \fIFILE\fP
+.IP
+Read budgets from a TOML file (budgets = ["wall=+5%", ...]) or a JSON file (an array of strings, or {"budgets": [...]}), to check in with the code.
+.HP
+\fB\-\-on\-unavailable\fR \fIPOLICY\fP
+.IP
+What to do with a budget that cannot be evaluated (the metric is missing in the baseline or the current run, or there are too few runs): \fBfail\fR counts it as failed, \fBwarn\fR (default) reports it and keeps the exit code, \fBskip\fR leaves it out of the report. Never treated as 0 or as a pass.
+.HP
 \fB\-\-export\-diff\-markdown\fR \fIFILE\fP
 .IP
 With \fB\-\-compare\fR: write the comparison as a Markdown table to FILE, e.g. for a pull request comment or a CI job summary.
@@ -467,6 +491,21 @@ Print the measurement quality report of each benchmark: off, summary (the grade 
 \fB\-\-fail\-on\-quality\fR \fIGRADE\fP
 .IP
 Exit with code 5 if the quality grade of any benchmark is worse than GRADE (comparable, with_caveats or unreliable, best first). A CI gate on how trustworthy a measurement is; \fB\-\-fail\-if\-regressed\fR gates on the size of a change.
+.HP
+\fB\-\-meta\fR \fIKEY=VALUE|git\fP
+.IP
+Record provenance of the benchmarked program under perfratio.meta in the JSON export (repeatable). KEY=VALUE is a string; git adds git_commit and git_dirty of the git repository in the current directory. The export contains no host name, user name, environment variables or working directory.
+.HP
+\fB\-\-require\-compatible\-env\fR
+.IP
+Fail instead of warning when the environment of a \fB\-\-compare\fR baseline or an \fB\-\-import\-json\fR file differs from this machine (CPU model, architecture, OS, kernel major version, governor, SMT, container), or when the file records no environment.
+\fB\-\-calibrate\fR[=\fIauto|off\fP]
+.IP
+Measure the runner floor before benchmarking: about 20 runs of a trivial command (true, or exit 0 through a shell) started like the benchmarks, once per session and shell. A command whose mean is under 3 floors, or whose 95% CI reaches the floor, is below resolution: flagged in the quality report and the summary, numbers kept. Default: auto. The floor is exported as perfratio.calibration.
+.HP
+\fB\-\-below\-floor\fR \fIACTION\fP
+.IP
+Action for a result within the runner floor: warn (default) or fail. With fail the statistics are printed and exported, then the exit code is 6.
 .HP
 \fB\-\-expect\-output\-sha256\fR \fIHEX\fP
 .IP
@@ -798,13 +837,16 @@ Success.
 General error (invalid options, command failure when not ignored, etc.).
 .TP
 .B 3
-A benchmark regressed beyond the threshold given to \fB\-\-fail\-if\-regressed\fR.
+A benchmark regressed beyond the threshold given to \fB\-\-fail\-if\-regressed\fR, or a \fB\-\-budget\fR failed.
 .TP
 .B 4
 \fB\-\-check\-system=strict\fR found a failing check.
 .TP
 .B 5
 \fB\-\-fail\-on\-quality\fR found a benchmark with a worse quality grade.
+.TP
+.B 6
+\fB\-\-below\-floor fail\fR found a benchmark within the runner floor.
 .TP
 .B 130
 Interrupted by SIGINT / Ctrl-C (partial results and exports preserved).

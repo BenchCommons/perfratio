@@ -315,6 +315,34 @@
             "$ref": "#/$defs/metricDescriptor"
           }
         },
+        "calibration": {
+          "type": "object",
+          "properties": {
+            "wall_floor": {
+              "$ref": "#/$defs/seconds",
+              "description": "Median wall time of a trivial command, net of the shell spawn time, in seconds."
+            },
+            "wall_floor_mad": {
+              "$ref": "#/$defs/seconds",
+              "description": "Median absolute deviation of the calibration wall times."
+            },
+            "rss_floor": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Median peak RSS of the trivial command in bytes. Omitted when the platform reports none."
+            },
+            "runs": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "wall_floor",
+            "wall_floor_mad",
+            "runs"
+          ],
+          "description": "Runner floor measured by --calibrate (new in 1.27, #313). Omitted with --calibrate=off, with --debug-mode, or when it could not be measured."
+        },
         "statistics": {
           "type": "object",
           "properties": {
@@ -340,17 +368,6 @@
               "type": "integer",
               "minimum": 0,
               "description": "Unsigned 64-bit; may exceed 2^53, so read it as an integer, not a double."
-            },
-            "correction": {
-              "type": "object",
-              "description": "New in 1.22 (#321): the multiple-comparison correction behind p_value_adjusted and significance. Present only with --correction other than none.",
-              "properties": {
-                "method": { "type": "string", "enum": ["bonferroni", "holm", "bh"] },
-                "family": { "type": "string", "enum": ["reference", "all-pairs"] },
-                "family_size": { "type": "integer", "minimum": 0, "description": "Number of comparisons with a defined p-value in the family." },
-                "alpha": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 }
-              },
-              "required": ["method", "family", "family_size", "alpha"]
             }
           },
           "required": [
@@ -879,6 +896,10 @@
               "status"
             ]
           }
+        },
+        "below_resolution": {
+          "type": "boolean",
+          "description": "The mean is within the runner floor (new in 1.27, #313). Omitted when no floor was measured."
         }
       },
       "required": [
@@ -986,12 +1007,6 @@
         "p_value": {
           "type": "number",
           "description": "p-value of the bootstrap Welch test against the reference."
-        },
-        "p_value_adjusted": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1,
-          "description": "New in 1.22 (#321): p_value after statistics.correction; significance is decided on this value. Omitted without a correction."
         },
         "percentiles": {
           "$ref": "#/$defs/percentiles"

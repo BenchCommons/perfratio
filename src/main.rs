@@ -16,7 +16,7 @@ use perfratio::options::Options;
 use anyhow::{Context, Result};
 use perfratio::output::colors;
 
-use perfratio::{cli, compare, error, options, output, system_check, util};
+use perfratio::{budget, cli, compare, error, options, output, system_check, util};
 
 fn parse_shell(name: &str) -> Result<Shell> {
     match name {
@@ -27,6 +27,40 @@ fn parse_shell(name: &str) -> Result<Shell> {
         "elvish" => Ok(Shell::Elvish),
         other => Err(anyhow::anyhow!("unsupported shell: {other}")),
     }
+}
+
+/// `--compare` and `--import-json`: warn when a file was measured in another
+/// environment (`--require-compatible-env`: fail, also for a file without one)
+fn check_environments(
+    cli_arguments: &clap::ArgMatches,
+    current: &perfratio::environment::Environment,
+    baseline: Option<&str>,
+) -> Result<()> {
+    let strict = cli_arguments.get_flag("require-compatible-env");
+    let imports = cli_arguments
+        .get_many::<String>("import-json")
+        .into_iter()
+        .flatten()
+        .map(|file| (file.as_str(), format!("The imported file '{file}'")));
+    let files = baseline
+        .into_iter()
+        .map(|file| (file, format!("The baseline '{file}'")))
+        .chain(imports);
+    for (path, what) in files {
+        let message = match perfratio::import::import_environment(path) {
+            Some(environment) => {
+                perfratio::environment::mismatch_message(&what, &environment, current)
+            }
+            None if strict => Some(format!("{what} records no environment")),
+            None => None,
+        };
+        let Some(message) = message else { continue };
+        if strict {
+            anyhow::bail!("{message} ('--require-compatible-env')");
+        }
+        eprintln!("{} {message}", output::colors::yellow("Warning:"));
+    }
+    Ok(())
 }
 
 fn run() -> Result<()> {
@@ -100,6 +134,50 @@ fn run() -> Result<()> {
         .map(|value| compare::parse_threshold(value).map_err(anyhow::Error::msg))
         .transpose()?;
 
+    check_environments(
+        &cli_arguments,
+        export_manager.environment(),
+        baseline.as_ref().map(|(path, _)| *path),
+    )?;
+
+    // '--budget', '--budget-file' and the '--fail-if-regressed' shorthand (#325)
+    let mut budget_texts: Vec<String> = cli_arguments
+        .get_many::<String>("budget")
+        .into_iter()
+        .flatten()
+        .cloned()
+        .collect();
+    for path in cli_arguments
+        .get_many::<String>("budget-file")
+        .into_iter()
+        .flatten()
+    {
+        let content = std::fs::read_to_string(path)
+            .with_context(|| format!("Could not read the budget file '{path}'"))?;
+        budget_texts.extend(budget::parse_budget_file(path, &content).map_err(anyhow::Error::msg)?);
+    }
+    let explicit_budgets = !budget_texts.is_empty();
+    let mut budgets: Vec<budget::Budget> = regression_threshold
+        .map(budget::Budget::wall_regression)
+        .into_iter()
+        .collect();
+    for text in &budget_texts {
+        budgets.push(budget::Budget::parse(text).map_err(anyhow::Error::msg)?);
+    }
+    if baseline.is_none() {
+        if let Some(b) = budgets.iter().find(|b| b.kind == budget::Kind::Relative) {
+            anyhow::bail!(
+                "The relative budget '{}' needs a baseline: add '--compare FILE', or use an absolute limit such as 'memory<=256MiB'",
+                b.text
+            );
+        }
+    }
+    let on_unavailable: budget::OnUnavailable = cli_arguments
+        .get_one::<String>("on-unavailable")
+        .map(|v| v.parse().map_err(anyhow::Error::msg))
+        .transpose()?
+        .unwrap_or_default();
+
     let mut imported_results = vec![];
     if let Some(files) = cli_arguments.get_many::<String>("import-json") {
         for file in files {
@@ -149,39 +227,73 @@ fn run() -> Result<()> {
     scheduler.add_imported_results(imported_results);
     scheduler.run_benchmarks()?;
     scheduler.print_relative_speed_comparison();
+    scheduler.print_below_floor_warning();
     scheduler.print_raw_ratios();
     if cli_arguments.get_flag("delta-table") {
         scheduler.print_delta_table();
     }
     scheduler.print_pareto();
+
+    // The comparison and the budgets go into the JSON export, so they come first
+    let comparison = baseline
+        .as_ref()
+        .map(|(_, baseline)| compare::compare(baseline, scheduler.results()));
+    let budget_report = (!budgets.is_empty()).then(|| {
+        budget::evaluate(
+            &budgets,
+            comparison.as_ref(),
+            scheduler.results(),
+            baseline.as_ref().map(|(path, _)| *path),
+            on_unavailable,
+        )
+    });
+    export_manager.set_compare(
+        budget_report
+            .as_ref()
+            .and_then(|report| serde_json::to_value(report).ok()),
+    );
     scheduler.final_export()?;
 
-    if let Some((baseline_path, baseline)) = &baseline {
-        let comparison = compare::compare(baseline, scheduler.results());
+    if let (Some((baseline_path, _)), Some(comparison)) = (&baseline, &comparison) {
         if options.output_style != options::OutputStyleOption::Disabled {
             perfratio::outln!(
                 "{}",
                 compare::terminal_table(
-                    &comparison,
+                    comparison,
                     baseline_path,
                     regression_threshold,
                     options.time_unit
                 )
             );
         }
-        if let Some(path) = cli_arguments.get_one::<String>("export-diff-markdown") {
-            perfratio::export::write_to_file(
-                path,
-                compare::markdown_table(&comparison, regression_threshold, options.time_unit)
-                    .as_bytes(),
-            )
-            .with_context(|| format!("Could not write '{path}'"))?;
-        }
-        if let Some(threshold) = regression_threshold {
-            let regressions = comparison.regressions(threshold).count();
-            if regressions > 0 && !perfratio::util::interrupt::interrupted() {
-                return Err(error::RegressionDetected(regressions).into());
+    }
+    if let (true, Some(report)) = (explicit_budgets, &budget_report) {
+        if options.output_style != options::OutputStyleOption::Disabled {
+            let text = report.terminal();
+            if !text.is_empty() {
+                perfratio::outln!("{text}");
             }
+        }
+    }
+    if let Some(path) = cli_arguments.get_one::<String>("export-diff-markdown") {
+        if let Some(comparison) = &comparison {
+            let mut markdown =
+                compare::markdown_table(comparison, regression_threshold, options.time_unit);
+            if let (true, Some(report)) = (explicit_budgets, &budget_report) {
+                markdown.push_str(&report.markdown());
+            }
+            perfratio::export::write_to_file(path, markdown.as_bytes())
+                .with_context(|| format!("Could not write '{path}'"))?;
+        }
+    }
+    if let Some(report) = &budget_report {
+        let failures = report.failures();
+        if failures > 0 && !perfratio::util::interrupt::interrupted() {
+            return Err(if explicit_budgets {
+                error::BudgetFailed(failures).into()
+            } else {
+                error::RegressionDetected(failures).into()
+            });
         }
     }
 
@@ -194,6 +306,18 @@ fn run() -> Result<()> {
             .count();
         if worse > 0 && !perfratio::util::interrupt::interrupted() {
             return Err(error::QualityGateFailed(worse, gate.name()).into());
+        }
+    }
+
+    if options.below_floor == perfratio::calibration::BelowFloorAction::Fail {
+        let below = scheduler
+            .results()
+            .iter()
+            .filter_map(|r| r.quality.as_ref())
+            .filter(|q| q.below_resolution == Some(true))
+            .count();
+        if below > 0 && !perfratio::util::interrupt::interrupted() {
+            return Err(error::BelowFloor(below).into());
         }
     }
 
@@ -211,13 +335,19 @@ fn main() {
             if e.is::<perfratio::error::Interrupted>() {
                 std::process::exit(130);
             }
-            if e.is::<perfratio::error::RegressionDetected>() {
+            if e.is::<perfratio::error::RegressionDetected>()
+                || e.is::<perfratio::error::BudgetFailed>()
+            {
                 eprintln!("{} {:#}", colors::red("Error:"), e);
                 std::process::exit(3);
             }
             if e.is::<perfratio::error::QualityGateFailed>() {
                 eprintln!("{} {:#}", colors::red("Error:"), e);
                 std::process::exit(5);
+            }
+            if e.is::<perfratio::error::BelowFloor>() {
+                eprintln!("{} {:#}", colors::red("Error:"), e);
+                std::process::exit(6);
             }
             if e.is::<perfratio::error::SystemCheckFailed>() {
                 eprintln!("{} {:#}", colors::red("Error:"), e);

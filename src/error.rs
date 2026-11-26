@@ -125,10 +125,20 @@ pub struct Interrupted;
 #[error("{0} benchmark(s) regressed compared with the baseline ('--fail-if-regressed')")]
 pub struct RegressionDetected(pub usize);
 
+/// `--budget` found a budget that fails (exit code 3)
+#[derive(Debug, Error)]
+#[error("{0} budget(s) failed ('--budget')")]
+pub struct BudgetFailed(pub usize);
+
 /// `--fail-on-quality` found a benchmark with a worse grade (exit code 5)
 #[derive(Debug, Error)]
 #[error("{0} benchmark(s) have a measurement quality worse than '{1}' ('--fail-on-quality')")]
 pub struct QualityGateFailed(pub usize, pub &'static str);
+
+/// A result is within the runner floor with `--below-floor fail` (exit code 6)
+#[derive(Debug, Error)]
+#[error("{0} benchmark(s) are below the measurement floor ('--below-floor fail'); use a longer-running command or a loop inside the command")]
+pub struct BelowFloor(pub usize);
 
 /// `--check-system=strict` found a problem (exit code 4)
 #[derive(Debug, Error)]

@@ -138,7 +138,9 @@ fn rejects_invalid_syntax_missing_equals() {
         .args(["--output-metric", "latency_no_equals", "echo 1"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("expected 'NAME=REGEX'"));
+        .stderr(predicate::str::contains(
+            "expected 'NAME[unit,higher]=REGEX'",
+        ));
 }
 
 #[test]
