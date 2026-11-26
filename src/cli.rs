@@ -1008,6 +1008,20 @@ pub fn build_command() -> Command {
                        include the intermediate shell unless '--shell=none' is used."),
         )
         .arg(
+            Arg::new("counters")
+                .long("counters")
+                .value_name("LIST")
+                .num_args(0..=1)
+                .require_equals(true)
+                .default_missing_value("instructions,cycles,cache-references,cache-misses,branches,branch-misses")
+                .help("Collect hardware performance counters per run (Linux). LIST is \
+                       comma-separated: instructions, cycles, cache-references, cache-misses, \
+                       branches, branch-misses (default: all). Use '--counters=cycles' to \
+                       give a list. Counts user and kernel space, or user space only when \
+                       perf_event_paranoid > 1. Unavailable counters give one warning, never \
+                       an error. Not available on macOS and Windows."),
+        )
+        .arg(
             Arg::new("first-run")
                 .long("first-run")
                 .action(ArgAction::Set)

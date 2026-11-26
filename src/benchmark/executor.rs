@@ -80,6 +80,8 @@ struct ProcessSettings<'a> {
     output_metrics: &'a [crate::output_metric::OutputMetric],
     /// --output-metric-stderr
     output_metrics_stderr: bool,
+    /// --counters
+    counters: Option<&'a crate::perf_counters::CounterConfig>,
 }
 
 impl<'a> ProcessSettings<'a> {
@@ -92,6 +94,7 @@ impl<'a> ProcessSettings<'a> {
             until: options.until.as_ref(),
             output_metrics: &options.output_metrics,
             output_metrics_stderr: options.output_metrics_stderr,
+            counters: options.counters.as_ref(),
         }
     }
 }
@@ -113,6 +116,7 @@ fn run_command_and_measure_common(
         until,
         output_metrics,
         output_metrics_stderr,
+        counters,
     } = process;
     let (until, capture_metrics) = match iteration {
         BenchmarkIteration::NonBenchmarkRun => (None, false),
@@ -175,6 +179,11 @@ fn run_command_and_measure_common(
     } else {
         None
     };
+    // Open the counters on this thread, right before the child is spawned
+    // here (the children inherit them). Warmup runs are not counted.
+    let open_counters = counters
+        .filter(|_| !matches!(iteration, BenchmarkIteration::Warmup(_)))
+        .and_then(crate::perf_counters::open);
     let mut result = execute_and_measure(
         command,
         affinity,
@@ -200,6 +209,10 @@ fn run_command_and_measure_common(
         }
     })
     .with_context(|| format!("Failed to run command '{command_name}'"))?;
+    // A timed-out run keeps no counters (its time is the timeout, not a run)
+    result.hw_counters = open_counters
+        .map(|open| open.read())
+        .filter(|_| !result.timed_out);
 
     // If an interruption occurred while running the command, discard the run
     // regardless of whether the child exited 0 (e.g. child caught SIGINT and exited gracefully).
@@ -522,6 +535,7 @@ pub fn aggregate_batch(instances: Vec<BatchInstance>) -> (TimerResult, Vec<Insta
             .max()
             .unwrap_or(0),
         counters,
+        hw_counters: sum_hw_counters(&instances),
         status,
         captured: None,
         timed_out: instances.iter().any(|i| i.result.timed_out),
@@ -531,15 +545,54 @@ pub fn aggregate_batch(instances: Vec<BatchInstance>) -> (TimerResult, Vec<Insta
     (aggregate, timings)
 }
 
+/// `--counters` with `--concurrency`: the counts of the whole batch, summed per
+/// event over the instances (each instance has its own counters on its own
+/// thread). An event is `None` if any instance could not read it.
+fn sum_hw_counters(instances: &[BatchInstance]) -> Option<crate::perf_counters::HwReading> {
+    instances
+        .iter()
+        .map(|i| i.result.hw_counters.clone())
+        .reduce(|a, b| {
+            let (a, b) = (a?, b?);
+            Some(
+                a.into_iter()
+                    .zip(b)
+                    .map(|(x, y)| {
+                        let (x, y) = (x?, y?);
+                        Some(crate::pmu_scaling::ScaledCounter {
+                            value: x.value.saturating_add(y.value),
+                            raw: x.raw.saturating_add(y.raw),
+                            time_enabled: x.time_enabled.max(y.time_enabled),
+                            time_running: if x.scaled() || y.scaled() {
+                                x.time_running.min(y.time_running)
+                            } else {
+                                x.time_enabled.max(y.time_enabled)
+                            },
+                        })
+                    })
+                    .collect(),
+            )
+        })
+        .flatten()
+}
+
 pub struct RawExecutor<'a> {
     options: &'a Options,
+    /// Median fork/exec counter overhead per active event (`--counters`)
+    counter_overhead: Vec<u64>,
 }
 
 impl<'a> RawExecutor<'a> {
     pub fn new(options: &'a Options) -> Self {
-        RawExecutor { options }
+        RawExecutor {
+            options,
+            counter_overhead: vec![],
+        }
     }
 }
+
+/// Number of calibration runs for the hardware counter overhead
+const COUNTER_CALIBRATION_RUNS: usize = 20;
 
 impl Executor for RawExecutor<'_> {
     fn run_command_and_measure(
@@ -563,11 +616,14 @@ impl Executor for RawExecutor<'_> {
                 ProcessSettings::from_options(self.options),
             )
         };
-        let (result, instances) = if batch_size(self.options, iteration) > 1 {
+        let (mut result, instances) = if batch_size(self.options, iteration) > 1 {
             aggregate_batch(run_batch(self.options.concurrency, run_one)?)
         } else {
             (run_one()?, Vec::new())
         };
+        if let Some(hw) = result.hw_counters.as_mut() {
+            crate::perf_counters::subtract_overhead(hw, &self.counter_overhead);
+        }
         let status = result.status;
 
         Ok((
@@ -579,6 +635,7 @@ impl Executor for RawExecutor<'_> {
                 memory_usage_byte: result.memory_usage_byte,
                 energy_joules: None,
                 counters: result.counters,
+                hw_counters: result.hw_counters,
                 timed_out: result.timed_out,
                 custom_metrics: result.custom_metrics,
                 instances,
@@ -587,7 +644,32 @@ impl Executor for RawExecutor<'_> {
         ))
     }
 
+    /// Without a shell only the fork/exec work between enabling the counters
+    /// and the `exec` of the command remains: measure it with `true`.
     fn calibrate(&mut self) -> Result<()> {
+        let Some(config) = self
+            .options
+            .counters
+            .as_ref()
+            .filter(|c| c.is_active() && !c.mock)
+        else {
+            return Ok(());
+        };
+        let mut samples = vec![];
+        for _ in 0..COUNTER_CALIBRATION_RUNS {
+            // A missing `true` only means no calibration: counts stay gross
+            let Ok((r, _)) = self.run_command_and_measure(
+                &Command::new(None, "true"),
+                BenchmarkIteration::NonBenchmarkRun,
+                None,
+                &CommandOutputPolicy::Null,
+            ) else {
+                return Ok(());
+            };
+            samples.extend(r.hw_counters);
+        }
+        self.counter_overhead =
+            crate::perf_counters::median_overhead(&samples, config.active.len());
         Ok(())
     }
 
@@ -600,6 +682,8 @@ pub struct ShellExecutor<'a> {
     options: &'a Options,
     shell: &'a Shell,
     shell_spawning_time: Option<TimingResult>,
+    /// Median shell spawn counter overhead per active event (`--counters`)
+    counter_overhead: Vec<u64>,
 }
 
 impl<'a> ShellExecutor<'a> {
@@ -608,6 +692,7 @@ impl<'a> ShellExecutor<'a> {
             shell,
             options,
             shell_spawning_time: None,
+            counter_overhead: vec![],
         }
     }
 }
@@ -688,6 +773,9 @@ impl Executor for ShellExecutor<'_> {
                 instance.time_real = (instance.time_real - spawning_time.time_real).max(0.0);
             }
         }
+        if let Some(hw) = result.hw_counters.as_mut() {
+            crate::perf_counters::subtract_overhead(hw, &self.counter_overhead);
+        }
         let status = result.status;
 
         Ok((
@@ -699,6 +787,7 @@ impl Executor for ShellExecutor<'_> {
                 memory_usage_byte: result.memory_usage_byte,
                 energy_joules: None,
                 counters: result.counters,
+                hw_counters: result.hw_counters,
                 timed_out: result.timed_out,
                 custom_metrics: result.custom_metrics,
                 instances,
@@ -723,6 +812,7 @@ impl Executor for ShellExecutor<'_> {
         let mut times_real: Vec<Second> = vec![];
         let mut times_user: Vec<Second> = vec![];
         let mut times_system: Vec<Second> = vec![];
+        let mut hw_samples = vec![];
 
         for _ in 0..COUNT {
             // Just run the shell without any command
@@ -750,6 +840,7 @@ impl Executor for ShellExecutor<'_> {
                     times_real.push(r.time_real);
                     times_user.push(r.time_user);
                     times_system.push(r.time_system);
+                    hw_samples.extend(r.hw_counters);
                 }
             }
 
@@ -762,6 +853,11 @@ impl Executor for ShellExecutor<'_> {
             bar.finish_and_clear()
         }
 
+        if let Some(config) = self.options.counters.as_ref().filter(|c| !c.mock) {
+            self.counter_overhead =
+                crate::perf_counters::median_overhead(&hw_samples, config.active.len());
+        }
+
         self.shell_spawning_time = Some(TimingResult {
             time_real: mean(&times_real),
             time_total: mean(&times_real),
@@ -770,6 +866,7 @@ impl Executor for ShellExecutor<'_> {
             memory_usage_byte: 0,
             energy_joules: None,
             counters: None,
+            hw_counters: None,
             timed_out: false,
             custom_metrics: std::collections::BTreeMap::new(),
             instances: Vec::new(),
@@ -794,6 +891,7 @@ impl Executor for ShellExecutor<'_> {
 pub struct MockExecutor {
     shell: Option<String>,
     timeout: Option<std::time::Duration>,
+    counters: Option<crate::perf_counters::CounterConfig>,
     concurrency: usize,
 }
 
@@ -802,8 +900,15 @@ impl MockExecutor {
         MockExecutor {
             shell,
             timeout,
+            counters: None,
             concurrency: 1,
         }
+    }
+
+    /// Simulate `--counters` with deterministic values.
+    pub fn with_counters(mut self, counters: Option<crate::perf_counters::CounterConfig>) -> Self {
+        self.counters = counters.filter(|c| c.is_active());
+        self
     }
 
     /// `--concurrency N`: simulate N instances per run. Instance `i` takes
@@ -930,6 +1035,11 @@ impl Executor for MockExecutor {
                 memory_usage_byte,
                 energy_joules: None,
                 counters: None,
+                hw_counters: self
+                    .counters
+                    .as_ref()
+                    .filter(|_| !timed_out)
+                    .map(|c| crate::perf_counters::mock_reading(c, time_real)),
                 timed_out,
                 custom_metrics: std::collections::BTreeMap::new(),
                 instances,
@@ -1033,6 +1143,7 @@ mod batch_tests {
                 time_system: user / 2.0,
                 memory_usage_byte: memory,
                 counters: None,
+                hw_counters: None,
                 status: status(code),
                 captured: None,
                 timed_out: false,
@@ -1040,6 +1151,30 @@ mod batch_tests {
                 custom_metrics: Default::default(),
             },
         }
+    }
+
+    #[test]
+    fn hardware_counters_of_a_batch_are_summed() {
+        use crate::pmu_scaling::ScaledCounter;
+        let c = |value, enabled, running| {
+            Some(ScaledCounter {
+                value,
+                raw: value,
+                time_enabled: enabled,
+                time_running: running,
+            })
+        };
+        let mut a = instance(0.0, 0.1, 0.1, 1, 0);
+        let mut b = instance(0.0, 0.1, 0.1, 1, 0);
+        a.result.hw_counters = Some(vec![c(100, 10, 10), c(5, 10, 10)]);
+        b.result.hw_counters = Some(vec![c(200, 20, 10), None]);
+        let (aggregate, _) = aggregate_batch(vec![a, b]);
+        let hw = aggregate.hw_counters.unwrap();
+        assert_eq!(hw[0].unwrap().value, 300);
+        assert!(hw[0].unwrap().scaled());
+        assert!(hw[1].is_none());
+        let (none, _) = aggregate_batch(vec![instance(0.0, 0.1, 0.1, 1, 0)]);
+        assert!(none.hw_counters.is_none());
     }
 
     #[test]

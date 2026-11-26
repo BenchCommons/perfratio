@@ -1,6 +1,30 @@
 # Spec: `--counters` hardware performance counters on Linux (#49)
 
-**Status:** Proposed. Scheduled for 1.x, not 1.0.
+**Status:** Implemented on Linux (#49, schemaVersion 1.8). macOS and Windows report `unavailable`.
+
+## Implementation notes (deviations from the proposal)
+- Code: `src/perf_counters.rs`, wired into `run_command_and_measure_common`
+  (`src/benchmark/executor.rs`), the runner (`hw_counters`), JSON and `src/delta_table.rs`.
+- Default list is `instructions,cycles,cache-references,cache-misses,branches,branch-misses`
+  (adds the two denominators needed by #213). `--counters` needs `=` for a list
+  (`--counters=cycles`); a bare `--counters` uses the default and does not swallow the command.
+- Opening: the fds are opened on the spawning thread with `inherit` and `enable_on_exec`
+  (disabled otherwise). The thread never calls `exec`, so only the child tree is counted, from
+  the `exec` of the command; counts of exited children are added to the parent fd. `pid=0`
+  events need no race-prone attach after `spawn()`.
+- Scope (D1 default `all`, user + kernel): when kernel counting is denied the run falls back to
+  `user` with one warning and `counters_scope: "user"`. `--scope` and `:u/:k` are #218.
+  `exclude_guest` is not set yet.
+- Non-Linux: no error. One warning, `measurements.counters = "unavailable"`,
+  `counters_unavailable_reason = "unsupported_platform"`, benchmark continues (never abort).
+  macOS: the private `kperf`/`kpc` calls (`kpc_force_all_ctrs_set`, `kpc_set_counting`,
+  `kpc_get_thread_counters`) all return -1 for an unprivileged process (tested on Apple M4,
+  macOS, uid 501) and count per thread, not per child tree, so it is not implemented.
+- Overhead: median of 50 `sh -c ''` runs (shell) or 20 `true` runs (`-N`) per event, subtracted
+  and clamped at 0. Timed-out runs have `null` counters; warmup runs are not counted.
+- `--metric instructions|cycles` is not wired: `metric-target.md` does not list them.
+- Not run on real hardware: the PMU test (`PERFRATIO_TEST_PERF=1`). A software-event
+  (`task-clock`) test checks the open/inherit mechanism wherever `perf_event_open` is allowed.
 
 ## Problem / Motivation
 References: #49, #48 (`--metric`), #213 (derived efficiency metrics), #240 (JSON contract),

@@ -73,6 +73,8 @@ pub enum OptionsError<'a> {
 
     #[error("Invalid '--affinity': {0}")]
     InvalidAffinity(String),
+    #[error("{0}")]
+    InvalidCounters(String),
     #[error("Invalid '--priority': {0}")]
     InvalidPriority(String),
     #[error("Invalid '--target-precision' '{0}': expected a positive percentage such as '1%'")]
