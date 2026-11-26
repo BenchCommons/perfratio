@@ -137,6 +137,12 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR VAR
 .IR MIN
 .IR MAX ]
+.RB [ \-\-optimize
+.IR VAR
+.IR MIN
+.IR MAX ]
+.RB [ \-\-optimize\-budget
+.IR N ]
 .RB [ \-\-parameter\-step\-size
 .IR DELTA ]
 .RB [ \-\-parameter\-list
@@ -318,6 +324,14 @@ Execute CMD after the completion of all benchmarking runs for each individual co
 \fB\-P\fR, \fB\-\-parameter\-scan\fR \fIVAR\fP \fIMIN\fP \fIMAX\fP
 .IP
 Perform benchmark runs for each value in the range MIN..MAX. Replaces the string '{VAR}' in each command by the current parameter value. The option can be specified multiple times and combined with \fB\-\-parameter\-list\fR or \fB\-\-parameter\-file\fR to run benchmarks for all possible parameter combinations.
+.HP
+\fB\-\-optimize\fR \fIVAR\fP \fIMIN\fP \fIMAX\fP
+.IP
+Search the integer parameter VAR in MIN..MAX for the value that minimizes the primary metric (see \fB\-\-metric\fR) instead of benchmarking every value. Replaces '{VAR}' in the command by the current value. Uses a golden-section search and assumes that the metric is unimodal in VAR; perfratio warns if the evaluated points suggest otherwise. Other parameters are combined with the search: one search runs per combination.
+.HP
+\fB\-\-optimize\-budget\fR \fIN\fP
+.IP
+Maximum number of distinct parameter values \fB\-\-optimize\fR evaluates (at least 3, default 12). A range that fits into the budget is evaluated completely.
 .HP
 \fB\-D\fR, \fB\-\-parameter\-step\-size\fR \fIDELTA\fP
 .IP

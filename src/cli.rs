@@ -297,6 +297,37 @@ pub fn build_command() -> Command {
                 ),
         )
         .arg(
+            Arg::new("optimize")
+                .long("optimize")
+                .action(ArgAction::Set)
+                .allow_hyphen_values(true)
+                .num_args(3)
+                .value_names(["VAR", "MIN", "MAX"])
+                .conflicts_with_all(["import-json", "reference"])
+                .help(
+                    "Search the integer parameter VAR in MIN..MAX for the value that minimizes the \
+                     primary metric (see '--metric'; default: mean wall time) instead of benchmarking \
+                     every value. Replaces '{VAR}' in the command by the current value.\n\n  \
+                     Example:  perfratio --optimize j 1 64 --metric energy 'make -j {j}'\n\n\
+                     Uses a golden-section search and assumes that the metric is unimodal in VAR; \
+                     perfratio warns if the evaluated points suggest otherwise. With very noisy \
+                     metrics the search can miss the true minimum. Other parameters ('-P', '-L') \
+                     are combined with the search: one search runs per combination.",
+                ),
+        )
+        .arg(
+            Arg::new("optimize-budget")
+                .long("optimize-budget")
+                .action(ArgAction::Set)
+                .value_name("N")
+                .value_parser(clap::value_parser!(usize))
+                .default_value("12")
+                .help(
+                    "Maximum number of distinct parameter values '--optimize' evaluates (at least 3). \
+                     A range that fits into the budget is evaluated completely.",
+                ),
+        )
+        .arg(
             Arg::new("parameter-step-size")
                 .long("parameter-step-size")
                 .short('D')
