@@ -138,6 +138,14 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .RB [ \-\-aggregate\-parameter\-runs ]
 .RB [ \-\-seed
 .IR NUM ]
+.RB [ \-\-estimator
+.IR ESTIMATOR ]
+.RB [ \-\-confidence\-level
+.IR LEVEL ]
+.RB [ \-\-significance\-level
+.IR ALPHA ]
+.RB [ \-\-bootstrap\-resamples
+.IR N ]
 .RB [ \-\-compare
 .IR FILE ]
 .RB [ \-\-fail\-if\-regressed
@@ -292,7 +300,23 @@ Pool all values of the \fB\-L\fR/\fB\-P\fR/\fB\-\-parameter\-file\fR parameters 
 .HP
 \fB\-\-seed\fR \fINUM\fP
 .IP
-Seed for \fB\-\-parameter\-sample\fR (default: 0, so runs are reproducible).
+Seed for \fB\-\-parameter\-sample\fR (default: 0) and for the bootstrap resampling of intervals and tests (default: a fixed seed), so runs are reproducible. Alias: \fB\-\-bootstrap\-seed\fR.
+.HP
+\fB\-\-estimator\fR \fIESTIMATOR\fP
+.IP
+Central value used for ranking, relative speed, significance, the delta table, \fB\-\-compare\fR, \fB\-\-raw\-ratios\fR and \fB\-\-target\-precision\fR: \fBmean\fR (default), \fBmedian\fR or a percentile such as \fBp95\fR. Prefer the median or a percentile for skewed timings; with few runs a percentile is noisy. Other than the mean, intervals are bootstrap intervals and the ratio carries a bootstrap interval instead of \(+- the standard deviation.
+.HP
+\fB\-\-confidence\-level\fR \fILEVEL\fP
+.IP
+Confidence level of intervals, strictly between 0 and 1 (default: 0.95).
+.HP
+\fB\-\-significance\-level\fR \fIALPHA\fP
+.IP
+Level of hypothesis tests and significance markers, strictly between 0 and 1 (default: 0.05).
+.HP
+\fB\-\-bootstrap\-resamples\fR \fIN\fP
+.IP
+Number of bootstrap resamples, at least 100 (default: 5000).
 .HP
 \fB\-\-compare\fR \fIFILE\fP
 .IP

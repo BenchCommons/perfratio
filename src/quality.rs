@@ -327,7 +327,13 @@ fn statistical_precision(result: &BenchmarkResult, context: &QualityContext) -> 
             "fewer than 2 runs or a mean of 0".to_string(),
         );
     };
-    let detail = format!("±{} (95% CI of the mean)", percent(half_width));
+    let stat = crate::stats::settings::current();
+    let detail = format!(
+        "±{} ({}% CI of the {})",
+        percent(half_width),
+        stat.confidence_percent(),
+        stat.estimator.name()
+    );
     let status = if half_width > PRECISION_FAIL {
         CheckStatus::Fail
     } else if half_width > PRECISION_WARN {

@@ -77,6 +77,13 @@ Summary
   means a difference this large would rarely appear by chance if both commands were
   equally fast. It says nothing about whether the difference *matters*; look at the ratio
   for that. With very few runs, prefer more runs over reading much into the p-value.
+- `--estimator median` (or a percentile such as `p95`) replaces the mean in the ranking, the
+  ratios, the markers, the delta table and `--compare`. Use it when a few slow runs (garbage
+  collection, a cold cache) should not decide the result; a percentile needs many runs. The ratio
+  then shows a bootstrap interval, `1.87 [1.80, 1.95]`, at `--confidence-level` instead of `± σ`.
+  `--significance-level` sets the alpha of the tests and `--bootstrap-resamples` and `--seed` the
+  resampling; the defaults reproduce the same numbers every time. The settings are in
+  `perfratio.statistics` of the JSON export.
 
 ## What runs when: setup, prepare, conclude, cleanup
 

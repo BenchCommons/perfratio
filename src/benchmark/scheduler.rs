@@ -751,6 +751,8 @@ impl<'a> Scheduler<'a> {
                         };
                         let stddev = if let Some(stddev) = item.relative_speed_stddev {
                             format!(" ± {}", colors::green(format!("{stddev:.2}")))
+                        } else if let Some((lo, hi)) = item.relative_speed_ci {
+                            format!(" [{lo:.2}, {hi:.2}]")
                         } else {
                             "".into()
                         };
@@ -828,13 +830,24 @@ impl<'a> Scheduler<'a> {
                                     var_base_item,
                                 ) {
                                     Some(cmp) => {
-                                        let sig_str = if cmp.is_significant_01 {
-                                            colors::cyan("statistically significant (p < 0.01)")
-                                        } else if cmp.is_significant_05 {
-                                            colors::cyan("statistically significant (p < 0.05)")
+                                        let alpha =
+                                            crate::stats::settings::current().significance_level;
+                                        // the stricter of 1% and the chosen level is
+                                        // reported when it is met
+                                        let strict = alpha.min(0.01);
+                                        let sig_str = if cmp.p_value < strict {
+                                            colors::cyan(format!(
+                                                "statistically significant (p < {strict})"
+                                            ))
+                                        } else if cmp.p_value < alpha {
+                                            colors::cyan(format!(
+                                                "statistically significant (p < {alpha})"
+                                            ))
                                         } else {
-                                            "no statistically significant difference (p ≥ 0.05)"
-                                                .dimmed()
+                                            format!(
+                                                "no statistically significant difference (p ≥ {alpha})"
+                                            )
+                                            .dimmed()
                                         };
                                         crate::outln!(
                                             "      [Bootstrap t-test: t = {:.2}, p = {:.4} -> {}]",
@@ -1008,12 +1021,12 @@ pub fn raw_ratio_lines(
         return Vec::new();
     }
     let reference = reference.unwrap_or_else(|| relative_speed::best_of(results, metric));
-    let Some(reference_mean) = reference.primary_mean(metric).filter(|m| *m != 0.0) else {
+    let Some(reference_mean) = reference.primary_center(metric).filter(|m| *m != 0.0) else {
         return results.iter().map(|_| "nan".to_string()).collect();
     };
     results
         .iter()
-        .map(|r| match r.primary_mean(metric) {
+        .map(|r| match r.primary_center(metric) {
             Some(mean) if !r.timed_out => format!("{:.6}", mean / reference_mean),
             _ => "nan".to_string(),
         })
@@ -1341,7 +1354,10 @@ fn custom_difference(
     item: &BenchmarkResult,
     metric: Metric,
 ) -> String {
-    match (item.primary_mean(metric), reference.primary_mean(metric)) {
+    match (
+        item.primary_center(metric),
+        reference.primary_center(metric),
+    ) {
         (Some(value), Some(base)) => {
             let diff = value - base;
             let sign = if diff >= 0.0 { '+' } else { '−' };
@@ -1370,9 +1386,12 @@ fn absolute_difference(
             format!("−{formatted}")
         }
     };
-    let time_diff = item.mean - reference.mean;
+    // the central value of `--estimator` (the mean unless set)
+    let center = |r: &BenchmarkResult| r.primary_center(Metric::Wall).unwrap_or(r.mean);
+    let (item_value, reference_value) = (center(item), center(reference));
+    let time_diff = item_value - reference_value;
     let mut parts = vec![
-        format_duration(item.mean, Some(unit)),
+        format_duration(item_value, Some(unit)),
         signed(time_diff, format_duration(time_diff.abs(), Some(unit))),
     ];
     if let (Some(e_ref), Some(e_item)) = (reference.mean_energy_joules, item.mean_energy_joules) {

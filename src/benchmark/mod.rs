@@ -1157,8 +1157,9 @@ impl<'a> BenchmarkRunner<'a> {
         });
         if let Some((target, reached)) = precision_reached {
             excluded.push(format!(
-                "±{} @95%, target {}",
+                "±{} @{}%, target {}",
                 reached.map_or("?".to_string(), |r| format!("{:.1}%", r * 100.0)),
+                crate::stats::settings::current().confidence_percent(),
                 format_percent(target)
             ));
         }
@@ -1608,7 +1609,8 @@ impl<'a> BenchmarkRunner<'a> {
                 if self.options.deep_stats {
                     if let Some(deep) = compute_deep_stats(&self.times_real) {
                         crate::outln!(
-                            "  Bootstrap 95% CI:   [mean: {} … {}, median: {} … {}, σ: {} … {}]",
+                            "  Bootstrap {}% CI:   [mean: {} … {}, median: {} … {}, σ: {} … {}]",
+                            crate::stats::settings::current().confidence_percent(),
                             format_duration(deep.mean_ci_lower, Some(time_unit)),
                             format_duration(deep.mean_ci_upper, Some(time_unit)),
                             format_duration(deep.median_ci_lower, Some(time_unit)),

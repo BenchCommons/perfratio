@@ -104,6 +104,8 @@ pub enum OptionsError<'a> {
     InvalidRawRatios(&'static str),
     #[error("Invalid Pareto option: {0}")]
     InvalidPareto(String),
+    #[error("{0}")]
+    InvalidStatistics(String),
 }
 
 #[derive(Debug, Error)]
