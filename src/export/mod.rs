@@ -77,6 +77,9 @@ trait Exporter {
         sort_order: SortOrder,
         metric: Metric,
     ) -> Result<Vec<u8>>;
+
+    /// The `optimize` object (`--optimize`); only the JSON export has a place for it
+    fn set_optimize(&self, _value: Option<&serde_json::Value>) {}
 }
 
 pub enum ExportTarget {
@@ -188,6 +191,7 @@ impl ExportManager {
             }),
             ExportType::Json => Box::new(JsonExporter {
                 metadata: Some(self.metadata.clone()),
+                ..Default::default()
             }),
             ExportType::Markdown => Box::<MarkdownExporter>::default(),
             ExportType::Orgmode => Box::<OrgmodeExporter>::default(),
@@ -223,6 +227,13 @@ impl ExportManager {
     /// date, even if a later benchmark fails. Stdout targets (`-`) and special
     /// files such as /dev/stdout or FIFOs are only written by the final call:
     /// writes to them accumulate instead of replacing each other.
+    /// Hand the result of `--optimize` to the exporters that include it.
+    pub fn set_optimize(&self, value: Option<serde_json::Value>) {
+        for e in &self.exporters {
+            e.exporter.set_optimize(value.as_ref());
+        }
+    }
+
     pub fn write_results(
         &self,
         results: &[BenchmarkResult],
