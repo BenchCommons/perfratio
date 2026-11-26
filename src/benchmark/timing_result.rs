@@ -114,6 +114,8 @@ pub struct TimingResult {
     /// Custom metrics extracted via --output-metric
     pub custom_metrics: BTreeMap<String, f64>,
 
+    /// Identifier of the region SDK that reported (`--region`)
+    pub region_sdk: Option<String>,
     /// Stdout of the run when it is to be validated (`--expect-output-sha256`,
     /// `--validate`); `None` otherwise
     pub stdout: Option<Vec<u8>>,

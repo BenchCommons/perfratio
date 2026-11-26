@@ -154,12 +154,15 @@ impl ExportManager {
         } else {
             None
         };
+        let region = matches.get_many::<String>("region").is_some() || metric.is_region();
         let mut metadata = ExportMetadata::new(
             labels,
             Measurements::new(energy, matches.get_flag("resource-usage"))
                 .with_counters(counters)
-                .with_topdown(topdown),
+                .with_topdown(topdown)
+                .with_region(region),
         );
+        metadata.region_protocol = region.then_some(crate::region::PROTOCOL_VERSION);
         metadata.energy_backend = energy.and_then(Result::ok).map(|b| b.as_str());
         metadata.execution = execution;
         let mut export_manager = Self {

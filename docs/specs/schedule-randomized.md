@@ -1,6 +1,6 @@
 # Specification: Seeded randomized and balanced benchmark order
 
-**Issue:** #324. **Status:** shipped in 1.1 (`schemaVersion` 1.23). Builds on `round-robin-schedule.md`.
+**Issue:** #324. **Status:** shipped in 1.1 (`schemaVersion` 1.24). Builds on `round-robin-schedule.md`.
 
 ## Problem / Motivation
 `--schedule round-robin` removes the drift between commands, but its order is fixed
@@ -36,7 +36,7 @@ the fixed order.
 - With `--target-precision` or `--duration`, a command that has enough runs drops out of its
   rounds; the others keep the order of the policy.
 
-## Contract (JSON, additive, `schemaVersion` 1.22 to 1.23)
+## Contract (JSON, additive, `schemaVersion` 1.23 to 1.24)
 `perfratio.schedule`, written by every export. It is not part of `perfratio.execution`
 (`worker-pool.md`): the 1.22 schema requires `jobs`, `schedule_policy` and `contended` there, so
 a file with only the schedule would break consumers of 1.22 (checked by
@@ -48,7 +48,7 @@ a file with only the schedule would break consumers of 1.22 (checked by
   not listed. `results[]` includes imported results first, so the index is not the command-line
   position when `--import-json` is used.
 
-`docs/schema/perfratio-export.schema.json` and the archived `docs/schema/1.23/` describe it.
+`docs/schema/perfratio-export.schema.json` and the archived `docs/schema/1.24/` describe it.
 
 ## Tests
 - `src/benchmark/order.rs`: pure unit tests for determinism, seed sensitivity, permutation, uniform

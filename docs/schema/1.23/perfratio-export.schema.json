@@ -169,6 +169,10 @@
         "simd_unavailable_reason": {
           "type": "string",
           "description": "Open enum: unsupported_platform, unsupported_cpu, perf_paranoid, no_pmu, hybrid_cpu_unpinned, other."
+        },
+        "region": {
+          "$ref": "#/$defs/status",
+          "description": "`--region` (1.23): `measured` when requested, otherwise `not_requested`. A run that did not report a region shows as null in `results[].regions[]`."
         }
       },
       "required": [
@@ -239,6 +243,11 @@
           "type": "string",
           "description": "Backend that produced the energy samples. Open enum: sysfs_powercap, perf_pmu, ioreport, windows_emi."
         },
+        "region_protocol": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Region protocol version perfratio speaks (1.23). Present only with --region or --metric region:<name>."
+        },
         "measurements": {
           "$ref": "#/$defs/measurements"
         },
@@ -265,32 +274,6 @@
             "contended"
           ],
           "description": "Only with --jobs > 1 (new in 1.22, #306)."
-        },
-        "schedule": {
-          "type": "object",
-          "properties": {
-            "mode": {
-              "type": "string",
-              "description": "grouped, round-robin, randomized, balanced, or with --jobs saturate, exclusive, fair. Open enum."
-            },
-            "seed": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Unsigned 64-bit seed of the shuffled order; only with mode randomized (the --seed value)."
-            },
-            "order": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "description": "Realized order of the measured runs of an interleaved schedule: the results[] index of each run, in execution order. Omitted for grouped, with --jobs and with a single command."
-            }
-          },
-          "required": [
-            "mode"
-          ],
-          "description": "New in 1.23 (#324): how the runs of several commands were ordered. Always written by 1.23 and later; not required here, so that a MINOR addition is not a breaking change for consumers of older exports."
         },
         "metrics": {
           "type": "array",
@@ -347,8 +330,8 @@
     },
     "metric": {
       "type": "string",
-      "pattern": "^(wall|cpu|user|system|energy|memory|instructions|cycles|custom:[A-Za-z0-9_]+)$",
-      "description": "Metric used for ranking. The built-in set is closed; `custom:<name>` is a pattern (unitless, lower is better)."
+      "pattern": "^(wall|cpu|user|system|energy|memory|instructions|cycles|custom:[A-Za-z0-9_]+|region:[A-Za-z0-9_]+)$",
+      "description": "Metric used for ranking. The built-in set is closed; `custom:<name>` is a pattern (unitless, lower is better); `region:<name>` ranks on the time inside an instrumented region (seconds, lower is better, 1.21)."
     },
     "primaryMetric": {
       "type": "object",
@@ -1251,6 +1234,13 @@
           "type": "boolean",
           "description": "Only present when true (1.19): processes started by the command outlived it in at least one run and were killed."
         },
+        "regions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/region"
+          },
+          "description": "`--region` (1.23): time inside each instrumented region. `mean`, `times` and the other time fields keep measuring the whole process."
+        },
         "workers_used": {
           "type": "integer",
           "minimum": 0,
@@ -1376,6 +1366,73 @@
         "exit_codes"
       ],
       "description": "One benchmarked command."
+    },
+    "region": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_]{1,64}$"
+        },
+        "status": {
+          "enum": [
+            "measured",
+            "region_missing"
+          ],
+          "description": "`region_missing`: some runs did not report the region (null entries, left out of the statistics). A region no run reported is an error, never exported."
+        },
+        "mean": {
+          "$ref": "#/$defs/seconds"
+        },
+        "stddev": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "null with a single reporting run."
+        },
+        "min": {
+          "$ref": "#/$defs/seconds"
+        },
+        "max": {
+          "$ref": "#/$defs/seconds"
+        },
+        "count_per_run": {
+          "type": "array",
+          "items": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "description": "Start/stop pairs summed into each run's time; null where the run did not report the region."
+        },
+        "times": {
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "description": "Seconds inside the region per run, aligned with `results[].times`; null = not reported, never 0."
+        },
+        "sdk": {
+          "type": "string",
+          "description": "Identifier the SDK announced in its hello line."
+        }
+      },
+      "required": [
+        "name",
+        "status",
+        "mean",
+        "min",
+        "max",
+        "count_per_run",
+        "times"
+      ],
+      "description": "Time inside one instrumented region, in seconds (see docs/specs/region-protocol.md)."
     },
     "optimize": {
       "type": "object",

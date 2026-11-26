@@ -56,9 +56,28 @@ impl Metric {
     /// Name of the custom metric, if this is one.
     pub fn custom_name(&self) -> Option<&'static str> {
         match self {
-            Metric::Custom(name) => Some(name),
+            Metric::Custom(name) if !name.starts_with(crate::region::METRIC_PREFIX) => Some(name),
             _ => None,
         }
+    }
+
+    /// Region selected with `--metric region:<name>`, if this is one. Region
+    /// metrics reuse the `Custom` variant under the key `region:<name>`.
+    pub fn region_name(&self) -> Option<&'static str> {
+        match self {
+            Metric::Custom(name) => crate::region::metric_region(name),
+            _ => None,
+        }
+    }
+
+    /// Selector for the region `name` (`--metric region:<name>`).
+    pub fn region(name: &str) -> Self {
+        Metric::custom(&crate::region::time_key(name))
+    }
+
+    /// Whether this metric is the time of an instrumented region.
+    pub fn is_region(&self) -> bool {
+        self.region_name().is_some()
     }
 
     /// Canonical lowercase name of the metric (`custom:<name>` is rendered by `Display`)
@@ -96,6 +115,7 @@ impl Metric {
         match self {
             Metric::Wall | Metric::Cpu | Metric::User | Metric::System => "ran",
             Metric::Energy | Metric::Memory | Metric::Instructions | Metric::Cycles => "used",
+            Metric::Custom(_) if self.is_region() => "ran",
             Metric::Custom(_) => "had",
         }
     }
@@ -108,6 +128,7 @@ impl Metric {
             Metric::Memory => ("less memory", "more memory"),
             Metric::Instructions => ("fewer instructions", "more instructions"),
             Metric::Cycles => ("fewer cycles", "more cycles"),
+            Metric::Custom(_) if self.is_region() => ("faster", "slower"),
             Metric::Custom(_) => ("lower value", "higher value"),
         }
     }
@@ -120,6 +141,7 @@ impl Metric {
             Metric::Memory => "same memory as",
             Metric::Instructions => "the same instructions as",
             Metric::Cycles => "the same cycles as",
+            Metric::Custom(_) if self.is_region() => "as fast as",
             Metric::Custom(_) => "the same value as",
         }
     }
@@ -138,7 +160,7 @@ impl Metric {
         matches!(
             self,
             Metric::Wall | Metric::Cpu | Metric::User | Metric::System
-        )
+        ) || self.is_region()
     }
 }
 
@@ -158,6 +180,18 @@ impl FromStr for Metric {
             other => {
                 // names are case-sensitive, so use the original spelling
                 if let Some(name) = s
+                    .get(..crate::region::METRIC_PREFIX.len())
+                    .filter(|p| p.eq_ignore_ascii_case(crate::region::METRIC_PREFIX))
+                    .map(|_| &s[crate::region::METRIC_PREFIX.len()..])
+                {
+                    if crate::region::is_valid_name(name) {
+                        return Ok(Metric::region(name));
+                    }
+                    return Err(format!(
+                        "invalid metric '{s}': expected 'region:<name>' with a name of letters, digits and '_'"
+                    ));
+                }
+                if let Some(name) = s
                     .get(..CUSTOM_PREFIX.len())
                     .filter(|p| p.eq_ignore_ascii_case(CUSTOM_PREFIX))
                     .map(|_| &s[CUSTOM_PREFIX.len()..])
@@ -172,7 +206,7 @@ impl FromStr for Metric {
                     ));
                 }
                 Err(format!(
-                    "invalid metric '{other}': possible values are wall, cpu, user, system, energy, memory, instructions, cycles, custom:<name>"
+                    "invalid metric '{other}': possible values are wall, cpu, user, system, energy, memory, instructions, cycles, custom:<name>, region:<name>"
                 ))
             }
         }
@@ -182,6 +216,9 @@ impl FromStr for Metric {
 impl fmt::Display for Metric {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Metric::Custom(name) if name.starts_with(crate::region::METRIC_PREFIX) => {
+                f.write_str(name)
+            }
             Metric::Custom(name) => write!(f, "{CUSTOM_PREFIX}{name}"),
             other => f.write_str(other.name()),
         }
@@ -268,6 +305,26 @@ mod tests {
         );
         assert_eq!(Metric::Wall.counter_kind(), None);
         assert!("invalid".parse::<Metric>().is_err());
+    }
+
+    #[test]
+    fn test_region_metric_parse_display_and_serde() {
+        let m: Metric = "region:sort".parse().unwrap();
+        assert_eq!(m, Metric::region("sort"));
+        assert_eq!(m.region_name(), Some("sort"));
+        assert_eq!(m.custom_name(), None);
+        assert!(m.is_region() && m.is_time());
+        assert_eq!(m.to_string(), "region:sort");
+        assert_eq!(m.comparison_words(), ("faster", "slower"));
+        assert_eq!(serde_json::to_string(&m).unwrap(), "\"region:sort\"");
+        assert_eq!(
+            serde_json::from_str::<Metric>("\"region:sort\"").unwrap(),
+            m
+        );
+        assert!("region:".parse::<Metric>().is_err());
+        assert!("region:a-b".parse::<Metric>().is_err());
+        assert_eq!(Metric::custom("x").region_name(), None);
+        assert_eq!(Metric::Wall.region_name(), None);
     }
 
     #[test]

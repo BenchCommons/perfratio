@@ -208,6 +208,7 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .RB [ \-\-until
 .IR TEXT ]
 .RB [ \-\-until\-stderr ]
+.RB [ \-\-region [ =\fINAME\fR ]]
 .RB [ \-\-output\-metric
 .IR NAME=REGEX ]
 .RB [ \-\-output\-metric\-stderr ]
@@ -537,6 +538,10 @@ Stop the timer as soon as the command writes TEXT to stdout (or stderr with \fB\
 \fB\-\-until\-stderr\fR
 .IP
 Match the pattern specified by \fB\-\-until\fR against stderr instead of stdout.
+.HP
+\fB\-\-region\fR[=\fINAME\fR]
+.IP
+Measure only the region(s) the program brackets with the perfratio region SDK (see \fBsdk/\fR and \fBdocs/specs/region-protocol.md\fR). Without NAME the region \fBdefault\fR is measured. Can be given several times. perfratio passes the path of an event file in \fBPERFRATIO_REGION_FILE\fR and the protocol version in \fBPERFRATIO_REGION_PROTOCOL\fR; the SDK appends start and stop events with monotonic timestamps. The JSON export lists \fBregions\fR next to the whole-process times and \fB\-\-metric region:\fINAME\fR\fR ranks on one. CPU time, memory, counters and energy still cover the whole process. A command that reports no region fails. Conflicts with \fB\-\-concurrency\fR and \fB\-\-subtract\fR.
 .HP
 \fB\-\-output\-metric\fR \fINAME=REGEX\fP
 .IP
