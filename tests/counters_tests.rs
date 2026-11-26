@@ -338,3 +338,57 @@ fn unknown_name_lists_software_events_and_shorthands() {
             )),
         );
 }
+
+#[test]
+fn metric_instructions_ranks_by_the_counter_and_enables_it() {
+    // no `--counters`: `--metric` collects its own counter
+    let json = export(&[
+        "--runs=3",
+        "--metric=instructions",
+        "sleep 0.5",
+        "sleep 0.2",
+    ]);
+    assert_eq!(json["perfratio"]["measurements"]["counters"], "measured");
+    let r = &json["results"][0];
+    assert_eq!(r["counters"].as_object().unwrap().len(), 1);
+    assert_eq!(r["counters_summary"]["instructions"]["mean"], 1e9);
+    perfratio()
+        .args([
+            "--debug-mode",
+            "--runs=3",
+            "--metric=instructions",
+            "sleep 0.5",
+            "sleep 0.2",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Instructions (mean ± σ):"))
+        .stdout(predicate::str::contains("times fewer instructions than"));
+}
+
+#[test]
+fn metric_cycles_keeps_an_explicit_counter_list() {
+    let json = export(&[
+        "--runs=2",
+        "--metric=cycles",
+        "--counters=instructions",
+        "sleep 0.1",
+    ]);
+    let counters = json["results"][0]["counters"].as_object().unwrap();
+    assert_eq!(
+        counters.keys().collect::<Vec<_>>(),
+        ["cycles", "instructions"]
+    );
+}
+
+#[cfg(not(target_os = "linux"))]
+#[test]
+fn metric_instructions_fails_clearly_without_counters() {
+    perfratio()
+        .args(["--runs=2", "--metric=instructions", "true"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "'--metric instructions' requires a 'instructions' reading for every run",
+        ));
+}

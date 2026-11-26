@@ -139,8 +139,10 @@ SUBSYSTEM=="powercap", ACTION=="add|change", RUN+="/bin/sh -c 'chmod o+r /sys%p/
 
 `--delta-table` prints one table per command against the reference, with a row for each measured
 dimension (wall time, peak memory, energy, power, CPU time): mean ± σ, relative delta with its
-95% confidence interval, and the p-value. `--metric <wall|cpu|user|system|energy|memory>` sets the
-primary metric for statistics, comparison and sorting.
+95% confidence interval, and the p-value. `--metric <wall|cpu|user|system|energy|memory|instructions|cycles>` sets the
+primary metric for statistics, comparison and sorting. `instructions` and `cycles` turn on
+`--counters` (Linux). Markdown, AsciiDoc and Org tables get IPC, CPI and miss-rate columns when
+counters were collected.
 
 `--check-system` reports conditions that add noise (frequency governor, turbo boost, load,
 power source). `--check-system=strict` aborts with exit code 4 if a check fails.
@@ -179,7 +181,7 @@ request comment. A GitHub Actions example is in [doc/ci.md](doc/ci.md).
 
 `--export-json <FILE>` (or `-e results.json`) writes the summary statistics and every run's
 timings. perfratio owns this output, and consumers such as `tools-benchmark` read it.
-The current version is `"1.10"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested. The legacy top-level `joulex` key was removed in `schemaVersion` 1.0: read `perfratio` instead ([docs/MIGRATION.md](docs/MIGRATION.md)).
+The current version is `"1.11"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested. The legacy top-level `joulex` key was removed in `schemaVersion` 1.0: read `perfratio` instead ([docs/MIGRATION.md](docs/MIGRATION.md)).
 
 The contract is a top-level `"schemaVersion": "MAJOR.MINOR"` string. Consumers must ignore
 unknown keys and accept any MINOR version of the MAJOR version they support. A removed or
