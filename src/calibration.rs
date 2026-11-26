@@ -154,6 +154,8 @@ fn trivial_command(executor: &dyn Executor) -> &'static str {
 /// priority and output policy as the benchmarks. Bounded by
 /// [`CALIBRATION_BUDGET`]; any failure gives [`FloorState::Unavailable`].
 pub fn measure_floor(executor: &dyn Executor, options: &Options) -> FloorState {
+    // not a run of the benchmark: takes no id from the run counter
+    let _calibration = crate::run_id::enter_calibration();
     let command = Command::new(None, trivial_command(executor));
     let policy = options
         .command_output_policies
