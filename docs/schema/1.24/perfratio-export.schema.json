@@ -266,6 +266,39 @@
             "contended": {
               "const": true,
               "description": "The runs disturbed each other; always true."
+            },
+            "cpu_partition": {
+              "type": "object",
+              "properties": {
+                "workers": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "minItems": 1
+                  },
+                  "description": "CPUs of worker i; disjoint."
+                },
+                "reserved": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "description": "CPUs kept for perfratio's own threads; no worker uses them. Omitted when none."
+                },
+                "shared_siblings": {
+                  "const": true,
+                  "description": "More workers than physical cores: some workers share a core with another worker. Omitted when false."
+                }
+              },
+              "required": [
+                "workers"
+              ],
+              "description": "Only when the workers were pinned (--pin-workers=auto, the default with --jobs > 1 on Linux and Windows). New in 1.24, #307."
             }
           },
           "required": [
@@ -281,34 +314,6 @@
           "items": {
             "$ref": "#/$defs/metricDescriptor"
           }
-        },
-        "calibration": {
-          "type": "object",
-          "properties": {
-            "wall_floor": {
-              "$ref": "#/$defs/seconds",
-              "description": "Median wall time of a trivial command, net of the shell spawn time, in seconds."
-            },
-            "wall_floor_mad": {
-              "$ref": "#/$defs/seconds",
-              "description": "Median absolute deviation of the calibration wall times."
-            },
-            "rss_floor": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Median peak RSS of the trivial command in bytes. Omitted when the platform reports none."
-            },
-            "runs": {
-              "type": "integer",
-              "minimum": 1
-            }
-          },
-          "required": [
-            "wall_floor",
-            "wall_floor_mad",
-            "runs"
-          ],
-          "description": "Runner floor measured by --calibrate (new in 1.24, #313). Omitted with --calibrate=off, with --debug-mode, or when it could not be measured."
         },
         "statistics": {
           "type": "object",
@@ -829,10 +834,6 @@
               "status"
             ]
           }
-        },
-        "below_resolution": {
-          "type": "boolean",
-          "description": "The mean is within the runner floor (new in 1.24, #313). Omitted when no floor was measured."
         }
       },
       "required": [

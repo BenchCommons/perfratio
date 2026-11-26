@@ -195,6 +195,7 @@ fn real_runs_overlap() {
         "--calibrate=off",
         "--runs=8",
         "-j4",
+        "--pin-workers=none",
         "--style=basic",
         "sleep 0.2",
     ]);
@@ -219,6 +220,7 @@ fn exclusive_never_overlaps_a_command_with_itself() {
     let json = export(&[
         "--runs=6",
         "-j4",
+        "--pin-workers=none",
         "--schedule=exclusive",
         "--style=basic",
         &a,
@@ -248,7 +250,13 @@ fn commands_see_their_worker_slot() {
         log.display()
     );
     perfratio()
-        .args(["--runs=9", "-j3", "--style=basic", &command])
+        .args([
+            "--runs=9",
+            "-j3",
+            "--pin-workers=none",
+            "--style=basic",
+            &command,
+        ])
         .assert()
         .success();
     let text = std::fs::read_to_string(&log).unwrap();
