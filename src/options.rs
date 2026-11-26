@@ -382,6 +382,9 @@ pub struct Options {
     /// Show and export OS resource counters (--resource-usage)
     pub show_resource_usage: bool,
 
+    /// Hardware performance counters (--counters), resolved against the machine
+    pub counters: Option<crate::perf_counters::CounterConfig>,
+
     /// CPUs to pin every benchmarked process to (--affinity)
     pub affinity: Option<Vec<usize>>,
     /// Core type to prefer (--affinity p-cores|e-cores, macOS)
@@ -453,6 +456,7 @@ impl Default for Options {
             omit_failed_runs: false,
             discard_outliers: None,
             show_resource_usage: false,
+            counters: None,
             affinity: None,
             core_class: None,
             priority: crate::util::priority::Priority::default(),
@@ -841,6 +845,16 @@ impl Options {
         }
         options.omit_failed_runs = matches.get_flag("omit-failed-runs");
         options.show_resource_usage = matches.get_flag("resource-usage");
+        if let Some(list) = matches.get_one::<String>("counters") {
+            let requested =
+                crate::perf_counters::parse_list(list).map_err(OptionsError::InvalidCounters)?;
+            let (config, warnings) =
+                crate::perf_counters::resolve(requested, matches.get_flag("debug-mode"));
+            for warning in warnings {
+                eprintln!("{} {warning}", crate::output::colors::yellow("Warning:"));
+            }
+            options.counters = Some(config);
+        }
         if let Some(value) = matches.get_one::<String>("affinity") {
             if let Some(class) = crate::util::affinity::CoreClass::parse(value) {
                 crate::util::affinity::validate_core_class(

@@ -97,6 +97,7 @@ how to reduce noise. The manual page is [doc/perfratio.1](doc/perfratio.1).
 **Memory.** Peak memory (RSS) of each run is always measured and shown as `Peak Memory`.
 `--resource-usage` adds context switches, page faults and block I/O per run. Windows reports
 page faults and I/O operation counts only; the other counters show as `n/a` ([spec](docs/specs/windows-resource-usage.md)).
+`--counters` (Linux) adds hardware counters (instructions, cycles, cache and branch misses) and IPC per run; see `docs/specs/hardware-counters.md`.
 
 **Energy.** `-E, --energy` measures energy in joules and average power in watts. It reads RAPL
 counters through Linux powercap sysfs, so it needs **bare-metal Linux with a readable

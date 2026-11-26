@@ -42,6 +42,8 @@ pub struct TimerResult {
     pub memory_usage_byte: u64,
     /// OS resource counters (None for mocked runs)
     pub counters: Option<crate::benchmark::timing_result::ResourceCounters>,
+    /// Hardware counter totals (`--counters`), filled by the executor
+    pub hw_counters: Option<crate::perf_counters::HwReading>,
     /// The exit status of the process
     pub status: ExitStatus,
     /// The tail of stdout and stderr (`--show-output-on-failure`)
@@ -712,6 +714,7 @@ pub fn execute_and_measure(
         time_system,
         memory_usage_byte,
         counters,
+        hw_counters: None,
         status,
         captured,
         timed_out,
