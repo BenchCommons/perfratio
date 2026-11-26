@@ -177,7 +177,7 @@ fn process_group_kills_descendants_on_unix() {
 #[test]
 fn zz_diag_timeout_timing() {
     let mut report = String::new();
-    for (label, fake) in [("real", None), ("emptyroot", Some("/nonexistent-root"))] {
+    for (label, fake, envs) in [("real", None, vec![]), ("nothermal", None, vec!["PFDIAG_NO_THERMAL"]), ("nocgroup", None, vec!["PFDIAG_NO_CGROUP"]), ("emptyroot", Some("/nonexistent-root"), vec![])] {
         for args in [
             vec!["--timeout", "150ms", "-N", "--runs=2", "--style=basic", "sleep 5", "sleep 0.01"],
             vec!["-N", "--runs=2", "--style=basic", "sleep 0.01"],
@@ -186,6 +186,7 @@ fn zz_diag_timeout_timing() {
             let mut cmd = std::process::Command::new(assert_cmd::cargo_bin!("perfratio"));
             cmd.args(&args);
             if let Some(f) = fake { cmd.env("PERFRATIO_SYSTEM_CHECK_ROOT", f); }
+            for e in &envs { cmd.env(e, "1"); }
             let t = std::time::Instant::now();
             let out = cmd.output().unwrap();
             report.push_str(&format!("{label} {:?} -> {:?} status={:?}\n", args, t.elapsed(), out.status.code()));

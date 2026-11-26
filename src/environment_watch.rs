@@ -50,13 +50,13 @@ impl Watch {
 
     /// Observe the host below `root`
     pub fn new(root: &Path) -> Self {
-        let cgroup = crate::cgroup::locate(root).filter(|c| c.snapshot().is_some());
+        let cgroup = if std::env::var_os("PFDIAG_NO_CGROUP").is_some() { None } else { crate::cgroup::locate(root).filter(|c| c.snapshot().is_some()) };
         Watch {
             cgroup,
             throttled_usec: 0,
             throttled_runs: 0,
             oom_kills: None,
-            thermal: Some(BackgroundThermal::start(root)),
+            thermal: if std::env::var_os("PFDIAG_NO_THERMAL").is_some() { None } else { Some(BackgroundThermal::start(root)) },
         }
     }
 
