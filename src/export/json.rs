@@ -25,7 +25,7 @@ pub struct PrimaryMetricStats {
 }
 
 /// Version of the JSON output contract (`docs/specs/output-schema-contract.md`).
-pub const SCHEMA_VERSION: &str = "1.23";
+pub const SCHEMA_VERSION: &str = "1.24";
 
 #[derive(Serialize, Debug)]
 struct PerfratioSummary<'a> {
@@ -120,7 +120,7 @@ impl Exporter for JsonExporter {
         let reference_result = reference
             .or_else(|| (!results.is_empty()).then(|| relative_speed::fastest_of(results)));
         let mut perfratio = self.metadata.as_ref().map(|m| with_metrics(m, results));
-        // Runner floor of `--calibrate` (new in 1.23, #313)
+        // Runner floor of `--calibrate` (new in 1.24, #313)
         if let (Some(serde_json::Value::Object(object)), Some(floor)) = (
             perfratio.as_mut(),
             *self.calibration.lock().unwrap_or_else(|e| e.into_inner()),
