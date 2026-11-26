@@ -14,7 +14,8 @@ pub enum Priority {
     /// Linux: SCHED_IDLE. macOS: nice 19. Windows: IDLE_PRIORITY_CLASS
     Idle,
     /// Linux: SCHED_FIFO at the maximum priority. Windows:
-    /// REALTIME_PRIORITY_CLASS. Not available on macOS.
+    /// REALTIME_PRIORITY_CLASS. macOS: nice -20 plus the foreground task
+    /// role (not equivalent to SCHED_FIFO, see docs/specs/priority.md).
     Realtime,
 }
 
@@ -27,9 +28,11 @@ impl Priority {
             "realtime" => Priority::Realtime,
             _ => bail!("invalid priority '{value}' (normal, high, idle, realtime)"),
         };
-        if priority == Priority::Realtime && !cfg!(any(target_os = "linux", windows)) {
+        if priority == Priority::Realtime
+            && !cfg!(any(target_os = "linux", windows, target_os = "macos"))
+        {
             bail!(
-                "'--priority realtime' is only supported on Linux and Windows \
+                "'--priority realtime' is only supported on Linux, macOS and Windows \
                  (use 'high' for the highest nice value)"
             );
         }
@@ -71,8 +74,8 @@ pub fn apply(command: &mut std::process::Command, priority: Priority) {
         return;
     }
     // SAFETY: the closure runs between fork and exec and only calls the
-    // async-signal-safe setpriority / sched_setscheduler syscalls on values
-    // captured by copy.
+    // async-signal-safe setpriority / sched_setscheduler syscalls (on macOS also
+    // task_policy_set) on values captured by copy.
     unsafe {
         command.pre_exec(move || set_current_process_priority(priority));
     }
@@ -134,8 +137,17 @@ fn set_current_process_priority(priority: Priority) -> std::io::Result<()> {
             };
             check(ret as libc::c_int)
         }
+        #[cfg(target_os = "macos")]
+        Priority::Realtime => {
+            // Mach thread policies (THREAD_TIME_CONSTRAINT_POLICY, thread QoS)
+            // are reset by exec, so use the strongest task-level settings that
+            // survive it: nice -20 (needs root) and the foreground task role.
+            // SAFETY: plain syscall on the calling (child) process.
+            check(unsafe { libc::setpriority(libc::PRIO_PROCESS as _, 0, -20) })?;
+            crate::util::affinity::set_foreground_role()
+        }
         // Rejected by `Priority::parse` on other Unix systems
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         Priority::Realtime => Err(std::io::Error::from(std::io::ErrorKind::Unsupported)),
     }
 }
@@ -166,7 +178,7 @@ mod tests {
         assert!(Priority::parse("fast").is_err());
         assert_eq!(
             Priority::parse("realtime").is_ok(),
-            cfg!(any(target_os = "linux", windows))
+            cfg!(any(target_os = "linux", windows, target_os = "macos"))
         );
         for p in [Priority::Normal, Priority::High, Priority::Idle] {
             assert_eq!(Priority::parse(p.as_str()).unwrap(), p);

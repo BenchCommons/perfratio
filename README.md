@@ -219,8 +219,8 @@ The CI builds and tests these targets and attaches them to releases. Features di
 | Time, CPU time, peak memory | yes | yes | yes |
 | Energy (`--energy`) | bare metal RAPL, via sysfs `energy_uj` or the perf power PMU | Apple Silicon via IOReport (unavailable where CPU counters are frozen, e.g. macOS 27) | Energy Meter Interface (EMI), needs a meter driver and usually admin |
 | `--resource-usage` | yes | yes | partial (page faults, I/O operations; no context switches) |
-| `--affinity` | yes | no | yes |
-| `--priority realtime` | yes (`SCHED_FIFO`) | no | yes |
+| `--affinity` | yes | `p-cores`/`e-cores` only (scheduling preference) | yes |
+| `--priority realtime` | yes (`SCHED_FIFO`) | nice -20 + foreground role (not real-time) | yes |
 | `--check-system` | yes | yes (fewer checks) | yes (power source, power plan, CPU load, frequency limit) |
 
 Release targets: `x86_64`, `aarch64`, `i686` and `arm` Linux (gnu and musl), `x86_64` and
