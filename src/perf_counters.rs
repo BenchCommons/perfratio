@@ -1695,12 +1695,15 @@ mod tests {
             sc(2000, 10, 10),
             sc(62, 10, 10),
         ];
-        let line = export(&cfg, &[Some(run)]).unwrap().line.unwrap();
+        let line = export(&cfg, &[Some(run)], &RunContext::default())
+            .unwrap()
+            .line
+            .unwrap();
         assert!(line.contains("cache-miss 182 (miss rate 18.2%)"), "{line}");
         assert!(line.contains("branch-miss 62 (miss rate 3.1%)"), "{line}");
         // no denominator, no rate
         let cfg = config(&all(&[CounterKind::CacheMisses]));
-        let line = export(&cfg, &[Some(vec![sc(5, 1, 1)])])
+        let line = export(&cfg, &[Some(vec![sc(5, 1, 1)])], &RunContext::default())
             .unwrap()
             .line
             .unwrap();
