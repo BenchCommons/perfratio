@@ -57,6 +57,8 @@ pub mod compare;
 #[doc(hidden)]
 pub mod counters;
 #[doc(hidden)]
+pub mod cpu_id;
+#[doc(hidden)]
 pub mod delta_table;
 #[doc(hidden)]
 pub mod energy;
@@ -88,6 +90,8 @@ pub mod perf_counters;
 pub mod pmu;
 #[doc(hidden)]
 pub mod pmu_scaling;
+#[doc(hidden)]
+pub mod simd;
 #[doc(hidden)]
 pub mod stats;
 #[doc(hidden)]

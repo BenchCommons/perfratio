@@ -862,6 +862,7 @@ impl Options {
         }
         options.omit_failed_runs = matches.get_flag("omit-failed-runs");
         options.show_resource_usage = matches.get_flag("resource-usage");
+        let simd = matches.get_flag("simd");
         // `--metric instructions|cycles` collects its own counter
         let counters_list = matches.get_one::<String>("counters").cloned().or_else(|| {
             (!importing)
@@ -869,13 +870,23 @@ impl Options {
                 .flatten()
                 .map(|kind| kind.name().to_string())
         });
-        if let Some(list) = counters_list.as_deref() {
+        if counters_list.is_some() || simd {
             let mode = matches
                 .get_one::<String>("scope")
                 .and_then(|v| crate::perf_counters::ScopeMode::parse(v))
                 .unwrap_or_default();
-            let mut requested = crate::perf_counters::parse_list(list, mode)
-                .map_err(OptionsError::InvalidCounters)?;
+            if simd && mode == crate::perf_counters::ScopeMode::Split {
+                return Err(OptionsError::InvalidCounters(
+                    "'--simd' cannot be combined with '--scope split': its four events are one \
+                     unit and count in a single scope"
+                        .to_string(),
+                ));
+            }
+            let mut requested = match counters_list.as_deref() {
+                Some(list) => crate::perf_counters::parse_list(list, mode)
+                    .map_err(OptionsError::InvalidCounters)?,
+                None => Vec::new(),
+            };
             if let Some(kind) = metric_counter.filter(|_| !importing) {
                 let spec = crate::perf_counters::CounterSpec {
                     kind,
@@ -885,9 +896,10 @@ impl Options {
                     requested.push(spec);
                 }
             }
-            let (config, warnings) = crate::perf_counters::resolve(
+            let (config, warnings) = crate::perf_counters::resolve_with_simd(
                 requested,
                 mode.default_scope(),
+                simd,
                 matches.get_flag("debug-mode"),
             )
             .map_err(OptionsError::InvalidCounters)?;

@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.13 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.14 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.13",
+      "const": "1.14",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -158,6 +158,14 @@
         "topdown_unavailable_reason": {
           "type": "string",
           "description": "Open enum: unsupported_platform, unsupported_cpu, unsupported_kernel, perf_paranoid, no_pmu, hybrid_cpu_unpinned, other."
+        },
+        "simd": {
+          "$ref": "#/$defs/status",
+          "description": "`--simd`: `measured`, `unavailable` or `not_requested`."
+        },
+        "simd_unavailable_reason": {
+          "type": "string",
+          "description": "Open enum: unsupported_platform, unsupported_cpu, perf_paranoid, no_pmu, hybrid_cpu_unpinned, other."
         }
       },
       "required": [
@@ -166,7 +174,8 @@
         "energy",
         "resources",
         "counters",
-        "topdown"
+        "topdown",
+        "simd"
       ],
       "description": "Host-level status per measurement group, identical for every result."
     },
@@ -837,15 +846,15 @@
           }
         },
         "counters_coverage": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "number",
-        "minimum": 0,
-        "maximum": 1
-      },
-      "description": "Lowest time_running / time_enabled (0..1) over the runs, only for events that were multiplexed or never scheduled."
-    },
-    "counters_multiplexed_runs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "description": "Lowest time_running / time_enabled (0..1) over the runs, only for events that were multiplexed or never scheduled."
+        },
+        "counters_multiplexed_runs": {
           "type": "integer",
           "minimum": 0
         },
@@ -996,6 +1005,109 @@
         },
         "energy_per_instance_joules": {
           "type": "number"
+        },
+        "simd": {
+          "type": "object",
+          "properties": {
+            "unit": {
+              "type": "string",
+              "description": "`instructions` (Intel) or `uops` (AMD); not comparable across vendors."
+            },
+            "arch": {
+              "type": "string"
+            },
+            "scalar_fp": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            },
+            "simd_128": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            },
+            "simd_256": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            },
+            "simd_512": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            },
+            "vectorization_ratio": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 1
+              }
+            }
+          },
+          "required": [
+            "unit",
+            "arch",
+            "scalar_fp",
+            "vectorization_ratio"
+          ],
+          "description": "Per-run floating-point breakdown (`--simd`) aligned with `times`; null = not readable. A bucket the CPU lacks is absent."
+        },
+        "simd_summary": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/summary"
+          },
+          "description": "Summary of every SIMD bucket and of `vectorization_ratio`."
+        },
+        "simd_scope": {
+          "type": "string",
+          "description": "Scope counted for `simd`: all, user or kernel."
+        },
+        "simd_scaling": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "scaled_runs": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "coverage": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "required": [
+              "scaled_runs",
+              "coverage"
+            ]
+          },
+          "description": "Buckets scaled for multiplexing: runs and lowest coverage."
         }
       },
       "required": [

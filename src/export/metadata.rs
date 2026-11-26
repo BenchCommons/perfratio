@@ -68,6 +68,12 @@ pub struct Measurements {
     /// or `other` (open enum)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub topdown_unavailable_reason: Option<&'static str>,
+    /// `--simd` floating-point breakdown (new in 1.10)
+    pub simd: MeasurementStatus,
+    /// Why `simd` is `unavailable`: `unsupported_platform`, `unsupported_cpu`,
+    /// `perf_paranoid`, `no_pmu`, `hybrid_cpu_unpinned` or `other` (open enum)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub simd_unavailable_reason: Option<&'static str>,
 }
 
 impl Measurements {
@@ -98,6 +104,8 @@ impl Measurements {
             counters_requested_scope: None,
             topdown: NotRequested,
             topdown_unavailable_reason: None,
+            simd: NotRequested,
+            simd_unavailable_reason: None,
         }
     }
 
@@ -122,6 +130,19 @@ impl Measurements {
         let Some(config) = config else {
             return self;
         };
+        if let Some(simd) = &config.simd {
+            match simd.status {
+                crate::simd::Status::Measured => self.simd = MeasurementStatus::Measured,
+                crate::simd::Status::Unavailable(reason) => {
+                    self.simd = MeasurementStatus::Unavailable;
+                    self.simd_unavailable_reason = Some(reason.as_str());
+                }
+            }
+        }
+        // `--simd` alone leaves `counters` as not requested
+        if config.requested.is_empty() {
+            return self;
+        }
         if config.requested_scope != config.scope {
             self.counters_requested_scope = Some(config.requested_scope.as_str());
         }

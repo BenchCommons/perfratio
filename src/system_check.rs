@@ -976,6 +976,7 @@ mod tests {
             partial_reason,
             hidden: vec![],
             mock: false,
+            simd: None,
         };
         let migrations = [CounterKind::CpuMigrations];
         let denied = config(
