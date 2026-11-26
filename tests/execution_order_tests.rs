@@ -687,16 +687,13 @@ fn prepare_and_conclude_see_the_current_perfratio_iteration() {
 
 #[cfg(unix)]
 #[test]
-fn legacy_iteration_variables_still_work_but_warn() {
+fn old_iteration_variables_are_not_exported() {
     for var in ["JOULEX_ITERATION", "HYPERFINE_ITERATION"] {
-        let command = format!("test \"${{{var}}}\" = \"${{PERFRATIO_ITERATION}}\"");
+        let command = format!("test -z \"${{{var}}}\" && test -n \"${{PERFRATIO_ITERATION}}\"");
         perfratio()
             .args(["--runs=2", "--style=basic", &command])
             .assert()
-            .success()
-            .stderr(predicates::str::contains(format!(
-                "${var} is deprecated and will be removed in the next release; use $PERFRATIO_ITERATION"
-            )));
+            .success();
     }
 }
 
