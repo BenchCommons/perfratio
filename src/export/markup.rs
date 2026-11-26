@@ -56,6 +56,11 @@ pub trait MarkupExporter {
             Alignment::Right,
         ];
         cells_alignment.extend(efficiency_columns.iter().map(|_| Alignment::Right));
+        // `--concurrency`: instances per run, only when any benchmark used it
+        let has_concurrency = entries.iter().any(|e| e.result.concurrency.is_some());
+        if has_concurrency {
+            cells_alignment.push(Alignment::Right);
+        }
 
         // emit table header format
         let mut table = self.table_header(&cells_alignment);
@@ -69,6 +74,9 @@ pub trait MarkupExporter {
             "Relative".into(),
         ];
         header.extend(efficiency_columns.iter().map(|(name, _)| name.to_string()));
+        if has_concurrency {
+            header.push("Concurrency".into());
+        }
         let header: Vec<&str> = header.iter().map(String::as_str).collect();
         table.push_str(&self.table_row(&header));
 
@@ -134,6 +142,9 @@ pub trait MarkupExporter {
             cells.extend(efficiency_columns.iter().map(|(_, get)| {
                 get(measurement).map_or_else(|| "n/a".to_string(), format_efficiency)
             }));
+            if has_concurrency {
+                cells.push(measurement.concurrency.unwrap_or(1).to_string());
+            }
             let cells: Vec<&str> = cells.iter().map(String::as_str).collect();
             table.push_str(&self.table_row(&cells))
         }

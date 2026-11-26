@@ -241,3 +241,141 @@ fn timeout_kills_all_instances() {
         .stdout(predicate::str::contains("Timed out"));
     assert!(start.elapsed() < std::time::Duration::from_secs(3));
 }
+
+#[test]
+fn parameter_in_the_value_gives_one_instance_count_per_combination() {
+    let json = export(&[
+        "--debug-mode",
+        "--runs=2",
+        "-L",
+        "c",
+        "1,2,4",
+        "--concurrency",
+        "{c}",
+        "sleep 0.1",
+    ]);
+    let results = json["results"].as_array().unwrap();
+    assert_eq!(results.len(), 3);
+    // a single instance has no concurrency fields (output as without the option)
+    assert!(results[0].get("concurrency").is_none());
+    assert_eq!(results[1]["concurrency"], 2);
+    assert_eq!(results[2]["concurrency"], 4);
+    assert_eq!(results[2]["instance_times"][0].as_array().unwrap().len(), 4);
+}
+
+#[test]
+fn parameter_value_that_is_not_a_positive_integer_is_rejected_before_running() {
+    for (value, params) in [
+        ("{c}", &["-L", "c", "1,0"][..]),
+        ("{c}", &["-L", "c", "1,x"]),
+        ("{nope}", &["-L", "c", "1,2"]),
+    ] {
+        perfratio()
+            .args(["--debug-mode", "--runs=1"])
+            .args(params)
+            .args(["--concurrency", value, "sleep 0.1"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("--concurrency"))
+            // nothing was benchmarked
+            .stdout(predicate::str::contains("Benchmark 1").not());
+    }
+}
+
+#[test]
+fn parameter_value_with_reference_is_rejected() {
+    perfratio()
+        .args(["--debug-mode", "--runs=1", "-L", "c", "1,2"])
+        .args([
+            "--concurrency",
+            "{c}",
+            "--reference",
+            "sleep 0.1",
+            "sleep 0.1",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--reference"));
+}
+
+#[test]
+fn csv_and_markdown_have_a_concurrency_column_only_with_concurrency() {
+    let dir = tempfile::tempdir().unwrap();
+    let run = |args: &[&str], name: &str| {
+        let csv = dir.path().join(format!("{name}.csv"));
+        let md = dir.path().join(format!("{name}.md"));
+        perfratio()
+            .args(["--debug-mode", "--runs=2"])
+            .args(args)
+            .arg("--export-csv")
+            .arg(&csv)
+            .arg("--export-markdown")
+            .arg(&md)
+            .arg("sleep 0.1")
+            .assert()
+            .success();
+        (
+            std::fs::read_to_string(csv).unwrap(),
+            std::fs::read_to_string(md).unwrap(),
+        )
+    };
+    let (csv, md) = run(&[], "plain");
+    assert!(!csv.contains("concurrency"), "{csv}");
+    assert!(!md.contains("Concurrency"), "{md}");
+
+    let (csv, md) = run(&["--concurrency", "3"], "three");
+    let mut lines = csv.lines();
+    assert!(lines.next().unwrap().ends_with(",concurrency"), "{csv}");
+    assert!(lines.next().unwrap().ends_with(",3"), "{csv}");
+    assert!(md.contains("| Concurrency |"), "{md}");
+    assert!(md.lines().nth(2).unwrap().ends_with("| 3 |"), "{md}");
+}
+
+/// A spawn that fails for some instances only (the descriptor limit is hit
+/// after a few spawns) aborts the run and leaves no instance behind.
+#[cfg(unix)]
+#[test]
+fn spawn_failure_kills_the_started_instances() {
+    use std::os::unix::process::CommandExt;
+    let dir = tempfile::tempdir().unwrap();
+    let pids = dir.path().join("pids");
+    let script = dir.path().join("inst.sh");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\necho $$ >> '{}'\nexec sleep 30\n",
+            pids.display()
+        ),
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let mut command = common::perfratio_raw_command();
+    command
+        .args(["-N", "--runs=1", "--concurrency", "40"])
+        .arg(&script);
+    // Each spawn needs a few descriptors (pipes): a low limit makes the
+    // later spawns fail while the first instances run.
+    // SAFETY: setrlimit is async-signal-safe.
+    unsafe {
+        command.pre_exec(|| {
+            let limit = libc::rlimit {
+                rlim_cur: 24,
+                rlim_max: 24,
+            };
+            libc::setrlimit(libc::RLIMIT_NOFILE, &limit);
+            Ok(())
+        });
+    }
+    let output = command.output().unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("failed to start"), "{stderr}");
+    // Whatever was started is gone: no `sleep 30` of this run survives
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    for pid in std::fs::read_to_string(&pids).unwrap_or_default().lines() {
+        let alive = unsafe { libc::kill(pid.parse().unwrap(), 0) } == 0;
+        assert!(!alive, "instance {pid} still running\n{stderr}");
+    }
+}
