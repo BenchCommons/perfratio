@@ -1038,6 +1038,18 @@ pub fn build_command() -> Command {
                        in JSON), with 'kernel', 'split' or a ':k' modifier it is an error."),
         )
         .arg(
+            Arg::new("topdown")
+                .long("topdown")
+                .action(ArgAction::SetTrue)
+                .help("Collect Top-down Microarchitecture Analysis level 1 per run (Linux \
+                       x86_64): the share of pipeline slots that retire work, are lost to \
+                       bad speculation, or are stalled in the frontend or backend. The \
+                       largest stall class is a hypothesis about the bottleneck, not a \
+                       diagnosis. Needs Intel Ice Lake or later, or AMD Zen 4 or later; \
+                       elsewhere it warns once and continues. On AMD it uses all six \
+                       core counters, so '--counters' events are multiplexed."),
+        )
+        .arg(
             Arg::new("first-run")
                 .long("first-run")
                 .action(ArgAction::Set)

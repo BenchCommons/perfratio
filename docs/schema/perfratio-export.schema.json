@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.11 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.12 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.11",
+      "const": "1.12",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -150,6 +150,14 @@
         "counters_requested_scope": {
           "type": "string",
           "description": "Scope that was asked for when it differs from `counters_scope` (e.g. `all` next to `user`)."
+        },
+        "topdown": {
+          "$ref": "#/$defs/status",
+          "description": "`--topdown`: `measured`, `unavailable` or `not_requested`."
+        },
+        "topdown_unavailable_reason": {
+          "type": "string",
+          "description": "Open enum: unsupported_platform, unsupported_cpu, unsupported_kernel, perf_paranoid, no_pmu, hybrid_cpu_unpinned, other."
         }
       },
       "required": [
@@ -157,7 +165,8 @@
         "memory",
         "energy",
         "resources",
-        "counters"
+        "counters",
+        "topdown"
       ],
       "description": "Host-level status per measurement group, identical for every result."
     },
@@ -426,6 +435,16 @@
         }
       },
       "description": "Per-run OS counters aligned with `times`. A column the OS cannot report is omitted."
+    },
+    "topdownRuns": {
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0
+      }
     },
     "efficiency": {
       "type": "object",
@@ -833,6 +852,75 @@
         "counters_scope": {
           "type": "string",
           "description": "Effective scope of unsuffixed counter keys: all, user or kernel."
+        },
+        "topdown": {
+          "type": "object",
+          "properties": {
+            "level": {
+              "type": "integer",
+              "const": 1
+            },
+            "source": {
+              "type": "string",
+              "description": "Open enum: intel_perf_metrics, amd_pipeline_util."
+            },
+            "retiring": {
+              "$ref": "#/$defs/topdownRuns"
+            },
+            "bad_speculation": {
+              "$ref": "#/$defs/topdownRuns"
+            },
+            "frontend_bound": {
+              "$ref": "#/$defs/topdownRuns"
+            },
+            "backend_bound": {
+              "$ref": "#/$defs/topdownRuns"
+            },
+            "smt_contention": {
+              "$ref": "#/$defs/topdownRuns",
+              "description": "AMD only."
+            }
+          },
+          "required": [
+            "level",
+            "source",
+            "retiring",
+            "bad_speculation",
+            "frontend_bound",
+            "backend_bound"
+          ],
+          "description": "Top-down level 1 (--topdown): per-run fractions of all issue slots aligned with `times`; null = run not measured. A hypothesis about the stall class, not a diagnosis."
+        },
+        "topdown_summary": {
+          "type": "object",
+          "properties": {
+            "retiring": {
+              "$ref": "#/$defs/summary"
+            },
+            "bad_speculation": {
+              "$ref": "#/$defs/summary"
+            },
+            "frontend_bound": {
+              "$ref": "#/$defs/summary"
+            },
+            "backend_bound": {
+              "$ref": "#/$defs/summary"
+            },
+            "smt_contention": {
+              "$ref": "#/$defs/summary"
+            },
+            "bottleneck": {
+              "type": "string",
+              "description": "Largest non-retiring class. Open enum: backend_bound, frontend_bound, bad_speculation, smt_contention."
+            }
+          },
+          "required": [
+            "retiring",
+            "bad_speculation",
+            "frontend_bound",
+            "backend_bound",
+            "bottleneck"
+          ]
         },
         "efficiency": {
           "$ref": "#/$defs/efficiency"
