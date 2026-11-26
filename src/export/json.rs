@@ -25,7 +25,7 @@ pub struct PrimaryMetricStats {
 }
 
 /// Version of the JSON output contract (`docs/specs/output-schema-contract.md`).
-pub const SCHEMA_VERSION: &str = "1.29";
+pub const SCHEMA_VERSION: &str = "1.30";
 
 #[derive(Serialize, Debug)]
 struct PerfratioSummary<'a> {
@@ -79,6 +79,7 @@ fn with_metrics(
     metadata: &ExportMetadata,
     results: &[BenchmarkResult],
     schedule: Option<serde_json::Value>,
+    compare: Option<serde_json::Value>,
 ) -> serde_json::Value {
     let mut value = serde_json::to_value(metadata).unwrap_or(serde_json::Value::Null);
     if let (Some(object), Ok(metrics)) = (
@@ -89,6 +90,9 @@ fn with_metrics(
     }
     if let (Some(object), Some(schedule)) = (value.as_object_mut(), schedule) {
         object.insert("schedule".into(), schedule);
+    }
+    if let (Some(object), Some(compare)) = (value.as_object_mut(), compare) {
+        object.insert("compare".into(), compare);
     }
     value
 }
@@ -104,6 +108,8 @@ pub struct JsonExporter {
     pub calibration: std::sync::Mutex<Option<Floor>>,
     /// `perfratio.schedule` (new in 1.23, #324)
     pub schedule: std::sync::Mutex<Option<serde_json::Value>>,
+    /// `perfratio.compare` (#325)
+    pub compare: std::sync::Mutex<Option<serde_json::Value>>,
 }
 
 impl Exporter for JsonExporter {
@@ -133,10 +139,15 @@ impl Exporter for JsonExporter {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone();
+        let compare = self
+            .compare
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         let mut perfratio = self
             .metadata
             .as_ref()
-            .map(|m| with_metrics(m, results, schedule));
+            .map(|m| with_metrics(m, results, schedule, compare));
         // Runner floor of `--calibrate` (new in 1.27, #313)
         if let (Some(serde_json::Value::Object(object)), Some(floor)) = (
             perfratio.as_mut(),
@@ -209,6 +220,10 @@ impl Exporter for JsonExporter {
 
     fn set_optimize(&self, value: Option<&serde_json::Value>) {
         *self.optimize.lock().unwrap_or_else(|e| e.into_inner()) = value.cloned();
+    }
+
+    fn set_compare(&self, value: Option<&serde_json::Value>) {
+        *self.compare.lock().unwrap_or_else(|e| e.into_inner()) = value.cloned();
     }
 
     fn set_calibration(&self, floor: Option<&Floor>) {

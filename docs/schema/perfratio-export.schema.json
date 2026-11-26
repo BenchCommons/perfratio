@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.29 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.30 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.29",
+      "const": "1.30",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -532,6 +532,93 @@
             "mode"
           ],
           "description": "New in 1.25 (#324): how the runs of several commands were ordered. Always written by 1.25 and later; not required here, so that a MINOR addition is not a breaking change for consumers of older exports."
+        },
+        "compare": {
+          "type": "object",
+          "properties": {
+            "baseline": {
+              "type": "string",
+              "description": "Path of the --compare baseline; absent for absolute budgets without a baseline."
+            },
+            "on_unavailable": {
+              "type": "string",
+              "description": "--on-unavailable policy: fail, warn or skip."
+            },
+            "verdict": {
+              "type": "string",
+              "description": "pass, fail, or not_evaluated (no budget could be evaluated). Open enum."
+            },
+            "budgets": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "description": "The metric with its statistic as written, e.g. wall, memory, wall.p95, throughput."
+                  },
+                  "kind": {
+                    "type": "string",
+                    "description": "relative or absolute. Open enum."
+                  },
+                  "op": {
+                    "type": "string",
+                    "description": "<= or >=."
+                  },
+                  "limit": {
+                    "type": "number",
+                    "description": "Relative: a fraction of the baseline (0.05 = +5%). Absolute: seconds, bytes, joules or a count."
+                  },
+                  "budget": {
+                    "type": "string",
+                    "description": "The budget as written."
+                  },
+                  "baseline": {
+                    "type": "number",
+                    "description": "Value in the baseline; omitted when unavailable, never 0."
+                  },
+                  "current": {
+                    "type": "number",
+                    "description": "Value of this run; omitted when unavailable, never 0."
+                  },
+                  "change": {
+                    "type": "number",
+                    "description": "current / baseline - 1; relative budgets only."
+                  },
+                  "p_value": {
+                    "type": "number",
+                    "description": "p-value of the difference of the per-run samples, when it was computed."
+                  },
+                  "verdict": {
+                    "type": "string",
+                    "description": "pass, fail, within_noise or not_evaluated. Open enum."
+                  },
+                  "reason": {
+                    "type": "string",
+                    "description": "Why the budget is not_evaluated: unavailable_in_baseline, unavailable_in_current, baseline_not_positive, too_few_runs. Open enum."
+                  }
+                },
+                "required": [
+                  "command",
+                  "metric",
+                  "kind",
+                  "op",
+                  "limit",
+                  "budget",
+                  "verdict"
+                ]
+              }
+            }
+          },
+          "required": [
+            "on_unavailable",
+            "verdict",
+            "budgets"
+          ],
+          "description": "New in 1.29 (#325): the outcome of --budget and --fail-if-regressed. Not required here, so that a MINOR addition is not a breaking change for consumers of older exports."
         }
       },
       "required": [
@@ -546,7 +633,7 @@
     "metric": {
       "type": "string",
       "pattern": "^(wall|cpu|user|system|energy|memory|instructions|cycles|custom:[A-Za-z0-9_]+|region:[A-Za-z0-9_]+)$",
-      "description": "Metric used for ranking. The built-in set is closed; `custom:<name>` is a pattern (unit and direction in `perfratio.metrics[]`, from 1.29; unitless and lower is better if undeclared); `region:<name>` ranks on the time inside an instrumented region (seconds, lower is better, 1.21)."
+      "description": "Metric used for ranking. The built-in set is closed; `custom:<name>` is a pattern (unit and direction in `perfratio.metrics[]`, from 1.30; unitless and lower is better if undeclared); `region:<name>` ranks on the time inside an instrumented region (seconds, lower is better, 1.21)."
     },
     "primaryMetric": {
       "type": "object",
@@ -1903,7 +1990,7 @@
         },
         "unit": {
           "type": "string",
-          "description": "`s`, `bytes`, `J`, `W`, `Hz`, `count`, `ns`, `ratio`, `percent`, `runs/s` or `unitless` (custom metrics, or the unit declared with `--output-metric NAME[unit,higher]=REGEX`, 1.29)."
+          "description": "`s`, `bytes`, `J`, `W`, `Hz`, `count`, `ns`, `ratio`, `percent`, `runs/s` or `unitless` (custom metrics, or the unit declared with `--output-metric NAME[unit,higher]=REGEX`, 1.30)."
         },
         "direction": {
           "type": "string",

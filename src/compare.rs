@@ -142,6 +142,20 @@ pub(crate) fn p_value_with(
         .then_some(0.0)
 }
 
+/// Two-sided p-value of the difference of two samples (no baseline variance), with
+/// the estimator of `--estimator`; `None` below 3 samples per side. Two constant
+/// samples with different values are certainly different.
+pub(crate) fn samples_p_value(a: &[f64], b: &[f64]) -> Option<f64> {
+    let settings = crate::stats::settings::current();
+    if let Some(stats) =
+        crate::stats::deep::compare_samples_with_settings(a, b, 0.0, 0.0, &settings)
+    {
+        return Some(stats.p_value);
+    }
+    let constant = |xs: &[f64]| xs.len() >= 3 && xs.iter().all(|&x| x == xs[0]);
+    (constant(a) && constant(b) && a[0] != b[0]).then_some(0.0)
+}
+
 /// Parse `--fail-if-regressed`: "5%", "5" or "0.5%" → 0.05, 0.05, 0.005.
 pub fn parse_threshold(value: &str) -> Result<f64, String> {
     let number = value.trim().trim_end_matches('%').trim();

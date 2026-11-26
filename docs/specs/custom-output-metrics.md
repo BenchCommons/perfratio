@@ -22,7 +22,7 @@ Currently, users can only benchmark wall-clock time (and OS rusage/energy). To m
 ```
 
 ### 1. CLI Validation & Format
-- Argument syntax: `<NAME>=<REGEX>` or `<NAME>[unit,higher]=<REGEX>`: the optional brackets declare a unit and `higher` (larger is better) or `lower` (default), see `metric-descriptors.md` (#317, `schemaVersion` 1.29).
+- Argument syntax: `<NAME>=<REGEX>` or `<NAME>[unit,higher]=<REGEX>`: the optional brackets declare a unit and `higher` (larger is better) or `lower` (default), see `metric-descriptors.md` (#317, `schemaVersion` 1.30).
   - `NAME`: non-empty, ASCII alphanumeric and underscores only (`[a-zA-Z0-9_]+`).
   - `REGEX`: valid regular expression containing at least one capturing group (`captures_len() >= 2`).
 - Invalid name, missing `=`, invalid regex, or missing capture group causes `OptionsError::InvalidOutputMetric(String)` with an actionable explanation.

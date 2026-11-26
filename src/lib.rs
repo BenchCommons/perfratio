@@ -48,6 +48,7 @@ pub mod api;
 #[doc(hidden)]
 pub mod benchmark;
 #[doc(hidden)]
+pub mod budget;
 pub mod calibration;
 #[cfg(feature = "cli")]
 #[doc(hidden)]
