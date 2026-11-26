@@ -325,6 +325,7 @@ fn test_csv() {
                 params
             },
             omitted_failed_runs: Vec::new(),
+            validation: None,
             discarded_outliers: Vec::new(),
             resources: None,
             percentiles: None,
@@ -371,6 +372,7 @@ fn test_csv() {
                 params
             },
             omitted_failed_runs: Vec::new(),
+            validation: None,
             discarded_outliers: Vec::new(),
             resources: None,
             percentiles: None,
@@ -444,6 +446,7 @@ fn test_csv_formula_injection_sanitization() {
             params
         },
         omitted_failed_runs: Vec::new(),
+        validation: None,
         discarded_outliers: Vec::new(),
         resources: None,
         percentiles: None,
@@ -546,6 +549,7 @@ fn test_csv_with_reference_command() {
             exit_codes: vec![Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
+            validation: None,
             discarded_outliers: Vec::new(),
             resources: None,
             percentiles: None,
@@ -591,6 +595,7 @@ fn test_csv_with_reference_command() {
                 params
             },
             omitted_failed_runs: Vec::new(),
+            validation: None,
             discarded_outliers: Vec::new(),
             resources: None,
             percentiles: None,
@@ -664,6 +669,7 @@ fn test_csv_heterogeneous_parameters() {
                 params
             },
             omitted_failed_runs: Vec::new(),
+            validation: None,
             discarded_outliers: Vec::new(),
             resources: None,
             percentiles: None,
@@ -709,6 +715,7 @@ fn test_csv_heterogeneous_parameters() {
                 params
             },
             omitted_failed_runs: Vec::new(),
+            validation: None,
             discarded_outliers: Vec::new(),
             resources: None,
             percentiles: None,

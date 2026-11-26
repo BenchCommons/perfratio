@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.16 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.17 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.16",
+      "const": "1.17",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -631,6 +631,60 @@
       ],
       "description": "Run omitted by --omit-failed-runs."
     },
+    "validation": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "output_sha256",
+            "command",
+            "output_sha256+command"
+          ]
+        },
+        "on_invalid": {
+          "enum": [
+            "fail",
+            "omit",
+            "keep"
+          ]
+        },
+        "first_only": {
+          "type": "boolean"
+        },
+        "runs_checked": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runs_invalid": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runs_omitted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "omitted_runs": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "output_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "mode",
+        "on_invalid",
+        "first_only",
+        "runs_checked",
+        "runs_invalid",
+        "runs_omitted"
+      ],
+      "description": "Output validation (--expect-output-sha256, --validate). runs_invalid > 0 means the workload did not produce the expected result."
+    },
     "result": {
       "type": "object",
       "properties": {
@@ -816,6 +870,9 @@
           "items": {
             "$ref": "#/$defs/omittedRun"
           }
+        },
+        "validation": {
+          "$ref": "#/$defs/validation"
         },
         "discarded_outliers": {
           "type": "array",
