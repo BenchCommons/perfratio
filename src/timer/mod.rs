@@ -40,7 +40,7 @@ pub struct TimerResult {
     pub time_user: Second,
     pub time_system: Second,
     pub memory_usage_byte: u64,
-    /// OS resource counters (Unix only)
+    /// OS resource counters (None for mocked runs)
     pub counters: Option<crate::benchmark::timing_result::ResourceCounters>,
     /// The exit status of the process
     pub status: ExitStatus,
@@ -594,11 +594,11 @@ pub fn execute_and_measure(
                     );
                 }
                 let _ = child.wait()?;
-                let (user, system, memory) = cpu_timer.stop();
+                let (user, system, memory, resource_counters) = cpu_timer.stop(&child);
                 time_user = user;
                 time_system = system;
                 memory_usage_byte = memory;
-                counters = None;
+                counters = Some(resource_counters);
                 status = ExitStatus::from_raw(0);
             }
             timed_out = watchdog.is_some_and(|w| w.disarm());
@@ -623,11 +623,11 @@ pub fn execute_and_measure(
             #[cfg(windows)]
             {
                 let raw_status = child.wait()?;
-                let (user, system, memory) = cpu_timer.stop();
+                let (user, system, memory, resource_counters) = cpu_timer.stop(&child);
                 time_user = user;
                 time_system = system;
                 memory_usage_byte = memory;
-                counters = None;
+                counters = Some(resource_counters);
                 timed_out = watchdog.is_some_and(|w| w.disarm());
                 status = if !timed_out && raw_status.success() {
                     // Exited 0 without matching the required pattern -> mark as failure
@@ -685,11 +685,11 @@ pub fn execute_and_measure(
         }
         #[cfg(windows)]
         {
-            let (user, system, memory) = cpu_timer.stop();
+            let (user, system, memory, resource_counters) = cpu_timer.stop(&child);
             time_user = user;
             time_system = system;
             memory_usage_byte = memory;
-            counters = None;
+            counters = Some(resource_counters);
         }
 
         captured = if capture || stdout_capture_limit.is_some() || stderr_capture_limit.is_some() {

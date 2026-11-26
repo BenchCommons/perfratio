@@ -1,7 +1,7 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Partly shipped (schemaVersion 1.2; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
+Partly shipped (schemaVersion 1.3; 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
@@ -158,7 +158,7 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `custom_metrics_summary` | { name: { `mean`, `stddev`?, `median`, `min`, `max` } } | with `custom_metrics` |
 | `parameters`, `per_run_parameters` | strings / stats | optional (`--parameter-*`) |
 | `omitted_failed_runs`, `discarded_outliers` | indices | optional |
-| `resources` | counts[] per run | when `measurements.resources = "measured"` |
+| `resources` { column: counts[] per run } (**columns individually optional since 1.3**, #291) | counts | when `measurements.resources = "measured"`; a column the OS cannot report is omitted (Windows has no `voluntary_ctx_switches`, `involuntary_ctx_switches`, `major_faults`), see `windows-resource-usage.md` |
 | `diagnostics`, `precision`, `baseline`, `shell`, `timed_out`, `timeout`, `runs_planned` | see `BenchmarkResult` | optional |
 
 Rules:
