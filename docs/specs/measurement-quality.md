@@ -1,7 +1,7 @@
 # Specification: Measurement quality report (`--quality`, `--fail-on-quality`)
 
 **Issue:** [#318](https://github.com/BenchCommons/perfratio/issues/318)
-**Status:** Completed except the checks that wait for sibling issues (§4). JSON `schemaVersion` 1.18 (1.21 adds `below_resolution`, #313).
+**Status:** Completed except the checks that wait for sibling issues (§4). JSON `schemaVersion` 1.18 (1.22 adds `below_resolution`, #313).
 **Related:** #54 (interference), #219 (counter coverage), #240 (contract), #316 (workload validation),
 `interference-diagnostics.md`, `tukey-outliers.md`, `target-precision.md`, `workload-validation.md`.
 
