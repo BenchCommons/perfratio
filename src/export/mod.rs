@@ -169,6 +169,36 @@ impl ExportManager {
         );
         metadata.region_protocol = region.then_some(crate::region::PROTOCOL_VERSION);
         metadata.energy_backend = energy.and_then(Result::ok).map(|b| b.as_str());
+        let environment = &mut metadata.environment;
+        environment.backends.energy = metadata.energy_backend.map(str::to_string);
+        if matches!(
+            metadata.measurements.counters,
+            metadata::MeasurementStatus::Measured | metadata::MeasurementStatus::Partial
+        ) {
+            environment.backends.counters = if cfg!(target_os = "linux") {
+                Some("perf_event_open".to_string())
+            } else if cfg!(target_os = "macos") {
+                Some("kperf".to_string())
+            } else {
+                None
+            };
+        }
+        let setting = |name: &str| matches.try_get_one::<String>(name).ok().flatten().cloned();
+        environment.settings = crate::environment::Settings {
+            affinity: setting("affinity"),
+            priority: setting("priority"),
+            concurrency: setting("concurrency"),
+        };
+        let meta_request = crate::environment::parse_meta(
+            matches
+                .try_get_many::<String>("meta")
+                .ok()
+                .flatten()
+                .into_iter()
+                .flatten()
+                .map(String::as_str),
+        )?;
+        metadata.meta = crate::environment::resolve_meta(&meta_request);
         metadata.execution = execution;
         let mut export_manager = Self {
             exporters: vec![],
@@ -229,6 +259,11 @@ impl ExportManager {
             add_exporter("export-html", ExportType::Html)?;
         }
         Ok(export_manager)
+    }
+
+    /// The environment of this run (`perfratio.environment`)
+    pub fn environment(&self) -> &crate::environment::Environment {
+        &self.metadata.environment
     }
 
     /// Add an additional exporter to the ExportManager

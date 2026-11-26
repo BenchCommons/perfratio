@@ -121,6 +121,9 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR MODE ]
 .RB [ \-\-fail\-on\-quality
 .IR GRADE ]
+.RB [ \-\-meta
+.IR KEY=VALUE|git ]
+.RB [ \-\-require\-compatible\-env ]
 .RB [ \-\-calibrate [ =auto|off ]]
 .RB [ \-\-below\-floor
 .IR ACTION ]
@@ -477,6 +480,13 @@ Print the measurement quality report of each benchmark: off, summary (the grade 
 .IP
 Exit with code 5 if the quality grade of any benchmark is worse than GRADE (comparable, with_caveats or unreliable, best first). A CI gate on how trustworthy a measurement is; \fB\-\-fail\-if\-regressed\fR gates on the size of a change.
 .HP
+\fB\-\-meta\fR \fIKEY=VALUE|git\fP
+.IP
+Record provenance of the benchmarked program under perfratio.meta in the JSON export (repeatable). KEY=VALUE is a string; git adds git_commit and git_dirty of the git repository in the current directory. The export contains no host name, user name, environment variables or working directory.
+.HP
+\fB\-\-require\-compatible\-env\fR
+.IP
+Fail instead of warning when the environment of a \fB\-\-compare\fR baseline or an \fB\-\-import\-json\fR file differs from this machine (CPU model, architecture, OS, kernel major version, governor, SMT, container), or when the file records no environment.
 \fB\-\-calibrate\fR[=\fIauto|off\fP]
 .IP
 Measure the runner floor before benchmarking: about 20 runs of a trivial command (true, or exit 0 through a shell) started like the benchmarks, once per session and shell. A command whose mean is under 3 floors, or whose 95% CI reaches the floor, is below resolution: flagged in the quality report and the summary, numbers kept. Default: auto. The floor is exported as perfratio.calibration.

@@ -1074,6 +1074,36 @@ pub fn build_command() -> Command {
                        under 'perfratio.labels' in JSON and as 'label_KEY' columns in CSV."),
         )
         .arg(
+            Arg::new("meta")
+                .long("meta")
+                .action(ArgAction::Append)
+                .value_name("KEY=VALUE|git")
+                .help("Record build provenance in the JSON export: KEY=VALUE, or 'git' for the \
+                       commit and dirty flag of the current directory.")
+                .long_help(
+                    "Record provenance of the benchmarked program under 'perfratio.meta' in the \
+                     JSON export (can be given multiple times).\n\n  \
+                     KEY=VALUE  A string, e.g. --meta compiler=gcc-14 --meta flags=-O3\n  \
+                     git        'git_commit' and 'git_dirty' (uncommitted changes) of the git \
+                                repository in the current directory\n\n\
+                     Nothing else about the host is exported by default: no host name, user name, \
+                     environment variables or working directory. Do not put secrets in values.",
+                ),
+        )
+        .arg(
+            Arg::new("require-compatible-env")
+                .long("require-compatible-env")
+                .action(ArgAction::SetTrue)
+                .help("Fail when '--compare' or '--import-json' files come from a different \
+                       environment.")
+                .long_help(
+                    "Fail instead of warning when the environment of a '--compare' baseline or \
+                     an '--import-json' file differs from this machine (CPU model, architecture, \
+                     OS, kernel major version, governor, SMT, container), or when the file records \
+                     no environment. See 'perfratio.environment_fingerprint'.",
+                ),
+        )
+        .arg(
             Arg::new("export-markdown-runs")
                 .long("export-markdown-runs")
                 .action(ArgAction::Set)
