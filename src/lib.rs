@@ -97,4 +97,6 @@ pub mod system_check;
 #[doc(hidden)]
 pub mod timer;
 #[doc(hidden)]
+pub mod topdown;
+#[doc(hidden)]
 pub mod util;

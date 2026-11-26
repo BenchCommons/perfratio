@@ -160,6 +160,14 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub counters_scope: Option<String>,
 
+    /// Top-down analysis level 1 (`--topdown`): per-run fractions of the issue
+    /// slots, aligned with `times`. See `docs/specs/topdown-tma.md`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topdown: Option<crate::topdown::TopdownSeries>,
+
+    /// Mean and spread of the topdown classes and the largest stall class
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topdown_summary: Option<crate::topdown::TopdownSummary>,
     /// Per-run floating-point breakdown (`--simd`), aligned with `times`; see
     /// `docs/specs/simd-breakdown.md`
     #[serde(default, skip_serializing_if = "Option::is_none")]

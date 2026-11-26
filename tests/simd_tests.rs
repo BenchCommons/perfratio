@@ -23,7 +23,7 @@ fn export(args: &[&str]) -> serde_json::Value {
 #[test]
 fn simd_alone_exports_series_summary_and_status() {
     let json = export(&["--runs=3", "--simd", "sleep 0.5"]);
-    assert_eq!(json["schemaVersion"], "1.12");
+    assert_eq!(json["schemaVersion"], "1.13");
     let m = &json["perfratio"]["measurements"];
     assert_eq!(m["simd"], "measured");
     assert_eq!(m["counters"], "not_requested");
@@ -212,4 +212,19 @@ fn scope_applies_to_simd_and_split_is_rejected() {
         .stderr(predicate::str::contains(
             "'--simd' cannot be combined with '--scope split'",
         ));
+}
+
+#[test]
+fn simd_works_next_to_counters_and_topdown() {
+    let json = export(&[
+        "--runs=2",
+        "--counters=cycles",
+        "--simd",
+        "--topdown",
+        "sleep 0.5",
+    ]);
+    let r = &json["results"][0];
+    assert_eq!(r["counters"]["cycles"][0], 500_000_000u64);
+    assert_eq!(r["simd"]["scalar_fp"][0], 600_000);
+    assert!(r.get("topdown").is_some(), "topdown series is kept");
 }

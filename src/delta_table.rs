@@ -26,12 +26,17 @@ pub enum Dimension {
     Cycles,
     CacheMisses,
     BranchMisses,
+    /// Topdown level 1 classes (`--topdown`, #221), as fractions of all slots
+    Retiring,
+    BadSpeculation,
+    FrontendBound,
+    BackendBound,
     /// `--simd` vectorization ratio (#211). Neither direction is better.
     VectorizationRatio,
 }
 
 impl Dimension {
-    pub const ALL: [Dimension; 11] = [
+    pub const ALL: [Dimension; 15] = [
         Dimension::WallTime,
         Dimension::PeakMemory,
         Dimension::Energy,
@@ -42,8 +47,41 @@ impl Dimension {
         Dimension::Cycles,
         Dimension::CacheMisses,
         Dimension::BranchMisses,
+        Dimension::Retiring,
+        Dimension::BadSpeculation,
+        Dimension::FrontendBound,
+        Dimension::BackendBound,
         Dimension::VectorizationRatio,
     ];
+
+    /// Whether a lower value is an improvement. A topdown class is a share of
+    /// the slots: it moves from one class to another, which is neither better
+    /// nor worse by itself.
+    fn directional(self) -> bool {
+        !self.is_topdown() && self != Dimension::VectorizationRatio
+    }
+
+    fn is_topdown(self) -> bool {
+        matches!(
+            self,
+            Dimension::Retiring
+                | Dimension::BadSpeculation
+                | Dimension::FrontendBound
+                | Dimension::BackendBound
+        )
+    }
+
+    /// Per-run values and stored mean of a topdown class
+    fn topdown_values(self, r: &BenchmarkResult) -> Option<&Vec<Option<f64>>> {
+        let t = r.topdown.as_ref()?;
+        match self {
+            Dimension::Retiring => Some(&t.retiring),
+            Dimension::BadSpeculation => Some(&t.bad_speculation),
+            Dimension::FrontendBound => Some(&t.frontend_bound),
+            Dimension::BackendBound => Some(&t.backend_bound),
+            _ => None,
+        }
+    }
 
     /// Name of the counter in `BenchmarkResult::counters`
     fn counter_name(self) -> Option<&'static str> {
@@ -68,6 +106,10 @@ impl Dimension {
             Dimension::Cycles => "CPU cycles",
             Dimension::CacheMisses => "Cache misses",
             Dimension::BranchMisses => "Branch misses",
+            Dimension::Retiring => "Topdown: retiring",
+            Dimension::BadSpeculation => "Topdown: bad speculation",
+            Dimension::FrontendBound => "Topdown: frontend bound",
+            Dimension::BackendBound => "Topdown: backend bound",
             Dimension::VectorizationRatio => "Vectorization ratio",
         }
     }
@@ -80,7 +122,11 @@ impl Dimension {
             Dimension::PeakMemory => format_bytes(value.max(0.0).round() as u64),
             Dimension::Energy => format!("{value:.3} J"),
             Dimension::Power => format!("{value:.2} W"),
-            Dimension::VectorizationRatio => format!("{:.1}%", value * 100.0),
+            Dimension::Retiring
+            | Dimension::BadSpeculation
+            | Dimension::FrontendBound
+            | Dimension::BackendBound
+            | Dimension::VectorizationRatio => format!("{:.1}%", value * 100.0),
             Dimension::Instructions
             | Dimension::Cycles
             | Dimension::CacheMisses
@@ -105,6 +151,13 @@ impl Dimension {
                 .simd
                 .as_ref()
                 .map(|s| s.vectorization_ratio.iter().flatten().copied().collect()),
+            Dimension::Retiring
+            | Dimension::BadSpeculation
+            | Dimension::FrontendBound
+            | Dimension::BackendBound => {
+                // Only when every run has a value (`null` marks an unreadable run)
+                self.topdown_values(r)?.iter().copied().collect()
+            }
             Dimension::Instructions
             | Dimension::Cycles
             | Dimension::CacheMisses
@@ -134,6 +187,18 @@ impl Dimension {
                 .as_ref()
                 .and_then(|s| s.get("vectorization_ratio"))
                 .map(|s| s.mean),
+            Dimension::Retiring
+            | Dimension::BadSpeculation
+            | Dimension::FrontendBound
+            | Dimension::BackendBound => {
+                let s = r.topdown_summary.as_ref()?;
+                Some(match self {
+                    Dimension::Retiring => s.retiring.mean,
+                    Dimension::BadSpeculation => s.bad_speculation.mean,
+                    Dimension::FrontendBound => s.frontend_bound.mean,
+                    _ => s.backend_bound.mean,
+                })
+            }
             Dimension::Instructions
             | Dimension::Cycles
             | Dimension::CacheMisses
@@ -160,6 +225,9 @@ pub enum Verdict {
     Regression,
     /// Not significant
     Noise,
+    /// Significant change of a dimension that is neither better nor worse
+    /// (a topdown class)
+    Shift,
     /// No p-value (too few runs, or no per-run samples)
     Unknown,
 }
@@ -307,7 +375,7 @@ fn welch(a: &[f64], b: &[f64]) -> Option<(f64, f64)> {
 }
 
 /// One row per dimension measured for both commands. Lower is better in every
-/// dimension except the vectorization ratio, which has no verdict.
+/// dimension except the topdown classes, which only get a `Shift` verdict.
 pub fn compute_rows(reference: &BenchmarkResult, target: &BenchmarkResult) -> Vec<DeltaRow> {
     Dimension::ALL
         .into_iter()
@@ -324,8 +392,9 @@ pub fn compute_rows(reference: &BenchmarkResult, target: &BenchmarkResult) -> Ve
                 _ => (None, None),
             };
             let verdict = match (p_value, relative) {
-                // More vectorization is neither better nor worse
-                _ if dimension == Dimension::VectorizationRatio => Verdict::Unknown,
+                (Some(p), Some(rel)) if p < ALPHA && rel != 0.0 && !dimension.directional() => {
+                    Verdict::Shift
+                }
                 (Some(p), Some(rel)) if p < ALPHA && rel < 0.0 => Verdict::Improvement,
                 (Some(p), Some(rel)) if p < ALPHA && rel > 0.0 => Verdict::Regression,
                 (Some(_), _) => Verdict::Noise,
@@ -386,6 +455,7 @@ fn marker(v: Verdict) -> &'static str {
         Verdict::Improvement => "⚡",
         Verdict::Regression => "🔻",
         Verdict::Noise => "~",
+        Verdict::Shift => "Δ",
         Verdict::Unknown => "",
     }
 }
@@ -781,31 +851,6 @@ Benchmark comparison (Reference: 'cmd_a')
     }
 
     #[test]
-    fn vectorization_row_has_no_verdict() {
-        let series = |ratios: &[f64]| crate::simd::SimdSeries {
-            unit: "instructions".into(),
-            arch: "x86_64".into(),
-            vectorization_ratio: ratios.iter().map(|r| Some(*r)).collect(),
-            ..Default::default()
-        };
-        let mut a = full("a", 1.0);
-        let mut b = full("b", 1.0);
-        a.simd = Some(series(&[0.01, 0.02, 0.01, 0.015]));
-        assert!(compute_rows(&a, &b)
-            .iter()
-            .all(|r| r.dimension != Dimension::VectorizationRatio));
-        b.simd = Some(series(&[0.96, 0.97, 0.96, 0.965]));
-        let rows = compute_rows(&a, &b);
-        let row = rows
-            .iter()
-            .find(|r| r.dimension == Dimension::VectorizationRatio)
-            .expect("ratio row");
-        assert!(row.p_value.is_some_and(|p| p < 0.05));
-        assert_eq!(row.verdict, Verdict::Unknown);
-        assert_eq!(Dimension::VectorizationRatio.format(0.964), "96.4%");
-    }
-
-    #[test]
     fn multiplexing_note_names_scaled_counters_shown_in_the_table() {
         let counters = |scale: f64| {
             let v: Vec<Option<u64>> = [1000u64, 1010, 990, 1005, 995, 1000]
@@ -835,6 +880,32 @@ Benchmark comparison (Reference: 'cmd_a')
     }
 
     #[test]
+    fn vectorization_row_is_a_shift_not_a_verdict() {
+        let series = |ratios: &[f64]| crate::simd::SimdSeries {
+            unit: "instructions".into(),
+            arch: "x86_64".into(),
+            vectorization_ratio: ratios.iter().map(|r| Some(*r)).collect(),
+            ..Default::default()
+        };
+        let mut a = full("a", 1.0);
+        let mut b = full("b", 1.0);
+        a.simd = Some(series(&[0.01, 0.02, 0.01, 0.015]));
+        assert!(compute_rows(&a, &b)
+            .iter()
+            .all(|r| r.dimension != Dimension::VectorizationRatio));
+        b.simd = Some(series(&[0.96, 0.97, 0.96, 0.965]));
+        let rows = compute_rows(&a, &b);
+        let row = rows
+            .iter()
+            .find(|r| r.dimension == Dimension::VectorizationRatio)
+            .expect("ratio row");
+        assert!(row.p_value.is_some_and(|p| p < 0.05));
+        assert_ne!(row.verdict, Verdict::Improvement);
+        assert_ne!(row.verdict, Verdict::Regression);
+        assert_eq!(Dimension::VectorizationRatio.format(0.964), "96.4%");
+    }
+
+    #[test]
     fn markdown_snapshot() {
         let results = [full("cmd_a", 1.0), full("cmd_b", 0.74)];
         insta::assert_snapshot!(markdown(&results, Some(&results[0])), @r#"
@@ -850,5 +921,46 @@ Benchmark comparison (Reference: 'cmd_a')
 | CPU time (user) | 7.1 ms ± 108.0 µs | 5.3 ms ± 79.9 µs | -26.0% ± 1.7% | 0.000 | ⚡ |
 | CPU time (system) | 3.6 ms ± 54.0 µs | 2.6 ms ± 40.0 µs | -26.0% ± 1.7% | 0.000 | ⚡ |
 "#);
+    }
+
+    fn with_topdown(command: &str, backend: &[f64]) -> BenchmarkResult {
+        let mut r = result(command, &[0.01, 0.011, 0.012, 0.01]);
+        let column = |v: f64| vec![Some(v); backend.len()];
+        r.topdown = Some(crate::topdown::TopdownSeries {
+            level: 1,
+            source: "intel_perf_metrics".into(),
+            retiring: column(0.25),
+            bad_speculation: column(0.125),
+            frontend_bound: column(0.125),
+            backend_bound: backend.iter().map(|&b| Some(b)).collect(),
+            smt_contention: None,
+        });
+        r
+    }
+
+    #[test]
+    fn topdown_classes_shift_without_being_better_or_worse() {
+        let a = with_topdown("a", &[0.49, 0.50, 0.48, 0.49]);
+        let b = with_topdown("b", &[0.15, 0.16, 0.14, 0.15]);
+        let rows = compute_rows(&a, &b);
+        let backend = rows
+            .iter()
+            .find(|r| r.dimension == Dimension::BackendBound)
+            .unwrap();
+        assert_eq!(backend.verdict, Verdict::Shift);
+        assert!((backend.reference.mean - 0.49).abs() < 1e-9);
+        assert!(backend.relative.unwrap() < -0.6);
+        assert_eq!(Dimension::BackendBound.format(0.492), "49.2%");
+        // an unchanged class is noise, not a shift
+        let retiring = rows
+            .iter()
+            .find(|r| r.dimension == Dimension::Retiring)
+            .unwrap();
+        assert_eq!(retiring.verdict, Verdict::Noise);
+        // a command without topdown data has no topdown rows
+        let plain = result("c", &[0.01, 0.011, 0.012, 0.01]);
+        assert!(compute_rows(&a, &plain)
+            .iter()
+            .all(|r| !r.dimension.is_topdown()));
     }
 }

@@ -154,6 +154,11 @@ const CASES: &[(&str, &[&str])] = &[
         &["--runs=3", "--resource-usage", "sleep 0.1"],
     ),
     ("counters", &["--runs=3", "--counters", "sleep 0.5"]),
+    ("topdown", &["--runs=3", "--topdown", "sleep 0.5"]),
+    (
+        "topdown with counters",
+        &["--runs=3", "--counters=cycles", "--topdown", "sleep 0.5"],
+    ),
     ("simd", &["--runs=3", "--simd", "sleep 0.5"]),
     (
         "simd with counters and user scope",

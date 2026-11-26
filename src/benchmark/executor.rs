@@ -82,6 +82,8 @@ struct ProcessSettings<'a> {
     output_metrics_stderr: bool,
     /// --counters
     counters: Option<&'a crate::perf_counters::CounterConfig>,
+    /// --topdown
+    topdown: Option<&'a crate::topdown::TopdownConfig>,
 }
 
 impl<'a> ProcessSettings<'a> {
@@ -95,6 +97,7 @@ impl<'a> ProcessSettings<'a> {
             output_metrics: &options.output_metrics,
             output_metrics_stderr: options.output_metrics_stderr,
             counters: options.counters.as_ref(),
+            topdown: options.topdown.as_ref(),
         }
     }
 }
@@ -117,6 +120,7 @@ fn run_command_and_measure_common(
         output_metrics,
         output_metrics_stderr,
         counters,
+        topdown,
     } = process;
     let (until, capture_metrics) = match iteration {
         BenchmarkIteration::NonBenchmarkRun => (None, false),
@@ -181,9 +185,10 @@ fn run_command_and_measure_common(
     };
     // Open the counters on this thread, right before the child is spawned
     // here (the children inherit them). Warmup runs are not counted.
-    let open_counters = counters
-        .filter(|_| !matches!(iteration, BenchmarkIteration::Warmup(_)))
-        .and_then(crate::perf_counters::open);
+    let counting = !matches!(iteration, BenchmarkIteration::Warmup(_));
+    let open_counters = counting
+        .then(|| crate::perf_counters::open_run(counters, topdown))
+        .flatten();
     let mut result = execute_and_measure(
         command,
         affinity,
@@ -647,14 +652,12 @@ impl Executor for RawExecutor<'_> {
     /// Without a shell only the fork/exec work between enabling the counters
     /// and the `exec` of the command remains: measure it with `true`.
     fn calibrate(&mut self) -> Result<()> {
-        let Some(config) = self
-            .options
-            .counters
-            .as_ref()
-            .filter(|c| c.is_active() && !c.mock)
-        else {
+        if !crate::perf_counters::needs_calibration(
+            self.options.counters.as_ref(),
+            self.options.topdown.as_ref(),
+        ) {
             return Ok(());
-        };
+        }
         let mut samples = vec![];
         for _ in 0..COUNTER_CALIBRATION_RUNS {
             // A missing `true` only means no calibration: counts stay gross
@@ -668,8 +671,11 @@ impl Executor for RawExecutor<'_> {
             };
             samples.extend(r.hw_counters);
         }
-        self.counter_overhead =
-            crate::perf_counters::median_overhead(&samples, config.event_count());
+        self.counter_overhead = crate::perf_counters::calibrated_overhead(
+            &samples,
+            self.options.counters.as_ref(),
+            self.options.topdown.as_ref(),
+        );
         Ok(())
     }
 
@@ -853,9 +859,15 @@ impl Executor for ShellExecutor<'_> {
             bar.finish_and_clear()
         }
 
-        if let Some(config) = self.options.counters.as_ref().filter(|c| !c.mock) {
-            self.counter_overhead =
-                crate::perf_counters::median_overhead(&hw_samples, config.event_count());
+        if crate::perf_counters::needs_calibration(
+            self.options.counters.as_ref(),
+            self.options.topdown.as_ref(),
+        ) {
+            self.counter_overhead = crate::perf_counters::calibrated_overhead(
+                &hw_samples,
+                self.options.counters.as_ref(),
+                self.options.topdown.as_ref(),
+            );
         }
 
         self.shell_spawning_time = Some(TimingResult {
@@ -892,6 +904,7 @@ pub struct MockExecutor {
     shell: Option<String>,
     timeout: Option<std::time::Duration>,
     counters: Option<crate::perf_counters::CounterConfig>,
+    topdown: Option<crate::topdown::TopdownConfig>,
     concurrency: usize,
 }
 
@@ -901,8 +914,15 @@ impl MockExecutor {
             shell,
             timeout,
             counters: None,
+            topdown: None,
             concurrency: 1,
         }
+    }
+
+    /// Simulate `--topdown` with deterministic values.
+    pub fn with_topdown(mut self, topdown: Option<crate::topdown::TopdownConfig>) -> Self {
+        self.topdown = topdown.filter(|t| t.is_active());
+        self
     }
 
     /// Simulate `--counters` with deterministic values.
@@ -1035,11 +1055,19 @@ impl Executor for MockExecutor {
                 memory_usage_byte,
                 energy_joules: None,
                 counters: None,
-                hw_counters: self
-                    .counters
-                    .as_ref()
-                    .filter(|_| !timed_out)
-                    .map(|c| crate::perf_counters::mock_reading(c, time_real)),
+                hw_counters: (self.counters.is_some() || self.topdown.is_some())
+                    .then(|| {
+                        let mut reading = self
+                            .counters
+                            .as_ref()
+                            .map(|c| crate::perf_counters::mock_reading(c, time_real))
+                            .unwrap_or_default();
+                        if let Some(plan) = self.topdown.as_ref().and_then(|t| t.plan.as_ref()) {
+                            reading.extend(crate::topdown::mock_reading(plan, time_real));
+                        }
+                        reading
+                    })
+                    .filter(|_| !timed_out),
                 timed_out,
                 custom_metrics: std::collections::BTreeMap::new(),
                 instances,
