@@ -13,6 +13,8 @@ pub struct OutlierWarningOptions {
 /// A list of all possible warnings
 pub enum Warnings {
     FastExecutionTime,
+    /// `--concurrency N`: the mean makespan is below 5 ms x N
+    ConcurrencySpawnCost(usize),
     /// `--energy` with runs shorter than the RAPL resolution allows
     ShortEnergyRuns,
     /// `--energy-baseline` was given but the idle power could not be measured
@@ -93,6 +95,14 @@ impl fmt::Display for Warnings {
                 inaccurate because perfratio can not calibrate the shell startup time much \
                 more precise than this limit. You can try to use the `-N`/`--shell=none` \
                 option to disable the shell completely.",
+                MIN_EXECUTION_TIME * 1e3
+            ),
+            Warnings::ConcurrencySpawnCost(n) => write!(
+                f,
+                "The mean makespan is below {:.0} ms ({:.0} ms x {n} instances): spawn cost \
+                dominates and the instances barely overlap, so the result says little about \
+                concurrent load.",
+                MIN_EXECUTION_TIME * 1e3 * n as f64,
                 MIN_EXECUTION_TIME * 1e3
             ),
             Warnings::NonZeroExitCode => write!(f, "Ignoring non-zero exit code."),

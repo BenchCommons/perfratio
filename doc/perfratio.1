@@ -167,6 +167,8 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR DURATION ]
 .RB [ \-\-timeout
 .IR DURATION ]
+.RB [ \-\-concurrency
+.IR N ]
 .RB [ \-\-until
 .IR TEXT ]
 .RB [ \-\-until\-stderr ]
@@ -403,6 +405,10 @@ Sample each command repeatedly until the summed run time reaches DURATION (e.g. 
 \fB\-\-timeout\fR \fIDURATION\fP
 .IP
 Kill a benchmark run that exceeds DURATION (e.g. 500ms, 2s, 1m). The benchmark is marked as "timed out" and later runs of that command are skipped.
+.HP
+\fB\-\-concurrency\fR \fIN\fP
+.IP
+Start N instances of the command simultaneously for every run. The reported time is the wall time until all N instances finished (the makespan). User and system time are summed over the instances and memory is the maximum of any instance. The JSON export gains \fBconcurrency\fR, \fBinstance_times\fR, \fBthroughput\fR and \fBinstance_percentiles\fR. Conflicts with \fB\-\-until\fR, \fB\-\-show\-output\-on\-failure\fR, \fB\-\-output\-metric\fR and \fB\-\-subtract\fR. Default: 1.
 .HP
 \fB\-\-until\fR \fITEXT\fP
 .IP

@@ -140,8 +140,28 @@ fn validate(res: &BenchmarkResult) -> Result<()> {
         }
 
         let n = times.len();
+        // `--concurrency N`: N exit codes per run and a row of N instance times per run
+        let instances = res.concurrency.unwrap_or(1).max(1);
+        if let Some(rows) = &res.instance_times {
+            if rows.len() != n || rows.iter().any(|row| row.len() != instances) {
+                bail!(
+                    "'instance_times' must have one row of {instances} entries per run \
+                     ({n} runs)"
+                );
+            }
+        }
+        if !res.exit_codes.is_empty() && res.exit_codes.len() != n * instances {
+            bail!(
+                "'exit_codes' has {} entries, but 'times' has {n}{}",
+                res.exit_codes.len(),
+                if instances > 1 {
+                    format!(" and 'concurrency' is {instances}")
+                } else {
+                    String::new()
+                }
+            );
+        }
         let lengths = [
-            ("exit_codes", Some(res.exit_codes.len()).filter(|&l| l > 0)),
             ("user_times", res.user_times.as_ref().map(Vec::len)),
             ("system_times", res.system_times.as_ref().map(Vec::len)),
             (
