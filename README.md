@@ -148,6 +148,8 @@ primary metric for statistics, comparison and sorting. `instructions` and `cycle
 `--counters` (Linux). Markdown, AsciiDoc and Org tables get IPC, CPI and miss-rate columns when
 counters were collected.
 
+`--expect-output-sha256 HEX` and `--validate CMD` check that each run produced the right result, so a command cannot look fast because it did less work; `--on-invalid fail|omit|keep` picks what happens to a wrong run ([spec](docs/specs/workload-validation.md)).
+
 `--check-system` reports conditions that add noise (frequency governor, turbo boost, load,
 power source). `--check-system=strict` aborts with exit code 4 if a check fails.
 

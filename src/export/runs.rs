@@ -17,13 +17,19 @@ pub struct RunsExporter<M: MarkupExporter> {
 
 /// The iteration numbers (as in `PERFRATIO_ITERATION`) of the runs that are
 /// still present in `result`, i.e. without runs removed by
-/// `--omit-failed-runs` or `--discard-outliers`.
+/// `--omit-failed-runs`, `--on-invalid omit` or `--discard-outliers`.
 fn iteration_numbers(result: &BenchmarkResult, kept: usize) -> Vec<usize> {
     let removed: Vec<usize> = result
         .omitted_failed_runs
         .iter()
         .map(|run| run.index)
         .chain(result.discarded_outliers.iter().copied())
+        .chain(
+            result
+                .validation
+                .iter()
+                .flat_map(|v| v.omitted_runs.iter().copied()),
+        )
         .collect();
     (0..kept + removed.len())
         .filter(|index| !removed.contains(index))

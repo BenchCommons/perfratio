@@ -65,6 +65,9 @@ pub enum OptionsError<'a> {
     )]
     OmitFailedRunsRequiresIgnoreFailure,
 
+    #[error("{0}")]
+    InvalidValidation(String),
+
     #[error("Invalid threshold '{0}' for '--discard-outliers': expected a positive number")]
     InvalidOutlierThreshold(String),
 

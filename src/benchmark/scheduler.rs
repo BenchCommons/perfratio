@@ -104,7 +104,8 @@ impl<'a> Scheduler<'a> {
                     MockExecutor::new(shell.clone(), self.options.timeout)
                         .with_counters(self.options.counters.clone())
                         .with_topdown(self.options.topdown.clone())
-                        .with_concurrency(self.options.concurrency),
+                        .with_concurrency(self.options.concurrency)
+                        .with_validation(self.options.validation.clone()),
                 ),
                 ExecutorKind::Shell(shell) => Box::new(ShellExecutor::new(shell, self.options)),
             };
