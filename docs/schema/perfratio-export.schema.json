@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.21 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.22 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.21",
+      "const": "1.22",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -248,6 +248,32 @@
           "items": {
             "$ref": "#/$defs/metricDescriptor"
           }
+        },
+        "execution": {
+          "type": "object",
+          "properties": {
+            "schedule": {
+              "type": "string",
+              "description": "grouped, round-robin, randomized or balanced. Open enum."
+            },
+            "order_seed": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Unsigned 64-bit seed of the shuffled order; only with schedule randomized (the --seed value)."
+            },
+            "order": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "description": "Realized order of the measured runs of an interleaved schedule: the results[] index of each run, in execution order. Omitted for grouped."
+            }
+          },
+          "required": [
+            "schedule"
+          ],
+          "description": "New in 1.22 (#324): how the runs of several commands were ordered. Not required here, so that a MINOR addition is not a breaking change for consumers of older exports."
         },
         "statistics": {
           "type": "object",

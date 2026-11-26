@@ -145,6 +145,29 @@ pub enum ScheduleMode {
 
     /// Interleave iterations across all commands in round-robin fashion
     RoundRobin,
+
+    /// Interleaved, with an independent seeded shuffle of the command order in every round (#324)
+    Randomized,
+
+    /// Interleaved, with the order rotated every round (cyclic Latin square, #324)
+    Balanced,
+}
+
+impl ScheduleMode {
+    /// Whether runs of different commands alternate (everything but `Grouped`)
+    pub fn is_interleaved(self) -> bool {
+        self != ScheduleMode::Grouped
+    }
+
+    /// Name in the CLI and in `perfratio.execution.schedule`
+    pub fn name(self) -> &'static str {
+        match self {
+            ScheduleMode::Grouped => "grouped",
+            ScheduleMode::RoundRobin => "round-robin",
+            ScheduleMode::Randomized => "randomized",
+            ScheduleMode::Balanced => "balanced",
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -1030,6 +1053,8 @@ impl Options {
         } else {
             match matches.get_one::<String>("schedule").map(|s| s.as_str()) {
                 Some("round-robin") | Some("interleaved") => ScheduleMode::RoundRobin,
+                Some("randomized") => ScheduleMode::Randomized,
+                Some("balanced") => ScheduleMode::Balanced,
                 _ => ScheduleMode::Grouped,
             }
         };
@@ -1109,7 +1134,7 @@ impl Options {
             }
         }
 
-        if self.schedule == ScheduleMode::RoundRobin && !self.allow_setup_with_round_robin {
+        if self.schedule.is_interleaved() && !self.allow_setup_with_round_robin {
             // Setup/cleanup differ between benchmarks if they contain a parameter
             // placeholder, or if they are given per command with different values.
             let has_param = |values: &Option<Vec<String>>| {
