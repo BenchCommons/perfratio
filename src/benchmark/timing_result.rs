@@ -114,6 +114,10 @@ pub struct TimingResult {
     /// Custom metrics extracted via --output-metric
     pub custom_metrics: BTreeMap<String, f64>,
 
+    /// Stdout of the run when it is to be validated (`--expect-output-sha256`,
+    /// `--validate`); `None` otherwise
+    pub stdout: Option<Vec<u8>>,
+
     /// `--concurrency N` with N > 1: one entry per instance, in spawn order.
     /// The other fields are then the aggregate of the batch (see
     /// `docs/specs/concurrency.md`). Empty for a single instance.

@@ -104,7 +104,8 @@ impl<'a> Scheduler<'a> {
                     MockExecutor::new(shell.clone(), self.options.timeout)
                         .with_counters(self.options.counters.clone())
                         .with_topdown(self.options.topdown.clone())
-                        .with_concurrency(self.options.concurrency),
+                        .with_concurrency(self.options.concurrency)
+                        .with_validation(self.options.validation.clone()),
                 ),
                 ExecutorKind::Shell(shell) => Box::new(ShellExecutor::new(shell, self.options)),
             };
@@ -610,6 +611,27 @@ impl<'a> Scheduler<'a> {
         let table = crate::delta_table::terminal(&results, reference);
         if !table.is_empty() {
             crate::out!("{table}");
+        }
+    }
+
+    /// `--pareto`, `--constraint`, `--objective`: the frontier of the measured commands.
+    pub fn print_pareto(&self) {
+        let Some(config) = &self.options.pareto else {
+            return;
+        };
+        if self.options.output_style == OutputStyleOption::Disabled {
+            return;
+        }
+        let results: Vec<BenchmarkResult> = self
+            .results
+            .iter()
+            .filter(|r| !(self.options.filter_failed && r.has_failure()))
+            .cloned()
+            .collect();
+        let analysis = crate::pareto::analyze(config, &results);
+        let text = crate::pareto::terminal(config, &analysis, &results);
+        if !text.is_empty() {
+            crate::out!("{text}");
         }
     }
 

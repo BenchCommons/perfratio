@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.16 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.18 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.16",
+      "const": "1.18",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -32,6 +32,9 @@
         }
       ],
       "description": "Present with --optimize: one object, or an array with one entry per search."
+    },
+    "pareto": {
+      "$ref": "#/$defs/pareto"
     },
     "results": {
       "type": "array",
@@ -628,6 +631,60 @@
       ],
       "description": "Run omitted by --omit-failed-runs."
     },
+    "validation": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "output_sha256",
+            "command",
+            "output_sha256+command"
+          ]
+        },
+        "on_invalid": {
+          "enum": [
+            "fail",
+            "omit",
+            "keep"
+          ]
+        },
+        "first_only": {
+          "type": "boolean"
+        },
+        "runs_checked": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runs_invalid": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runs_omitted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "omitted_runs": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "output_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "mode",
+        "on_invalid",
+        "first_only",
+        "runs_checked",
+        "runs_invalid",
+        "runs_omitted"
+      ],
+      "description": "Output validation (--expect-output-sha256, --validate). runs_invalid > 0 means the workload did not produce the expected result."
+    },
     "result": {
       "type": "object",
       "properties": {
@@ -813,6 +870,9 @@
           "items": {
             "$ref": "#/$defs/omittedRun"
           }
+        },
+        "validation": {
+          "$ref": "#/$defs/validation"
         },
         "discarded_outliers": {
           "type": "array",
@@ -1005,11 +1065,11 @@
         },
         "energy_per_instance_joules": {
           "type": "number",
-          "description": "No longer written since 1.16: package energy is not divided per instance."
+          "description": "No longer written since 1.18: package energy is not divided per instance."
         },
         "energy_scope": {
           "type": "string",
-          "description": "Scope of the energy values (1.16): `system` (package counter, covers the whole machine) or `batch` (--concurrency: energy of the whole batch over the makespan).",
+          "description": "Scope of the energy values (1.18): `system` (package counter, covers the whole machine) or `batch` (--concurrency: energy of the whole batch over the makespan).",
           "enum": ["system", "batch"]
         },
         "run_ids": {
@@ -1018,7 +1078,7 @@
             "type": "integer",
             "minimum": 0
           },
-          "description": "PERFRATIO_RUN_ID of every run in `times` (1.16). With --concurrency: the id of instance 0."
+          "description": "PERFRATIO_RUN_ID of every run in `times` (1.18). With --concurrency: the id of instance 0."
         },
         "instance_run_ids": {
           "type": "array",
@@ -1029,11 +1089,11 @@
               "minimum": 0
             }
           },
-          "description": "--concurrency: PERFRATIO_RUN_ID of every instance, one row per run aligned with `instance_times`; the position in the row is PERFRATIO_WORKER_ID (1.16)."
+          "description": "--concurrency: PERFRATIO_RUN_ID of every instance, one row per run aligned with `instance_times`; the position in the row is PERFRATIO_WORKER_ID (1.18)."
         },
         "leftover_processes": {
           "type": "boolean",
-          "description": "Only present when true (1.16): processes started by the command outlived it in at least one run and were killed."
+          "description": "Only present when true (1.18): processes started by the command outlived it in at least one run and were killed."
         },
         "simd": {
           "type": "object",
@@ -1241,6 +1301,149 @@
         "evaluated"
       ],
       "description": "Result of one --optimize search."
+    },
+    "pareto": {
+      "type": "object",
+      "properties": {
+        "metrics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "metric": {
+                "type": "string",
+                "description": "Metric with optional statistic, e.g. wall or wall.p95."
+              },
+              "direction": {
+                "enum": [
+                  "lower_is_better",
+                  "higher_is_better"
+                ]
+              }
+            },
+            "required": [
+              "metric",
+              "direction"
+            ]
+          }
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Constraints as written."
+        },
+        "noise_threshold": {
+          "type": "number",
+          "description": "Relative threshold of --noise-threshold (0.05 = 5%); absent for strict comparison."
+        },
+        "frontier": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Index into results."
+          }
+        },
+        "dominated": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "command_index": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Index into results."
+              },
+              "by": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Index into results."
+                }
+              }
+            },
+            "required": [
+              "command_index",
+              "by"
+            ]
+          }
+        },
+        "within_noise": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Index into results."
+          },
+          "description": "Frontier members strictly dominated within the noise threshold."
+        },
+        "excluded": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "command_index": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Index into results."
+              },
+              "reason": {
+                "enum": [
+                  "metric_unavailable",
+                  "constraint_violated"
+                ]
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "command_index",
+              "reason",
+              "detail"
+            ]
+          }
+        },
+        "objective": {
+          "type": "object",
+          "properties": {
+            "direction": {
+              "enum": [
+                "lower_is_better",
+                "higher_is_better"
+              ]
+            },
+            "metric": {
+              "type": "string"
+            },
+            "best": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "value": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "direction",
+            "metric",
+            "best"
+          ]
+        }
+      },
+      "required": [
+        "metrics",
+        "frontier",
+        "dominated",
+        "excluded"
+      ],
+      "description": "Result of --pareto (1.16, #326)."
     }
   }
 }

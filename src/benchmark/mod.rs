@@ -123,6 +123,14 @@ pub struct BenchmarkRunner<'a> {
     pub timed_out: bool,
     /// Extracted custom metrics per run
     pub custom_metrics: std::collections::BTreeMap<String, Vec<Option<f64>>>,
+    /// Output validation of each run (`--expect-output-sha256`, `--validate`):
+    /// `None` where the run was not checked, aligned with the times
+    validity: Vec<Option<bool>>,
+    /// Runs checked and runs found invalid so far
+    validated_runs: u64,
+    invalid_runs: u64,
+    /// SHA-256 of the stdout of the first checked run
+    first_output_sha256: Option<String>,
 }
 
 /// "1%", "0.5%"
@@ -222,6 +230,10 @@ impl<'a> BenchmarkRunner<'a> {
             resource_counters: vec![],
             hw_counters: vec![],
             per_run_values: vec![],
+            validity: vec![],
+            validated_runs: 0,
+            invalid_runs: 0,
+            first_output_sha256: None,
             all_succeeded: true,
             count: 0,
             warmup: None,
@@ -587,7 +599,7 @@ impl<'a> BenchmarkRunner<'a> {
             sampler.start();
         }
         let window_start = std::time::Instant::now();
-        let (res, status) = self.executor.run_command_and_measure(
+        let (mut res, status) = self.executor.run_command_and_measure(
             self.command,
             BenchmarkIteration::Benchmark(0),
             None,
@@ -637,7 +649,9 @@ impl<'a> BenchmarkRunner<'a> {
         self.count = self.whole_cycles(count) + self.extra_runs();
 
         // The run count above is estimated from the gross time
+        let validity = self.validate_run(0, res.stdout.take(), success)?;
         let res = self.subtract_baseline(res);
+        self.validity.push(validity);
         self.times_real.push(res.time_real);
         self.times_user.push(res.time_user);
         self.times_system.push(res.time_system);
@@ -667,7 +681,7 @@ impl<'a> BenchmarkRunner<'a> {
             sampler.start();
         }
         let window_start = std::time::Instant::now();
-        let (res, status) = self.executor.run_command_and_measure(
+        let (mut res, status) = self.executor.run_command_and_measure(
             self.command,
             BenchmarkIteration::Benchmark(iteration),
             None,
@@ -683,7 +697,9 @@ impl<'a> BenchmarkRunner<'a> {
             return Ok(());
         }
 
+        let validity = self.validate_run(iteration, res.stdout.take(), success)?;
         let res = self.subtract_baseline(res);
+        self.validity.push(validity);
 
         self.times_real.push(res.time_real);
         self.times_user.push(res.time_user);
@@ -706,6 +722,45 @@ impl<'a> BenchmarkRunner<'a> {
         self.run_conclusion(BenchmarkIteration::Benchmark(iteration))?;
 
         Ok(())
+    }
+
+    /// `--expect-output-sha256` / `--validate`: check the stdout of run `run`.
+    /// Runs outside the timed window. `None` when the run is not checked (no
+    /// validation, a failed command, or a run skipped by `--validate-first-only`).
+    fn validate_run(
+        &mut self,
+        run: u64,
+        stdout: Option<Vec<u8>>,
+        success: bool,
+    ) -> Result<Option<bool>> {
+        let (Some(config), Some(stdout), true) =
+            (self.options.validation.as_ref(), stdout, success)
+        else {
+            return Ok(None);
+        };
+        let outcome = config.check(run, &stdout).with_context(|| {
+            format!(
+                "Output validation of benchmark iteration {run} of '{}' could not run",
+                self.command.get_command_line()
+            )
+        })?;
+        self.validated_runs += 1;
+        self.first_output_sha256
+            .get_or_insert_with(|| outcome.sha256.clone());
+        if outcome.is_valid() {
+            return Ok(Some(true));
+        }
+        self.invalid_runs += 1;
+        if config.on_invalid == crate::validation::OnInvalid::Fail {
+            bail!(
+                "Output validation failed in benchmark iteration {run} of '{}': {}. Use \
+                 '--on-invalid omit' to drop such runs from the statistics or '--on-invalid \
+                 keep' to keep them flagged.",
+                self.command.get_command_line(),
+                outcome.failures.join("; ")
+            );
+        }
+        Ok(Some(false))
     }
 
     /// Instances per run of this benchmark (`--concurrency`, possibly `{param}`)
@@ -793,6 +848,9 @@ impl<'a> BenchmarkRunner<'a> {
                 .iter()
                 .map(|&index| self.instance_run_ids[index].clone())
                 .collect();
+        }
+        if self.validity.len() == run_count {
+            self.validity = select(&self.validity, keep);
         }
         if self.instance_times.len() == run_count {
             self.instance_times = keep
@@ -942,29 +1000,51 @@ impl<'a> BenchmarkRunner<'a> {
         let first_run = self.take_first_run();
         let original_run_count = self.times_real.len();
         let mut omitted_failed_runs = Vec::new();
+        // `--on-invalid omit`: runs that failed output validation
+        let mut omitted_invalid_runs: Vec<usize> = Vec::new();
+        let omit_invalid = self
+            .options
+            .validation
+            .as_ref()
+            .is_some_and(|v| v.on_invalid == crate::validation::OnInvalid::Omit);
 
-        if self.options.omit_failed_runs && !self.timed_out {
+        if (self.options.omit_failed_runs || omit_invalid) && !self.timed_out {
             let mut keep_indices = Vec::new();
             for (index, &exit_code) in self.exit_codes.iter().enumerate() {
-                if exit_code == Some(0) {
-                    keep_indices.push(index);
-                } else {
+                let failed = self.options.omit_failed_runs && exit_code != Some(0);
+                let invalid = omit_invalid && self.validity.get(index) == Some(&Some(false));
+                if failed {
                     omitted_failed_runs.push(OmittedRun { index, exit_code });
+                } else if invalid {
+                    omitted_invalid_runs.push(index);
+                } else {
+                    keep_indices.push(index);
                 }
             }
 
             if keep_indices.is_empty() {
-                bail!("All benchmark runs failed. No successful runs to compute statistics from.");
+                if omitted_invalid_runs.is_empty() {
+                    bail!(
+                        "All benchmark runs failed. No successful runs to compute statistics from."
+                    );
+                }
+                bail!(
+                    "All benchmark runs failed output validation. No valid runs to compute \
+                     statistics from."
+                );
             }
 
-            if !omitted_failed_runs.is_empty() {
+            if !omitted_failed_runs.is_empty() || !omitted_invalid_runs.is_empty() {
                 self.retain_runs(&keep_indices);
             }
         }
 
         // Original run numbers of the runs that are still present.
         let run_numbers: Vec<usize> = (0..original_run_count)
-            .filter(|index| !omitted_failed_runs.iter().any(|o| o.index == *index))
+            .filter(|index| {
+                !omitted_failed_runs.iter().any(|o| o.index == *index)
+                    && !omitted_invalid_runs.contains(index)
+            })
             .collect();
 
         let mut discarded_outliers = Vec::new();
@@ -987,6 +1067,21 @@ impl<'a> BenchmarkRunner<'a> {
         }
 
         let num_omitted_failed_runs = omitted_failed_runs.len();
+        let num_omitted_invalid_runs = omitted_invalid_runs.len();
+        let validation_summary =
+            self.options
+                .validation
+                .as_ref()
+                .map(|config| crate::validation::ValidationSummary {
+                    mode: config.mode().to_string(),
+                    on_invalid: config.on_invalid,
+                    first_only: config.first_only,
+                    runs_checked: self.validated_runs,
+                    runs_invalid: self.invalid_runs,
+                    runs_omitted: num_omitted_invalid_runs as u64,
+                    omitted_runs: omitted_invalid_runs.clone(),
+                    output_sha256: self.first_output_sha256.clone(),
+                });
 
         // Hardware counters of the runs that are kept (aligned with the times)
         let hw_export = self.options.counters.as_ref().and_then(|config| {
@@ -1115,6 +1210,9 @@ impl<'a> BenchmarkRunner<'a> {
         }
         if num_omitted_failed_runs > 0 {
             excluded.push(format!("{num_omitted_failed_runs} failed runs omitted"));
+        }
+        if num_omitted_invalid_runs > 0 {
+            excluded.push(format!("{num_omitted_invalid_runs} invalid runs omitted"));
         }
         if !discarded_outliers.is_empty() {
             let n = discarded_outliers.len();
@@ -1681,6 +1779,17 @@ impl<'a> BenchmarkRunner<'a> {
                     total: original_run_count,
                 });
             }
+            if num_omitted_invalid_runs > 0 {
+                warnings.push(Warnings::InvalidRunsOmitted {
+                    omitted: num_omitted_invalid_runs,
+                    total: original_run_count,
+                });
+            } else if self.invalid_runs > 0 {
+                warnings.push(Warnings::InvalidRunsKept {
+                    invalid: self.invalid_runs as usize,
+                    checked: self.validated_runs as usize,
+                });
+            }
 
             let metric_samples = self.metric_samples();
 
@@ -1903,6 +2012,7 @@ impl<'a> BenchmarkRunner<'a> {
                 .map(|(name, value)| (name.to_string(), value.to_string()))
                 .collect(),
             omitted_failed_runs,
+            validation: validation_summary,
             discarded_outliers,
             resources,
             runs_planned,

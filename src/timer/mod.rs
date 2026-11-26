@@ -60,6 +60,8 @@ pub struct TimerResult {
     /// Descendants of the command were still running when it exited (they
     /// were killed; see `docs/specs/process-tree.md`)
     pub leftover_processes: bool,
+    /// Stdout of the run, kept for `--expect-output-sha256` / `--validate`
+    pub validation_stdout: Option<Vec<u8>>,
 }
 
 #[cfg(windows)]
@@ -760,6 +762,7 @@ pub fn execute_and_measure(
         until_matched,
         custom_metrics: std::collections::BTreeMap::new(),
         leftover_processes,
+        validation_stdout: None,
     })
 }
 

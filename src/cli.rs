@@ -484,6 +484,72 @@ pub fn build_command() -> Command {
                 ),
         )
         .arg(
+            Arg::new("expect-output-sha256")
+                .long("expect-output-sha256")
+                .visible_alias("expect-output-hash")
+                .action(ArgAction::Set)
+                .value_name("HEX")
+                .conflicts_with_all(["show-output", "show-output-on-failure", "until", "concurrency", "output"])
+                .help("Fail when the SHA-256 of a run's stdout differs from HEX.")
+                .long_help(
+                    "Fail when the SHA-256 of a run's stdout differs from HEX (64 hex digits).\n\n\
+                     Checks that the benchmarked command produced the right result, so that an \
+                     implementation cannot look fast because it did less work. A run with a wrong \
+                     output is invalid, which is different from a non-zero exit code. Stdout is \
+                     captured (at most 16 MiB) and hashed after the timed window of the run, so \
+                     validation is never part of the measured time, memory or energy. Failed \
+                     runs (non-zero exit code) are not validated. Use '--on-invalid' to choose \
+                     what happens to invalid runs.\n\n\
+                     Example:\n\n  \
+                       perfratio --expect-output-sha256 \
+                       ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad 'printf abc'",
+                ),
+        )
+        .arg(
+            Arg::new("validate")
+                .long("validate")
+                .action(ArgAction::Set)
+                .value_name("CMD")
+                .conflicts_with_all(["show-output", "show-output-on-failure", "until", "concurrency", "output"])
+                .help("Run CMD after each run with the run's stdout on stdin; non-zero marks the run invalid.")
+                .long_help(
+                    "Run CMD (through 'sh -c', or 'cmd.exe /C' on Windows) after each run. It \
+                     receives the stdout of the run on stdin and the run number in the \
+                     environment variable PERFRATIO_RUN_ID (the same number as PERFRATIO_ITERATION). \
+                     A non-zero exit code marks the run invalid, which is different from a \
+                     failure of the benchmarked command. The validator runs outside the timed \
+                     window. Numeric tolerance and structure checks belong in CMD. Combine with \
+                     '--expect-output-sha256' to check both.",
+                ),
+        )
+        .arg(
+            Arg::new("validate-first-only")
+                .long("validate-first-only")
+                .action(ArgAction::SetTrue)
+                .help("Check only the first timed run (for long deterministic workloads).")
+                .long_help(
+                    "Check only the first timed run. Needs '--expect-output-sha256' or \
+                     '--validate'. For long deterministic workloads whose output does not change.",
+                ),
+        )
+        .arg(
+            Arg::new("on-invalid")
+                .long("on-invalid")
+                .action(ArgAction::Set)
+                .value_name("MODE")
+                .value_parser(["fail", "omit", "keep"])
+                .help("What to do with a run that fails validation: fail (default), omit or keep.")
+                .long_help(
+                    "What to do with a run that fails '--expect-output-sha256' or '--validate'.\n\n  \
+                     fail  Abort the benchmark, naming the run (default)\n  \
+                     omit  Drop the run from the statistics. Omitting can hide a failing \
+                     implementation: the number of omitted runs is always printed and exported\n  \
+                     keep  Keep the run and flag it in the output and the export\n\n\
+                     The exit code policy ('--ignore-failure', '--omit-failed-runs') is separate \
+                     and unchanged.",
+                ),
+        )
+        .arg(
             Arg::new("style")
                 .long("style")
                 .short('l')
@@ -873,6 +939,52 @@ pub fn build_command() -> Command {
                      the relative delta with its 95% confidence interval, and the p-value. \
                      Dimensions that were not measured are left out. With '--export-markdown', \
                      the tables are appended to the exported file.",
+                ),
+        )
+        .arg(
+            Arg::new("pareto")
+                .long("pareto")
+                .value_name("METRICS")
+                .help(
+                    "Mark the commands on the Pareto frontier of the comma-separated metrics, \
+                     e.g. 'wall,energy,memory': the commands that no other command beats in one \
+                     metric without being worse in another. A metric takes an optional statistic \
+                     ('wall.p95', 'memory.max'). Commands without data for a metric are excluded, \
+                     never counted as 0. Printed after the summary, and added to the JSON, \
+                     Markdown and HTML exports.",
+                ),
+        )
+        .arg(
+            Arg::new("constraint")
+                .long("constraint")
+                .value_name("EXPR")
+                .action(ArgAction::Append)
+                .help(
+                    "Only commands that satisfy the constraint are candidates for '--pareto' \
+                     and '--objective'. EXPR is '<METRIC> <op> <VALUE>' with <=, <, >= or >, \
+                     e.g. 'memory <= 256MiB' or 'wall.p95 <= 20ms'. Repeatable.",
+                ),
+        )
+        .arg(
+            Arg::new("objective")
+                .long("objective")
+                .value_name("DIRECTION:METRIC")
+                .help(
+                    "Pick the single best candidate under the constraints, e.g. \
+                     'minimize:energy' or 'maximize:custom:ops'. Without '--pareto' the \
+                     frontier is taken over this metric alone.",
+                ),
+        )
+        .arg(
+            Arg::new("noise-threshold")
+                .long("noise-threshold")
+                .value_name("PERCENT")
+                .requires("pareto")
+                .help(
+                    "With '--pareto': a command counts as dominated only if another is better \
+                     by more than PERCENT of the value on some metric and not worse beyond it \
+                     on any. Otherwise it stays on the frontier as 'not dominated (within \
+                     noise)'. Default: strict comparison.",
                 ),
         )
         .arg(

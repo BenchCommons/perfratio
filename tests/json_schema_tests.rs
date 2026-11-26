@@ -138,6 +138,17 @@ const CASES: &[(&str, &[&str])] = &[
         ],
     ),
     (
+        "pareto",
+        &[
+            "--runs=3",
+            "--pareto=wall,memory",
+            "--constraint=wall<=10s",
+            "--objective=minimize:wall",
+            "sleep 0.1",
+            "sleep 0.2",
+        ],
+    ),
+    (
         "metric memory",
         &["--runs=3", "--metric=memory", "sleep 0.1", "sleep 0.2"],
     ),
@@ -215,6 +226,20 @@ const CASES: &[(&str, &[&str])] = &[
             "1",
             "40",
             "sleep {n}",
+        ],
+    ),
+    (
+        "validation omit",
+        &[
+            "--runs=3",
+            "--on-invalid=omit",
+            "--expect-output-sha256",
+            "5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03",
+            "-L",
+            "w",
+            "hello,bad,hello",
+            "--aggregate-parameter-runs",
+            "sleep 0.1 0 0 0 {w}",
         ],
     ),
     ("duration", &["--duration=1s", "sleep 0.5"]),
@@ -310,7 +335,7 @@ const NEEDS_REAL_HOST: &[&str] = &[
     "omitted_failed_runs",
     "shell",
     // `leftover_processes` needs a command that leaves a child behind (Unix case in
-    // `real_cases`); `energy_per_instance_joules` is no longer written since 1.16
+    // `real_cases`); `energy_per_instance_joules` is no longer written since 1.18
     "leftover_processes",
     "energy_per_instance_joules",
 ];
@@ -417,6 +442,19 @@ fn energy_samples_counts_runs_with_a_sample() {
     assert_valid("energy samples", &document);
     let without = export(&["--runs=3", "sleep 0.1"]);
     assert!(without["results"][0].get("energy_samples").is_none());
+}
+
+#[test]
+fn validation_object_matches_the_schema() {
+    let document = export(&[
+        "--runs=2",
+        "--on-invalid=keep",
+        "--expect-output-sha256",
+        &"0".repeat(64),
+        "sleep 0.1 0 0 0 hello",
+    ]);
+    assert_eq!(document["results"][0]["validation"]["runs_invalid"], 2);
+    assert_valid("validation", &document);
 }
 
 #[test]

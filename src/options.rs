@@ -345,6 +345,9 @@ pub struct Options {
     /// `--optimize`: search a parameter for the best value of the primary metric
     pub optimize: Option<crate::optimize::OptimizeSpec>,
 
+    /// `--pareto`, `--constraint`, `--objective`
+    pub pareto: Option<crate::pareto::ParetoConfig>,
+
     /// Measure energy consumption in Joules and display Performance per Watt
     pub measure_energy: bool,
 
@@ -375,6 +378,9 @@ pub struct Options {
 
     /// Whether to exclude failed runs from summary statistics
     pub omit_failed_runs: bool,
+
+    /// `--expect-output-sha256` / `--validate`: check the result of each run
+    pub validation: Option<crate::validation::ValidationConfig>,
 
     /// Modified Z-score above which runs are discarded (--discard-outliers)
     pub discard_outliers: Option<f64>,
@@ -453,6 +459,7 @@ impl Default for Options {
             command_input_policy: CommandInputPolicy::Null,
             metric: crate::metric::Metric::Wall,
             optimize: None,
+            pareto: None,
             measure_energy: false,
             energy_baseline: None,
             energy_domains: false,
@@ -464,6 +471,7 @@ impl Default for Options {
             suppress_off_cpu_warnings: false,
             schedule: ScheduleMode::Grouped,
             omit_failed_runs: false,
+            validation: None,
             discard_outliers: None,
             show_resource_usage: false,
             counters: None,
@@ -728,6 +736,19 @@ impl Options {
             );
         }
         options.energy_domains = matches.get_flag("energy-domains");
+        options.pareto = crate::pareto::ParetoConfig::parse(
+            matches.get_one::<String>("pareto").map(String::as_str),
+            matches
+                .get_many::<String>("constraint")
+                .into_iter()
+                .flatten()
+                .map(String::as_str),
+            matches.get_one::<String>("objective").map(String::as_str),
+            matches
+                .get_one::<String>("noise-threshold")
+                .map(String::as_str),
+        )
+        .map_err(OptionsError::InvalidPareto)?;
         if let Some(val) = matches.get_one::<String>("concurrency") {
             if val.contains('{') {
                 // Resolved per parameter combination, once the commands are known
@@ -866,6 +887,7 @@ impl Options {
             }
         }
         options.omit_failed_runs = matches.get_flag("omit-failed-runs");
+        options.validation = parse_validation(matches)?;
         options.show_resource_usage = matches.get_flag("resource-usage");
         let simd = matches.get_flag("simd");
         // `--metric instructions|cycles` collects its own counter
@@ -1333,4 +1355,43 @@ mod energy_baseline_tests {
             assert!(parse_energy_baseline(v).is_err(), "{v}");
         }
     }
+}
+
+/// `--expect-output-sha256`, `--validate`, `--validate-first-only`, `--on-invalid`
+#[cfg(feature = "cli")]
+fn parse_validation<'a>(
+    matches: &ArgMatches,
+) -> Result<Option<crate::validation::ValidationConfig>, OptionsError<'a>> {
+    use crate::validation::{parse_sha256, OnInvalid, ValidationConfig};
+    let expected_sha256 = matches
+        .get_one::<String>("expect-output-sha256")
+        .map(|value| {
+            parse_sha256(value).ok_or_else(|| {
+                OptionsError::InvalidValidation(format!(
+                "'--expect-output-sha256 {value}' is not a SHA-256: expected 64 hexadecimal digits"
+            ))
+            })
+        })
+        .transpose()?;
+    let validator = matches.get_one::<String>("validate").cloned();
+    let first_only = matches.get_flag("validate-first-only");
+    let on_invalid = matches
+        .get_one::<String>("on-invalid")
+        .and_then(|value| OnInvalid::parse(value));
+    if expected_sha256.is_none() && validator.is_none() {
+        if first_only || on_invalid.is_some() {
+            return Err(OptionsError::InvalidValidation(
+                "'--validate-first-only' and '--on-invalid' need '--expect-output-sha256' or \
+                 '--validate'"
+                    .into(),
+            ));
+        }
+        return Ok(None);
+    }
+    Ok(Some(ValidationConfig {
+        expected_sha256,
+        validator,
+        first_only,
+        on_invalid: on_invalid.unwrap_or_default(),
+    }))
 }

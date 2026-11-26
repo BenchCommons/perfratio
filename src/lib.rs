@@ -85,6 +85,8 @@ pub mod output_metric;
 #[doc(hidden)]
 pub mod parameter;
 #[doc(hidden)]
+pub mod pareto;
+#[doc(hidden)]
 pub mod perf_counters;
 #[doc(hidden)]
 pub mod pmu;
@@ -104,3 +106,5 @@ pub mod timer;
 pub mod topdown;
 #[doc(hidden)]
 pub mod util;
+#[doc(hidden)]
+pub mod validation;

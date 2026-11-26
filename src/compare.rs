@@ -245,7 +245,20 @@ pub fn terminal_table(
         out.push_str(&line(row));
         out.push('\n');
     }
+    for note in validation_notes(comparison) {
+        out.push_str(&format!("Warning: {note}\n"));
+    }
     out
+}
+
+/// Results (baseline or current) with runs that failed output validation
+fn validation_notes(comparison: &Comparison<'_>) -> Vec<String> {
+    comparison
+        .deltas
+        .iter()
+        .flat_map(|d| [d.baseline, d.current])
+        .filter_map(|r| r.validation_note())
+        .collect()
 }
 
 /// The comparison as a Markdown table (for PR comments / CI summaries).
@@ -269,6 +282,9 @@ pub fn markdown_table(
             out.push_str(&format!(" {cell} |"));
         }
         out.push('\n');
+    }
+    for note in validation_notes(comparison) {
+        out.push_str(&format!("\n_Warning: {}_\n", escape(&note)));
     }
     out
 }

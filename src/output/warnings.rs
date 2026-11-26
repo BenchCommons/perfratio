@@ -42,6 +42,16 @@ pub enum Warnings {
         omitted: usize,
         total: usize,
     },
+    /// `--on-invalid omit`: runs that failed output validation were dropped
+    InvalidRunsOmitted {
+        omitted: usize,
+        total: usize,
+    },
+    /// `--on-invalid keep`: runs that failed output validation stay in the statistics
+    InvalidRunsKept {
+        invalid: usize,
+        checked: usize,
+    },
     TooManyOutliers {
         total: usize,
     },
@@ -222,6 +232,17 @@ impl fmt::Display for Warnings {
                 f,
                 "Omitted {omitted} of {total} benchmark runs with non-zero exit codes from the \
                  summary statistics."
+            ),
+            Warnings::InvalidRunsOmitted { omitted, total } => write!(
+                f,
+                "Omitted {omitted} of {total} benchmark runs that failed output validation from \
+                 the summary statistics. Omitting invalid runs can hide an implementation that \
+                 does not compute the right result."
+            ),
+            Warnings::InvalidRunsKept { invalid, checked } => write!(
+                f,
+                "{invalid} of {checked} validated runs failed output validation but are kept in \
+                 the statistics ('--on-invalid keep'). The timings may not be comparable."
             ),
             Warnings::Trend(rel_change, p_value) => write!(
                 f,

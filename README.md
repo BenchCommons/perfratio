@@ -21,6 +21,7 @@ borrow from [`Gabriella439/bench`](https://github.com/Gabriella439/bench). perfr
 - A regression gate against an earlier export (`--compare`, `--fail-if-regressed`).
 - Cross-language helpers: `--warmup auto`, `--first-run`, `--output-metric`, `--target-precision`.
 - Time-budgeted sampling (`--duration 5s`), a primary metric (`--metric`), a multi-dimensional `--delta-table`, and significance indicators on speedups and regressions.
+- `--pareto wall,energy,memory` marks the commands on the Pareto frontier; `--constraint 'memory <= 256MiB'` and `--objective minimize:energy` pick the best candidate under limits.
 - A versioned JSON export for tools that consume the results (`schemaVersion`).
 
 Run `perfratio --help` for every option. perfratio can read hyperfine and joulex JSON
@@ -147,6 +148,8 @@ dimension (wall time, peak memory, energy, power, CPU time): mean ± σ, relativ
 primary metric for statistics, comparison and sorting. `instructions` and `cycles` turn on
 `--counters` (Linux). Markdown, AsciiDoc and Org tables get IPC, CPI and miss-rate columns when
 counters were collected.
+
+`--expect-output-sha256 HEX` and `--validate CMD` check that each run produced the right result, so a command cannot look fast because it did less work; `--on-invalid fail|omit|keep` picks what happens to a wrong run ([spec](docs/specs/workload-validation.md)).
 
 `--check-system` reports conditions that add noise (frequency governor, turbo boost, load,
 power source). `--check-system=strict` aborts with exit code 4 if a check fails.

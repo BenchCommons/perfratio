@@ -1,6 +1,6 @@
 # Spec: process-tree cancellation, leftover detection and shared-metric attribution (#309)
 
-**Status:** Shipped in 1.1 (schemaVersion 1.16).
+**Status:** Shipped in 1.1 (schemaVersion 1.18).
 
 ## Problem / Motivation
 References: #309, #291 (macOS/Windows parity), `timeout.md`, `ctrlc-handling.md`, `concurrency.md`,
@@ -66,7 +66,7 @@ was not reaped yet, or as children of perfratio.
 
 ### Shared-metric attribution
 - Package energy and other system-wide counters are **never** reported as a per-instance value.
-- `energy_per_instance_joules` (1.5, `mean / N`) is no longer written (1.16). The field stays in the
+- `energy_per_instance_joules` (1.5, `mean / N`) is no longer written (1.18). The field stays in the
   schema as optional, for files of earlier versions.
 - With `--energy` each result has `energy_scope`: `batch` with `--concurrency N`, N > 1 (the energy
   of the whole batch over the makespan), else `system` (the package counter, which covers the whole
@@ -76,7 +76,7 @@ was not reaped yet, or as children of perfratio.
 - Hardware counters (`--counters`) of a batch are the sum over the instances (each instance has its
   own counters), so they are `process_tree` values summed, not a shared counter.
 
-## JSON (additive, `schemaVersion` 1.15 to 1.16)
+## JSON (additive, `schemaVersion` 1.17 to 1.18)
 `leftover_processes`, `energy_scope`; `energy_per_instance_joules` is no longer written. See
 `output-schema-contract.md`.
 
