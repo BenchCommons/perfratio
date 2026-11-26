@@ -497,6 +497,10 @@ pub struct Options {
     /// `--artifact-dir`: parent of the per-run directories (`PERFRATIO_RUN_DIR`)
     pub artifact_dir: Option<PathBuf>,
 
+    /// `--pin-workers` / `--reserve-cpus`: the CPUs of every worker (`None`:
+    /// the workers are not pinned)
+    pub cpu_partition: Option<crate::util::cpu_partition::Partition>,
+
     /// `--until`: stop timer upon readiness output pattern
     pub until: Option<UntilSettings>,
 
@@ -566,6 +570,7 @@ impl Default for Options {
             concurrency_template: None,
             jobs: 1,
             artifact_dir: None,
+            cpu_partition: None,
             until: None,
             output_metrics: Vec::new(),
             output_metrics_stderr: false,
@@ -1116,10 +1121,66 @@ impl Options {
 
         options.allow_setup_with_round_robin = matches.get_flag("allow-setup-with-round-robin");
 
+        options.cpu_partition = options.plan_cpu_partition(matches)?;
         options.warn_concurrency();
         options.warn_jobs();
 
         Ok(options)
+    }
+
+    /// `--pin-workers` and `--reserve-cpus`: the CPUs of every worker.
+    #[cfg(feature = "cli")]
+    fn plan_cpu_partition<'a>(
+        &self,
+        matches: &ArgMatches,
+    ) -> Result<Option<crate::util::cpu_partition::Partition>, OptionsError<'a>> {
+        use crate::util::cpu_partition as cpus;
+        let pin = matches.get_one::<String>("pin-workers").map(String::as_str);
+        let reserve = matches.get_one::<String>("reserve-cpus");
+        let invalid = |message: String| OptionsError::InvalidPinWorkers(message);
+        if self.jobs <= 1 {
+            return match (pin, reserve) {
+                (None, None) => Ok(None),
+                _ => Err(invalid(
+                    "these options divide the CPUs among the workers and need '--jobs' > 1"
+                        .to_string(),
+                )),
+            };
+        }
+        if pin == Some("none") {
+            return match reserve {
+                None => Ok(None),
+                Some(_) => Err(invalid(
+                    "'--reserve-cpus' keeps CPUs free of workers, which needs pinned workers; \
+                     it cannot be combined with '--pin-workers=none'"
+                        .to_string(),
+                )),
+            };
+        }
+        let explicit = pin.is_some() || reserve.is_some();
+        // The simulated runs of '--debug-mode' start no processes to pin
+        if !explicit && matches.get_flag("debug-mode") {
+            return Ok(None);
+        }
+        if !cpus::supported() {
+            if explicit {
+                eprintln!(
+                    "{} the workers cannot be pinned to CPUs on this platform; '--pin-workers' \
+                     and '--reserve-cpus' are ignored. Use '--affinity p-cores|e-cores' on macOS \
+                     (Apple Silicon) to prefer a core type.",
+                    crate::output::colors::yellow("Warning:")
+                );
+            }
+            return Ok(None);
+        }
+        let reserve = reserve
+            .map(|value| cpus::Reserve::parse(value))
+            .transpose()
+            .map_err(|e| invalid(format!("{e:#}")))?;
+        let topology = cpus::discover(self.affinity.as_deref());
+        cpus::partition(&topology, reserve.as_ref(), self.jobs)
+            .map(Some)
+            .map_err(|e| invalid(format!("{e:#}")))
     }
 
     #[cfg(feature = "cli")]
@@ -1152,6 +1213,7 @@ impl Options {
             jobs: self.jobs,
             schedule_policy: policy.name(),
             contended: true,
+            cpu_partition: self.cpu_partition.clone(),
         })
     }
 

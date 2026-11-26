@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.22 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.23 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.22",
+      "const": "1.23",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -257,6 +257,39 @@
             "contended": {
               "const": true,
               "description": "The runs disturbed each other; always true."
+            },
+            "cpu_partition": {
+              "type": "object",
+              "properties": {
+                "workers": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "minItems": 1
+                  },
+                  "description": "CPUs of worker i; disjoint."
+                },
+                "reserved": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "description": "CPUs kept for perfratio's own threads; no worker uses them. Omitted when none."
+                },
+                "shared_siblings": {
+                  "const": true,
+                  "description": "More workers than physical cores: some workers share a core with another worker. Omitted when false."
+                }
+              },
+              "required": [
+                "workers"
+              ],
+              "description": "Only when the workers were pinned (--pin-workers=auto, the default with --jobs > 1 on Linux and Windows). New in 1.23, #307."
             }
           },
           "required": [
