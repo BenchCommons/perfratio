@@ -53,7 +53,7 @@ fn region_has_a_metric_descriptor_with_region_scope() {
     assert_eq!(descriptor["fields"], serde_json::json!(["regions"]));
     // whole-process time keeps its own process scope
     let wall = metrics.iter().find(|m| m["id"] == "time.wall").unwrap();
-    assert_eq!(wall["scope"], "process");
+    assert_eq!(wall["scope"], "process_tree");
 }
 
 #[test]
