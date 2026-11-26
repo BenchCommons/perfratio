@@ -1,6 +1,6 @@
 # Spec: `--topdown` Top-down Microarchitecture Analysis, level 1 (#221)
 
-**Status:** Implemented in `src/topdown.rs` (schemaVersion 1.11). The formulas, event discovery and
+**Status:** Implemented in `src/topdown.rs` (schemaVersion 1.12). The formulas, event discovery and
 exports are unit-tested with injected sysfs and CPU data. **Not yet run on a PMU:** the hardware
 tests below (`PERFRATIO_TEST_PERF=1`) and the "group + inherit" check on the oldest kernel are
 open, and CI has no PMU. Differences from the text below are listed under "Implementation notes".

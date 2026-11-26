@@ -182,7 +182,7 @@ request comment. A GitHub Actions example is in [doc/ci.md](doc/ci.md).
 
 `--export-json <FILE>` (or `-e results.json`) writes the summary statistics and every run's
 timings. perfratio owns this output, and consumers such as `tools-benchmark` read it.
-The current version is `"1.11"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested. The legacy top-level `joulex` key was removed in `schemaVersion` 1.0: read `perfratio` instead ([docs/MIGRATION.md](docs/MIGRATION.md)).
+The current version is `"1.12"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested. The legacy top-level `joulex` key was removed in `schemaVersion` 1.0: read `perfratio` instead ([docs/MIGRATION.md](docs/MIGRATION.md)).
 
 The contract is a top-level `"schemaVersion": "MAJOR.MINOR"` string. Consumers must ignore
 unknown keys and accept any MINOR version of the MAJOR version they support. A removed or
@@ -191,7 +191,14 @@ renamed field, or a changed unit, bumps MAJOR.
 The contract is specified in [docs/specs/output-schema-contract.md](docs/specs/output-schema-contract.md)
 (see [#240](https://github.com/BenchCommons/perfratio/issues/240)). Read that document for the
 field list. Files without `schemaVersion` are the legacy shape, and `--import-json` still
-reads them. A JSON Schema file and per-run `energy_samples` are not available yet.
+reads them.
+
+- [docs/schema/perfratio-export.schema.json](docs/schema/perfratio-export.schema.json) is the
+  JSON Schema (draft 2020-12) of the current version. `cargo test` validates exports of many
+  flag combinations against it, so it cannot drift from the output.
+- [doc/understanding-output.md](doc/understanding-output.md#the-json-export) explains every field,
+  the units and the `perfratio.measurements` status block.
+- `energy_samples` (per result) says how many runs produced an energy sample.
 
 ## Recommended flags for cross-language runs
 
