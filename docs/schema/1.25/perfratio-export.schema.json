@@ -315,34 +315,6 @@
             "$ref": "#/$defs/metricDescriptor"
           }
         },
-        "calibration": {
-          "type": "object",
-          "properties": {
-            "wall_floor": {
-              "$ref": "#/$defs/seconds",
-              "description": "Median wall time of a trivial command, net of the shell spawn time, in seconds."
-            },
-            "wall_floor_mad": {
-              "$ref": "#/$defs/seconds",
-              "description": "Median absolute deviation of the calibration wall times."
-            },
-            "rss_floor": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Median peak RSS of the trivial command in bytes. Omitted when the platform reports none."
-            },
-            "runs": {
-              "type": "integer",
-              "minimum": 1
-            }
-          },
-          "required": [
-            "wall_floor",
-            "wall_floor_mad",
-            "runs"
-          ],
-          "description": "Runner floor measured by --calibrate (new in 1.25, #313). Omitted with --calibrate=off, with --debug-mode, or when it could not be measured."
-        },
         "statistics": {
           "type": "object",
           "properties": {
@@ -378,6 +350,32 @@
             "bootstrap_seed"
           ],
           "description": "New in 1.21 (#320): how the ranking, ratios, intervals and significance were computed. Always written by 1.21 and later; not required here, so that a MINOR addition is not a breaking change for consumers of older exports."
+        },
+        "schedule": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "description": "grouped, round-robin, randomized, balanced, or with --jobs saturate, exclusive, fair. Open enum."
+            },
+            "seed": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Unsigned 64-bit seed of the shuffled order; only with mode randomized (the --seed value)."
+            },
+            "order": {
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "description": "Realized order of the measured runs of an interleaved schedule: the results[] index of each run, in execution order. Omitted for grouped, with --jobs and with a single command."
+            }
+          },
+          "required": [
+            "mode"
+          ],
+          "description": "New in 1.25 (#324): how the runs of several commands were ordered. Always written by 1.25 and later; not required here, so that a MINOR addition is not a breaking change for consumers of older exports."
         }
       },
       "required": [
@@ -862,10 +860,6 @@
               "status"
             ]
           }
-        },
-        "below_resolution": {
-          "type": "boolean",
-          "description": "The mean is within the runner floor (new in 1.25, #313). Omitted when no floor was measured."
         }
       },
       "required": [

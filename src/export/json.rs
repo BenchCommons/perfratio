@@ -25,7 +25,7 @@ pub struct PrimaryMetricStats {
 }
 
 /// Version of the JSON output contract (`docs/specs/output-schema-contract.md`).
-pub const SCHEMA_VERSION: &str = "1.25";
+pub const SCHEMA_VERSION: &str = "1.26";
 
 #[derive(Serialize, Debug)]
 struct PerfratioSummary<'a> {
@@ -75,13 +75,20 @@ struct ResultEntry<'a> {
 }
 
 /// The `perfratio` object: the run metadata plus the descriptor of every metric (#317).
-fn with_metrics(metadata: &ExportMetadata, results: &[BenchmarkResult]) -> serde_json::Value {
+fn with_metrics(
+    metadata: &ExportMetadata,
+    results: &[BenchmarkResult],
+    schedule: Option<serde_json::Value>,
+) -> serde_json::Value {
     let mut value = serde_json::to_value(metadata).unwrap_or(serde_json::Value::Null);
     if let (Some(object), Ok(metrics)) = (
         value.as_object_mut(),
         serde_json::to_value(crate::metric_registry::descriptors(results, metadata)),
     ) {
         object.insert("metrics".into(), metrics);
+    }
+    if let (Some(object), Some(schedule)) = (value.as_object_mut(), schedule) {
+        object.insert("schedule".into(), schedule);
     }
     value
 }
@@ -95,6 +102,8 @@ pub struct JsonExporter {
     pub pareto: std::sync::Mutex<Option<Analysis>>,
     /// Runner floor measured by `--calibrate`
     pub calibration: std::sync::Mutex<Option<Floor>>,
+    /// `perfratio.schedule` (new in 1.23, #324)
+    pub schedule: std::sync::Mutex<Option<serde_json::Value>>,
 }
 
 impl Exporter for JsonExporter {
@@ -119,8 +128,16 @@ impl Exporter for JsonExporter {
         };
         let reference_result = reference
             .or_else(|| (!results.is_empty()).then(|| relative_speed::fastest_of(results)));
-        let mut perfratio = self.metadata.as_ref().map(|m| with_metrics(m, results));
-        // Runner floor of `--calibrate` (new in 1.25, #313)
+        let schedule = self
+            .schedule
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        let mut perfratio = self
+            .metadata
+            .as_ref()
+            .map(|m| with_metrics(m, results, schedule));
+        // Runner floor of `--calibrate` (new in 1.26, #313)
         if let (Some(serde_json::Value::Object(object)), Some(floor)) = (
             perfratio.as_mut(),
             *self.calibration.lock().unwrap_or_else(|e| e.into_inner()),
@@ -196,6 +213,10 @@ impl Exporter for JsonExporter {
 
     fn set_calibration(&self, floor: Option<&Floor>) {
         *self.calibration.lock().unwrap_or_else(|e| e.into_inner()) = floor.copied();
+    }
+
+    fn set_schedule(&self, value: Option<&serde_json::Value>) {
+        *self.schedule.lock().unwrap_or_else(|e| e.into_inner()) = value.cloned();
     }
 
     fn set_pareto(&self, analysis: Option<(&ParetoConfig, &Analysis)>) {
