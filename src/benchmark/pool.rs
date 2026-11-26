@@ -196,6 +196,14 @@ pub fn run_pool(
     mut on_run: impl FnMut(&BenchmarkRunner<'_>),
 ) -> Result<()> {
     let started = Instant::now();
+    // No more workers than runs: a huge `--jobs` must not start thousands of threads
+    let workers = if adaptive {
+        jobs
+    } else {
+        let planned: u64 = runners.iter().map(|r| r.count.saturating_sub(1)).sum();
+        jobs.min(usize::try_from(planned).unwrap_or(usize::MAX))
+            .max(1)
+    };
     let contexts: Vec<RunContext<'_>> = runners
         .iter()
         .map(|r| RunContext {
@@ -219,16 +227,15 @@ pub fn run_pool(
 
     std::thread::scope(|scope| {
         let (done_tx, done_rx) = mpsc::channel::<Finished>();
-        let mut job_txs = Vec::with_capacity(jobs);
-        for slot in 0..jobs {
+        let mut job_txs = Vec::with_capacity(workers);
+        for slot in 0..workers {
             let (tx, rx) = mpsc::channel::<(usize, u64)>();
-            job_txs.push(tx);
             let done_tx = done_tx.clone();
             let contexts = &contexts;
             let cpus: Option<Arc<[usize]>> =
                 partition.map(|p| Arc::from(p.workers[slot].as_slice()));
             let reserved = reserved.clone();
-            scope.spawn(move || {
+            let spawned = std::thread::Builder::new().spawn_scoped(scope, move || {
                 WORKER.with(|w| w.set(Some(slot)));
                 WORKER_CPUS.with(|c| *c.borrow_mut() = cpus);
                 // Processes started from this thread are pinned to the worker's
@@ -247,10 +254,18 @@ pub fn run_pool(
                     }
                 }
             });
+            if let Err(e) = spawned {
+                // Run with the workers that could be started
+                if job_txs.is_empty() {
+                    first_error = Some(anyhow!("could not start a benchmark worker: {e}"));
+                }
+                break;
+            }
+            job_txs.push(tx);
         }
         drop(done_tx);
 
-        let mut idle: Vec<usize> = (0..jobs).rev().collect();
+        let mut idle: Vec<usize> = (0..job_txs.len()).rev().collect();
         let mut running = 0usize;
         loop {
             // Start as many runs as there are idle workers
