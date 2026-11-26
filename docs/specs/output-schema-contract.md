@@ -1,7 +1,7 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Shipped except the `.product` link (schemaVersion 1.20; 1.20 adds `perfratio.metrics[]`, the metric descriptors of #317 (`metric-descriptors.md`); 1.19 adds `results[].run_ids`, `instance_run_ids`, `leftover_processes` and `energy_scope` from #308 and #309 (`run-identity.md`, `process-tree.md`) and stops writing `energy_per_instance_joules`; 1.18 adds `results[].quality` from #318 (`measurement-quality.md`); 1.17 adds `results[].validation` from #316 (`workload-validation.md`); 1.16 adds the optional `pareto` object from #326 (`pareto.md`); 1.15 adds `optimize.reevaluated` and fractional `optimize` values with `-D` (#98); 1.14 adds `--simd` fields from #211 (`simd-breakdown.md`); 1.13 adds the software events and the effective frequency fields of #220 and #222; 1.12 adds `--topdown` fields from #221 (`topdown-tma.md`); 1.11 adds `results[].energy_samples` (#240) and the JSON Schema file `docs/schema/perfratio-export.schema.json`, validated by `tests/json_schema_tests.rs`; 1.10 adds `results[].counters_coverage` (#219); 1.9 adds the `:u`/`:k` counter key suffixes, `counters_scope` values `kernel` and `perfratio.measurements.counters_requested_scope` from #218 (`counter-scope-modifiers.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
+Shipped except the `.product` link (schemaVersion 1.21; 1.21 adds `perfratio.statistics` and `results[].relative_speed_ci` from #320 (`statistics-settings.md`); 1.20 adds `perfratio.metrics[]`, the metric descriptors of #317 (`metric-descriptors.md`); 1.19 adds `results[].run_ids`, `instance_run_ids`, `leftover_processes` and `energy_scope` from #308 and #309 (`run-identity.md`, `process-tree.md`) and stops writing `energy_per_instance_joules`; 1.18 adds `results[].quality` from #318 (`measurement-quality.md`); 1.17 adds `results[].validation` from #316 (`workload-validation.md`); 1.16 adds the optional `pareto` object from #326 (`pareto.md`); 1.15 adds `optimize.reevaluated` and fractional `optimize` values with `-D` (#98); 1.14 adds `--simd` fields from #211 (`simd-breakdown.md`); 1.13 adds the software events and the effective frequency fields of #220 and #222; 1.12 adds `--topdown` fields from #221 (`topdown-tma.md`); 1.11 adds `results[].energy_samples` (#240) and the JSON Schema file `docs/schema/perfratio-export.schema.json`, validated by `tests/json_schema_tests.rs`; 1.10 adds `results[].counters_coverage` (#219); 1.9 adds the `:u`/`:k` counter key suffixes, `counters_scope` values `kernel` and `perfratio.measurements.counters_requested_scope` from #218 (`counter-scope-modifiers.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
@@ -119,6 +119,12 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
   values is closed (a new built-in value is MAJOR); the `custom:` prefix is a pattern, so
   consumers must accept any `custom:<name>` and treat it as unitless.
 - `perfratio` (object, guaranteed): run metadata, as `ExportMetadata` today.
+- `perfratio.statistics` (object, **new in 1.21**, #320; written by every export of 1.21 and later, absent from older ones): `{estimator, confidence_level,
+  significance_level, bootstrap_resamples, bootstrap_seed}`. `estimator` is `mean`, `median` or a
+  percentile such as `p95` and is the central value behind `relative_speed`, `significance`,
+  `p_value` and the delta table. With the defaults (`mean`, 0.95, 0.05, 5000 and the fixed
+  default seed) every other number is unchanged. `bootstrap_seed` is an unsigned 64-bit integer
+  (the default exceeds 2^53: parse it as an integer, not a double).
 - `perfratio.measurements` (object, guaranteed, **new**): one status per measurement group,
   host-level and identical for every result:
   - `"measured"`: requested and the backend works;
@@ -182,7 +188,8 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `exit_codes` | (int or `null`)[]; `null` = killed by a signal | guaranteed |
 | `primary_metric` { `metric`, `mean`, `stddev`?, `samples`? } (**new in 1.1**, #48; `metric` may be `custom:<name>` since 1.2) | metric unit (s, J, bytes; custom: as printed by the command) | optional (only with `--metric` other than `wall` and data for the metric) |
 | `relative_speed` | ratio to fastest/reference (1.0 = baseline) | optional (omitted if not computable) |
-| `relative_speed_stddev` | ratio | optional (omitted for the baseline) |
+| `relative_speed_stddev` | ratio | optional (omitted for the baseline; only with `statistics.estimator = "mean"`) |
+| `relative_speed_ci` (**new in 1.21**, #320) | `[low, high]` ratio, bootstrap interval at `statistics.confidence_level` | optional (estimators other than the mean, not for the baseline) |
 | `percentiles` { `p05`, `p25`, `p75`, `p95` } | s | optional |
 | `geometric_mean` | s | optional (omitted if a run took 0 s) |
 | `cpu_percent` | % | optional |

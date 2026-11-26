@@ -99,6 +99,7 @@ fn test_markdown_efficiency_columns_only_when_present() {
         result,
         relative_speed: 1.0,
         relative_speed_stddev: None,
+        relative_speed_ci: None,
         is_reference: true,
         relative_ordering: std::cmp::Ordering::Equal,
     };
@@ -137,6 +138,7 @@ fn test_markdown_concurrency_column_only_when_present() {
         result,
         relative_speed: 1.0,
         relative_speed_stddev: None,
+        relative_speed_ci: None,
         is_reference: true,
         relative_ordering: std::cmp::Ordering::Equal,
     };
