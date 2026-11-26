@@ -338,6 +338,9 @@ pub struct Options {
     /// Primary metric used for statistics, outlier detection, comparison, and sorting
     pub metric: crate::metric::Metric,
 
+    /// `--optimize`: search a parameter for the best value of the primary metric
+    pub optimize: Option<crate::optimize::OptimizeSpec>,
+
     /// Measure energy consumption in Joules and display Performance per Watt
     pub measure_energy: bool,
 
@@ -430,6 +433,7 @@ impl Default for Options {
             time_unit: None,
             command_input_policy: CommandInputPolicy::Null,
             metric: crate::metric::Metric::Wall,
+            optimize: None,
             measure_energy: false,
             energy_baseline: None,
             energy_backend: crate::energy::BackendPreference::Auto,
@@ -768,6 +772,8 @@ impl Options {
             CommandInputPolicy::Null
         };
 
+        options.optimize = crate::optimize::OptimizeSpec::from_cli_arguments(matches)
+            .map_err(|e| OptionsError::InvalidOptimize(format!("{e:#}")))?;
         options.measure_energy = matches.get_flag("energy");
         if let Some(metric_str) = matches.get_one::<String>("metric") {
             options.metric = metric_str
@@ -912,6 +918,16 @@ impl Options {
 
         if num_commands == 0 {
             return Ok(());
+        }
+
+        if let Some(spec) = &self.optimize {
+            if let Some(command) = commands.iter().find(|c| !c.uses_parameter(&spec.var)) {
+                bail!(
+                    "'--optimize {var}': the command '{command}' does not contain '{{{var}}}'",
+                    var = spec.var,
+                    command = command.get_command_line()
+                );
+            }
         }
 
         if self.schedule == ScheduleMode::RoundRobin && !self.allow_setup_with_round_robin {

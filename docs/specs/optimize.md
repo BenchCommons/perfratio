@@ -1,6 +1,13 @@
 # Spec: `--optimize <VAR> <MIN> <MAX>` parameter search (#98)
 
-**Status:** Proposed. Scheduled for 1.x, not 1.0.
+**Status:** Shipped (#98), `schemaVersion` 1.6. `--metric` (#48) has landed, so `--optimize` works
+with every metric (`wall`, `cpu`, `energy`, `memory`, `custom:<name>`). Deviations from the
+proposal below: when the range fits into the budget (`MAX - MIN + 1 <= budget`) all values are
+evaluated and `algorithm` is `"exhaustive"`; the JSON `optimize` object also has `best_value`
+and, with other parameters, `fixed`; points are evaluated and exported one by one. Follow-ups
+(not done): re-evaluation of the final bracket under noise, `--reference`, HTML marker for the
+best point (#60), float parameters. The energy path is tested with the mock executor
+(`--debug-mode`) and with pure unit tests on the search; it was not run against real RAPL.
 
 ## Problem / Motivation
 References: #98, #48 (`--metric`), `sharkdp/hyperfine#320`, #60 (HTML report), #240 (JSON contract).
@@ -119,7 +126,7 @@ against the best point (the fastest by the primary metric).
 - Integration: JSON contains all evaluated points plus the `optimize` object; Ctrl-C test keeps partial results.
 - Energy path: mocked `EnergySampler` giving a parabola in VAR; `--metric energy` finds its minimum (no PMU/RAPL needed in CI).
 - Property test: for random convex integer functions, the result is within one step of the
-  true minimum given budget >= ceil(log_phi(range)) + 3.
+  true minimum given budget >= ceil(log_phi(range)) + 5 (the two endpoint evaluations cost 2 more than the +3 first estimated).
 
 ## Implementation breakdown
 1. Land #48 `--metric` (prerequisite for the energy case). Wall-time-only version may ship first.
