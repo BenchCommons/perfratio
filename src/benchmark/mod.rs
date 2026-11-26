@@ -782,6 +782,16 @@ impl<'a> BenchmarkRunner<'a> {
         }
     }
 
+    /// Position of the counter behind `--metric instructions|cycles` in each reading.
+    fn counter_index(&self, metric: crate::metric::Metric) -> Option<usize> {
+        let kind = metric.counter_kind()?;
+        let counters = self.options.counters.as_ref()?;
+        counters
+            .active
+            .iter()
+            .position(|spec| spec.kind == kind && spec.scope == counters.scope)
+    }
+
     fn metric_samples(&self) -> Vec<f64> {
         match self.options.metric {
             crate::metric::Metric::Wall => self.times_real.clone(),
@@ -799,6 +809,20 @@ impl<'a> BenchmarkRunner<'a> {
             }
             crate::metric::Metric::Memory => {
                 self.memory_usage_byte.iter().map(|&b| b as f64).collect()
+            }
+            crate::metric::Metric::Instructions | crate::metric::Metric::Cycles => {
+                let index = self.counter_index(self.options.metric);
+                self.hw_counters
+                    .iter()
+                    .filter_map(|run| {
+                        let i = index?;
+                        run.as_ref()?
+                            .get(i)
+                            .copied()
+                            .flatten()
+                            .map(|c| c.value as f64)
+                    })
+                    .collect()
             }
             // `finish()` guarantees a value for every run under `--metric custom:<name>`
             crate::metric::Metric::Custom(name) => self
@@ -836,6 +860,19 @@ impl<'a> BenchmarkRunner<'a> {
                     "'--metric energy' requires an energy reading for every run, but {missing} of {} \
                      runs have none. Check that RAPL (`energy_uj`) is readable.",
                     self.energy_measurements.len()
+                );
+            }
+        }
+        if let Some(kind) = self.options.metric.counter_kind() {
+            let metric = self.options.metric;
+            let have = self.metric_samples().len();
+            let total = self.hw_counters.len();
+            if self.counter_index(metric).is_none() || have == 0 || have != total {
+                bail!(
+                    "'--metric {metric}' requires a '{}' reading for every run, but {have} of {total} \
+                     runs have one. Hardware counters need Linux with a readable PMU \
+                     (`kernel.perf_event_paranoid <= 1` or CAP_PERFMON); see '--counters'.",
+                    kind.name()
                 );
             }
         }
@@ -1221,6 +1258,9 @@ impl<'a> BenchmarkRunner<'a> {
                             let m = format!("{:.1} MB", p_mean / (1024.0 * 1024.0));
                             let s = p_stddev.map(|sd| format!("{:.1} MB", sd / (1024.0 * 1024.0)));
                             (m, s)
+                        }
+                        Metric::Instructions | Metric::Cycles => {
+                            (format_count(p_mean), p_stddev.map(format_count))
                         }
                         Metric::Custom(_) => (
                             format!("{p_mean:.3}"),
@@ -1756,6 +1796,10 @@ impl<'a> BenchmarkRunner<'a> {
                 .as_ref()
                 .map(|e| e.multiplexed_runs)
                 .filter(|&n| n > 0),
+            counters_coverage: hw_export
+                .as_ref()
+                .map(|e| e.coverage.clone())
+                .filter(|c| !c.is_empty()),
             counters_scope: hw_export
                 .as_ref()
                 .and(self.options.counters.as_ref())

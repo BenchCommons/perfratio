@@ -543,6 +543,8 @@ pub fn build_command() -> Command {
                        * 'system': system / kernel CPU time\n  \
                        * 'energy': energy consumed in Joules (auto-enables '--energy')\n  \
                        * 'memory' (aliases: 'rss', 'peak-memory'): peak resident set size (RSS)\n  \
+                       * 'instructions': retired instructions (auto-enables '--counters', Linux)\n  \
+                       * 'cycles': CPU cycles (auto-enables '--counters', Linux)\n  \
                        * 'custom:<name>': a value extracted with '--output-metric <name>=<regex>' \
                          (lower is better; every run needs a value)\n"
                 ),
@@ -1150,7 +1152,7 @@ fn verify_app() {
 /// Validates `--metric`. Mirrors `Metric::from_str` (`src/metric.rs`), which this
 /// file cannot use because `build.rs` compiles it standalone.
 fn parse_metric_arg(s: &str) -> Result<String, String> {
-    const BUILTIN: [&str; 11] = [
+    const BUILTIN: [&str; 13] = [
         "wall",
         "wall-clock",
         "time",
@@ -1162,6 +1164,8 @@ fn parse_metric_arg(s: &str) -> Result<String, String> {
         "memory",
         "rss",
         "peak-memory",
+        "instructions",
+        "cycles",
     ];
     if BUILTIN.contains(&s.to_ascii_lowercase().as_str()) {
         return Ok(s.to_string());

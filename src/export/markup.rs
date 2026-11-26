@@ -7,6 +7,29 @@ use crate::util::units::Unit;
 use super::Exporter;
 use anyhow::Result;
 
+type EfficiencyField = fn(&BenchmarkResult) -> Option<f64>;
+
+/// Derived counter metrics shown as extra table columns, see
+/// `docs/specs/derived-counter-metrics.md`.
+const EFFICIENCY_COLUMNS: [(&str, EfficiencyField); 4] = [
+    ("IPC", |r| r.efficiency.and_then(|e| e.ipc)),
+    ("CPI", |r| r.efficiency.and_then(|e| e.cpi)),
+    ("Cache miss rate [%]", |r| {
+        r.efficiency
+            .and_then(|e| e.cache_miss_rate)
+            .map(|v| v * 100.0)
+    }),
+    ("Branch miss rate [%]", |r| {
+        r.efficiency
+            .and_then(|e| e.branch_miss_rate)
+            .map(|v| v * 100.0)
+    }),
+];
+
+fn format_efficiency(value: f64) -> String {
+    format!("{value:.2}")
+}
+
 pub enum Alignment {
     Left,
     Right,
@@ -17,26 +40,37 @@ pub trait MarkupExporter {
         // prepare table header strings
         let notation = format!("[{}]", unit.short_name());
 
+        // Derived counter columns (#213) only when `--counters` produced them
+        let efficiency_columns: Vec<(&str, EfficiencyField)> = EFFICIENCY_COLUMNS
+            .iter()
+            .copied()
+            .filter(|(_, get)| entries.iter().any(|e| get(e.result).is_some()))
+            .collect();
+
         // prepare table cells alignment
-        let cells_alignment = [
+        let mut cells_alignment = vec![
             Alignment::Left,
             Alignment::Right,
             Alignment::Right,
             Alignment::Right,
             Alignment::Right,
         ];
+        cells_alignment.extend(efficiency_columns.iter().map(|_| Alignment::Right));
 
         // emit table header format
         let mut table = self.table_header(&cells_alignment);
 
         // emit table header data
-        table.push_str(&self.table_row(&[
-            "Command",
-            &format!("Mean {notation}"),
-            &format!("Min {notation}"),
-            &format!("Max {notation}"),
-            "Relative",
-        ]));
+        let mut header: Vec<String> = vec![
+            "Command".into(),
+            format!("Mean {notation}"),
+            format!("Min {notation}"),
+            format!("Max {notation}"),
+            "Relative".into(),
+        ];
+        header.extend(efficiency_columns.iter().map(|(name, _)| name.to_string()));
+        let header: Vec<&str> = header.iter().map(String::as_str).collect();
+        table.push_str(&self.table_row(&header));
 
         // emit horizontal line
         table.push_str(&self.table_divider(&cells_alignment));
@@ -90,13 +124,18 @@ pub trait MarkupExporter {
             };
 
             // prepare table row entries
-            table.push_str(&self.table_row(&[
-                &self.command(cmd_str),
-                &mean_cell,
-                &min_cell,
-                &max_cell,
-                &format!("{rel_str}{rel_stddev_str}"),
-            ]))
+            let mut cells = vec![
+                self.command(cmd_str),
+                mean_cell,
+                min_cell,
+                max_cell,
+                format!("{rel_str}{rel_stddev_str}"),
+            ];
+            cells.extend(efficiency_columns.iter().map(|(_, get)| {
+                get(measurement).map_or_else(|| "n/a".to_string(), format_efficiency)
+            }));
+            let cells: Vec<&str> = cells.iter().map(String::as_str).collect();
+            table.push_str(&self.table_row(&cells))
         }
 
         // emit table footer format

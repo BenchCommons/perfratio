@@ -151,6 +151,11 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub counters_multiplexed_runs: Option<usize>,
 
+    /// Lowest `time_running / time_enabled` (0..=1) per counter that was
+    /// multiplexed; counters that were always fully scheduled are absent
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub counters_coverage: Option<BTreeMap<String, f64>>,
+
     /// Privilege levels counted: `all` (user + kernel) or `user`
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub counters_scope: Option<String>,
@@ -467,6 +472,17 @@ impl BenchmarkResult {
                 .memory_usage_byte
                 .as_ref()
                 .map(|m| m.iter().map(|&b| b as f64).collect()),
+            Metric::Instructions | Metric::Cycles => {
+                let samples: Vec<f64> = self
+                    .counters
+                    .as_ref()?
+                    .get(metric.name())?
+                    .iter()
+                    .flatten()
+                    .map(|&v| v as f64)
+                    .collect();
+                (!samples.is_empty()).then_some(samples)
+            }
             Metric::Custom(name) => {
                 let samples: Vec<f64> = self
                     .custom_metrics
@@ -500,6 +516,11 @@ impl BenchmarkResult {
                 let sum: u64 = mem.iter().sum();
                 Some(sum as f64 / mem.len() as f64)
             }
+            Metric::Instructions | Metric::Cycles => self
+                .counters_summary
+                .as_ref()?
+                .get(metric.name())
+                .map(|s| s.mean),
             Metric::Custom(name) => self
                 .custom_metrics_summary
                 .as_ref()?
@@ -563,6 +584,11 @@ impl BenchmarkResult {
                     None
                 }
             }),
+            Metric::Instructions | Metric::Cycles => self
+                .counters_summary
+                .as_ref()?
+                .get(metric.name())
+                .and_then(|s| s.stddev),
             Metric::Custom(name) => self
                 .custom_metrics_summary
                 .as_ref()?

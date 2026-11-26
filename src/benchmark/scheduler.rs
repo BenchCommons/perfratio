@@ -671,7 +671,7 @@ impl<'a> Scheduler<'a> {
                         }
 
                         let absolute = match metric {
-                            Metric::Custom(_) => {
+                            Metric::Custom(_) | Metric::Instructions | Metric::Cycles => {
                                 custom_difference(reference.result, item.result, metric)
                             }
                             _ => absolute_difference(reference.result, item.result, unit),
@@ -705,6 +705,14 @@ impl<'a> Scheduler<'a> {
                                     }
                                     Metric::Memory => {
                                         format!("    the same memory ({ratio_str}{stddev}) as")
+                                    }
+                                    Metric::Instructions => {
+                                        format!(
+                                            "    the same instructions ({ratio_str}{stddev}) as"
+                                        )
+                                    }
+                                    Metric::Cycles => {
+                                        format!("    the same cycles ({ratio_str}{stddev}) as")
                                     }
                                     Metric::Custom(_) => {
                                         format!("    the same value ({ratio_str}{stddev}) as")
@@ -1116,6 +1124,13 @@ fn custom_difference(
         (Some(value), Some(base)) => {
             let diff = value - base;
             let sign = if diff >= 0.0 { '+' } else { '−' };
+            if matches!(metric, Metric::Instructions | Metric::Cycles) {
+                let (v, d) = (
+                    crate::benchmark::format_count(value),
+                    crate::benchmark::format_count(diff.abs()),
+                );
+                return format!("({v}, {sign}{d})");
+            }
             format!("({value:.3}, {sign}{:.3})", diff.abs())
         }
         _ => String::new(),

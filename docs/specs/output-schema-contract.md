@@ -1,7 +1,7 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Shipped except the `.product` link (schemaVersion 1.10; 1.10 adds `results[].energy_samples` (#240) and the JSON Schema file `docs/schema/perfratio-export.schema.json`, validated by `tests/json_schema_tests.rs`; 1.9 adds the `:u`/`:k` counter key suffixes, `counters_scope` values `kernel` and `perfratio.measurements.counters_requested_scope` from #218 (`counter-scope-modifiers.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
+Shipped except the `.product` link (schemaVersion 1.11; 1.11 adds `results[].energy_samples` (#240) and the JSON Schema file `docs/schema/perfratio-export.schema.json`, validated by `tests/json_schema_tests.rs`; 1.10 adds `results[].counters_coverage` (#219); 1.9 adds the `:u`/`:k` counter key suffixes, `counters_scope` values `kernel` and `perfratio.measurements.counters_requested_scope` from #218 (`counter-scope-modifiers.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
@@ -171,7 +171,7 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `mean_energy_joules` | J | only when `measurements.energy = "measured"` and ≥ 1 sample |
 | `mean_watts` | W (`mean_energy_joules / mean`) | same as above |
 | `energy_joules` | J[] | only when every run has a sample |
-| `energy_samples` (**new in 1.10**, #240) | count | whenever an energy sampler was active (`--energy` and a usable backend): the number of runs that produced a sample, so `energy_samples < len(times)` shows partial coverage. Absent when energy was not requested or unavailable |
+| `energy_samples` (**new in 1.11**, #240) | count | whenever an energy sampler was active (`--energy` and a usable backend): the number of runs that produced a sample, so `energy_samples < len(times)` shows partial coverage. Absent when energy was not requested or unavailable |
 | `idle_watts` (**new in 1.1**, #59) | W | optional (`--energy-baseline` and the idle measurement succeeded) |
 | `energy_domains_joules` (**new in 1.7**, #59) | object `{package,core,uncore,dram,psys: J per run[]}`, aligned with `times`; overlapping domains, not additive, `energy_joules` is the package total | optional (with `--energy-domains` on sysfs RAPL, when every run has the same domains) |
 | `mean_net_energy_joules` (**new in 1.1**, #59) | J, per run `max(energy - idle_watts * time, 0)` | optional (with `idle_watts` and ≥ 1 energy sample) |
@@ -189,6 +189,7 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `counters_summary` (**new in 1.8**) | { event: { `mean`, `stddev`?, `median`, `min`, `max` } } | with `counters` |
 | `counters_scope` (**new in 1.8**, `"kernel"` new in 1.9) | effective scope of unsuffixed event names: `"all"` (user + kernel), `"user"` (also when kernel counting was denied and `--scope` was implicit) or `"kernel"` (`--scope kernel`); `--scope split` reports `"all"`. A name with a `:u` / `:k` suffix (**new in 1.9**, #218) has that scope, e.g. `instructions:u`; the `split` total is `:u` + `:k` and is not stored | with `counters` |
 | `counters_multiplexed_runs` (**new in 1.8**) | count of runs with a scaled counter | optional (> 0) |
+| `counters_coverage` (**new in 1.10**, #219) | { event: number } lowest `time_running / time_enabled` (0..1) over the runs, only for events that were multiplexed or never scheduled | optional (with `counters_multiplexed_runs`) |
 | `efficiency` { `ipc`, `cpi`, `cache_miss_rate`, `branch_miss_rate` } (#213) | ratios | optional (with the needed counters) |
 | `diagnostics`, `precision`, `baseline`, `shell`, `timed_out`, `timeout`, `runs_planned` | see `BenchmarkResult` | optional |
 
@@ -256,7 +257,7 @@ perfratio -N --warmup auto --first-run=separate \
   items are not part of this spec.
 
 ## Acceptance Criteria
-- [x] Every `--export-json` file starts with `"schemaVersion"` (currently `"1.10"`).
+- [x] Every `--export-json` file starts with `"schemaVersion"` (currently `"1.11"`).
 - [x] `docs/schema/perfratio-export.schema.json` exists, and `cargo test` validates exports
       against it (with and without `--energy`, `--output-metric`, `--first-run=separate`,
       `--parameter-scan`, Ctrl-C and more).
@@ -264,7 +265,7 @@ perfratio -N --warmup auto --first-run=separate \
       `--energy` is given on a host without readable RAPL, and `"not_requested"` without
       `--energy`.
 - [x] No result contains `0` in place of an unmeasured value (fields are omitted; the schema has no default values).
-- [x] `energy_samples` makes partial energy coverage visible (1.10).
+- [x] `energy_samples` makes partial energy coverage visible (1.11).
 - [x] `"joulex"` is removed in one step (§4); old exports with only `"joulex"`
       still import.
 - [x] `doc/understanding-output.md` documents the schema, units, compatibility rules and

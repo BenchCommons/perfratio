@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.10 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.11 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.10",
+      "const": "1.11",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -233,7 +233,7 @@
     },
     "metric": {
       "type": "string",
-      "pattern": "^(wall|cpu|user|system|energy|memory|custom:[A-Za-z0-9_]+)$",
+      "pattern": "^(wall|cpu|user|system|energy|memory|instructions|cycles|custom:[A-Za-z0-9_]+)$",
       "description": "Metric used for ranking. The built-in set is closed; `custom:<name>` is a pattern (unitless, lower is better)."
     },
     "primaryMetric": {
@@ -817,7 +817,16 @@
             "$ref": "#/$defs/summary"
           }
         },
-        "counters_multiplexed_runs": {
+        "counters_coverage": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "description": "Lowest time_running / time_enabled (0..1) over the runs, only for events that were multiplexed or never scheduled."
+    },
+    "counters_multiplexed_runs": {
           "type": "integer",
           "minimum": 0
         },

@@ -167,6 +167,15 @@ const CASES: &[(&str, &[&str])] = &[
         ],
     ),
     (
+        "metric instructions",
+        &[
+            "--runs=3",
+            "--counters",
+            "--metric=instructions",
+            "sleep 0.5",
+        ],
+    ),
+    (
         "concurrency",
         &["--runs=2", "--concurrency", "3", "sleep 0.1"],
     ),
@@ -270,7 +279,7 @@ fn exports_of_many_flag_combinations_match_the_schema() {
 
 /// Properties that no portable, deterministic case produces: `interrupted` and
 /// `runs_planned` come from Ctrl-C (see `an_interrupted_run_matches_the_schema`), the energy
-/// idle fields need readable RAPL, `counters_multiplexed_runs` a busy PMU,
+/// idle fields need readable RAPL, `counters_multiplexed_runs` and `counters_coverage` a busy PMU,
 /// `discarded_outliers` a noisy run, `omitted_failed_runs` a flaky command and `shell`
 /// benchmarks with differing shells.
 const NEEDS_REAL_HOST: &[&str] = &[
@@ -279,6 +288,7 @@ const NEEDS_REAL_HOST: &[&str] = &[
     "idle_watts",
     "mean_net_energy_joules",
     "counters_multiplexed_runs",
+    "counters_coverage",
     "discarded_outliers",
     "omitted_failed_runs",
     "shell",

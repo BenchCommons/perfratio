@@ -186,7 +186,7 @@ check-jsonschema --schemafile docs/schema/perfratio-export.schema.json result.js
 | Key | Meaning |
 |---|---|
 | `schemaVersion` | Version of the contract, always first. |
-| `metric` | Metric used for ranking: `wall`, `cpu`, `user`, `system`, `energy`, `memory` or `custom:<name>` (`--metric`). |
+| `metric` | Metric used for ranking: `wall`, `cpu`, `user`, `system`, `energy`, `memory`, `instructions`, `cycles` or `custom:<name>` (`--metric`). |
 | `perfratio` | Run metadata, see below. |
 | `interrupted` | Only present, as `true`, when Ctrl-C stopped the run. Per-result `runs_planned` then holds the planned run count. |
 | `optimize` | Only with `--optimize`: one object per search (`var`, `min`, `max`, `metric`, `algorithm`, `budget`, `evaluations`, `best`, `best_value`, `best_command`, `evaluated`, `at_boundary`, `unimodal_warning`, and optionally `runner_up`, `p_value`, `significant`, `fixed`, `interrupted`). Every evaluated value is also a `results[]` entry. |
@@ -245,7 +245,7 @@ is different from an energy of `0`.
 | `idle_watts`, `mean_net_energy_joules` | With `--energy-baseline`: idle power and the mean energy above idle. |
 | `energy_domains_joules` | With `--energy-domains`: joules per RAPL domain and run. Domains overlap and are not additive. |
 | `resources` | Per-run context switches, page faults and block I/O (`--resource-usage`). A column the OS cannot report is omitted. |
-| `counters`, `counters_summary`, `counters_scope`, `counters_multiplexed_runs`, `efficiency` | Hardware counters per run (`null` = not readable), their summary, the scope of unsuffixed keys (`all`, `user`, `kernel`; keys may carry `:u` or `:k`), runs with scaled counters, and `ipc`, `cpi`, `cache_miss_rate`, `branch_miss_rate`. |
+| `counters`, `counters_summary`, `counters_scope`, `counters_multiplexed_runs`, `counters_coverage`, `efficiency` | Hardware counters per run (`null` = not readable), their summary, the scope of unsuffixed keys (`all`, `user`, `kernel`; keys may carry `:u` or `:k`), runs with scaled counters, the lowest share of time each multiplexed event was scheduled (0..1), and `ipc`, `cpi`, `cache_miss_rate`, `branch_miss_rate`. |
 | `concurrency`, `instance_times`, `throughput`, `instance_percentiles`, `energy_per_instance_joules` | With `--concurrency N`: `times` then holds the makespan of each run, and `exit_codes` has N entries per run. |
 
 ### Comparing implementations across languages
