@@ -391,6 +391,17 @@ impl BenchmarkResult {
                 .memory_usage_byte
                 .as_ref()
                 .map(|m| m.iter().map(|&b| b as f64).collect()),
+            Metric::Custom(name) => {
+                let samples: Vec<f64> = self
+                    .custom_metrics
+                    .as_ref()?
+                    .get(name)?
+                    .iter()
+                    .flatten()
+                    .copied()
+                    .collect();
+                (!samples.is_empty()).then_some(samples)
+            }
         }
     }
 
@@ -413,6 +424,11 @@ impl BenchmarkResult {
                 let sum: u64 = mem.iter().sum();
                 Some(sum as f64 / mem.len() as f64)
             }
+            Metric::Custom(name) => self
+                .custom_metrics_summary
+                .as_ref()?
+                .get(name)
+                .map(|s| s.mean),
         }
     }
 
@@ -471,6 +487,11 @@ impl BenchmarkResult {
                     None
                 }
             }),
+            Metric::Custom(name) => self
+                .custom_metrics_summary
+                .as_ref()?
+                .get(name)
+                .and_then(|s| s.stddev),
         }
     }
 }

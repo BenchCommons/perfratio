@@ -1,7 +1,7 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Partly shipped (schemaVersion 1.1; 1.0 plus `metric`/`primary_metric` from #48): `schemaVersion` first key (`SCHEMA_VERSION` in
+Partly shipped (schemaVersion 1.2; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
@@ -108,8 +108,11 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
 ```
 
 - `metric` (string, guaranteed, **new in 1.1**, #48): metric used for ranking and relative
-  speed, one of `wall`, `cpu`, `user`, `system`, `energy`, `memory` (`--metric`, default
-  `wall`; see `metric-target.md`). Closed enum; a new value is MAJOR.
+  speed, one of `wall`, `cpu`, `user`, `system`, `energy`, `memory`, or `custom:<name>` (**new in 1.2**,
+  #90: a metric extracted with `--output-metric <name>=...`, lower is better, `<name>` matches
+  `[A-Za-z0-9_]+`) (`--metric`, default `wall`; see `metric-target.md`). The set of built-in
+  values is closed (a new built-in value is MAJOR); the `custom:` prefix is a pattern, so
+  consumers must accept any `custom:<name>` and treat it as unitless.
 - `perfratio` (object, guaranteed): run metadata, as `ExportMetadata` today.
 - `perfratio.measurements` (object, guaranteed, **new**): one status per measurement group,
   host-level and identical for every result:
@@ -137,7 +140,7 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `times`, `user_times`, `system_times` | s[] | guaranteed (live run) |
 | `memory_usage_byte` | bytes[] (peak RSS per run) | guaranteed when `measurements.memory = "measured"` |
 | `exit_codes` | (int or `null`)[]; `null` = killed by a signal | guaranteed |
-| `primary_metric` { `metric`, `mean`, `stddev`?, `samples`? } (**new in 1.1**, #48) | metric unit (s, J or bytes) | optional (only with `--metric` other than `wall` and data for the metric) |
+| `primary_metric` { `metric`, `mean`, `stddev`?, `samples`? } (**new in 1.1**, #48; `metric` may be `custom:<name>` since 1.2) | metric unit (s, J, bytes; custom: as printed by the command) | optional (only with `--metric` other than `wall` and data for the metric) |
 | `relative_speed` | ratio to fastest/reference (1.0 = baseline) | optional (omitted if not computable) |
 | `relative_speed_stddev` | ratio | optional (omitted for the baseline) |
 | `percentiles` { `p05`, `p25`, `p75`, `p95` } | s | optional |
@@ -164,7 +167,7 @@ Rules:
 - `custom_metrics` units are whatever the command prints; perfratio does not interpret them.
   Names follow `[A-Za-z0-9_]+`. A consumer that needs units encodes them in the name
   (e.g. `algo_ns`) or in a `--label`.
-- `metric` and `primary_metric` (#48), `idle_watts` and `mean_net_energy_joules` (#59) were added in 1.1 as MINOR additions. Fields added later by #59 (domains) and #216
+- `metric` and `primary_metric` (#48), `idle_watts` and `mean_net_energy_joules` (#59) were added in 1.1 as MINOR additions. `custom:<name>` as a `metric` / `primary_metric.metric` value (#90) is a MINOR addition in 1.2: it is emitted only when the user passes `--metric custom:<name>`, so existing consumers are unaffected, and `samples` then contains the extracted values (no nulls, see `custom-output-metrics.md`). Fields added later by #59 (domains) and #216
   (`target_duration_seconds`, `total_sampling_seconds`) are MINOR additions to this schema
   and must be added to this table in the same PR.
 

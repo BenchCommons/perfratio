@@ -692,6 +692,12 @@ impl<'a> BenchmarkRunner<'a> {
             crate::metric::Metric::Memory => {
                 self.memory_usage_byte.iter().map(|&b| b as f64).collect()
             }
+            // `finish()` guarantees a value for every run under `--metric custom:<name>`
+            crate::metric::Metric::Custom(name) => self
+                .custom_metrics
+                .get(name)
+                .map(|values| values.iter().flatten().copied().collect())
+                .unwrap_or_default(),
         }
     }
 
@@ -707,6 +713,25 @@ impl<'a> BenchmarkRunner<'a> {
                     "'--metric energy' requires an energy reading for every run, but {missing} of {} \
                      runs have none. Check that RAPL (`energy_uj`) is readable.",
                     self.energy_measurements.len()
+                );
+            }
+        }
+        if let Some(name) = self.options.metric.custom_name() {
+            let values = self.custom_metrics.get(name).map(Vec::as_slice);
+            let values = values.unwrap_or_default();
+            let missing = values.iter().filter(|v| v.is_none()).count();
+            if values.is_empty() || missing == values.len() {
+                bail!(
+                    "'--metric custom:{name}' requires a value for every run, but no run produced \
+                     '{name}'. Check the regex of '--output-metric {name}=...'."
+                );
+            }
+            if missing > 0 {
+                bail!(
+                    "'--metric custom:{name}' requires a value for every run, but {missing} of {} \
+                     runs have none for '{name}' (runs ignored with '-i' contribute null). \
+                     Fix the regex or drop '-i'.",
+                    values.len()
                 );
             }
         }
@@ -1059,6 +1084,10 @@ impl<'a> BenchmarkRunner<'a> {
                             let s = p_stddev.map(|sd| format!("{:.1} MB", sd / (1024.0 * 1024.0)));
                             (m, s)
                         }
+                        Metric::Custom(_) => (
+                            format!("{p_mean:.3}"),
+                            p_stddev.map(|sd| format!("{sd:.3}")),
+                        ),
                         Metric::Wall => unreachable!(),
                     };
 
@@ -1113,6 +1142,10 @@ impl<'a> BenchmarkRunner<'a> {
 
                 if let Some(summaries) = &custom_metrics_summary {
                     for (name, summary) in summaries {
+                        // already printed as the primary metric above
+                        if self.options.metric.custom_name() == Some(name.as_str()) {
+                            continue;
+                        }
                         if let Some(stddev) = summary.stddev {
                             crate::outln!(
                                 "  {} ({} ± {}):    {:>width$} ± {:>width$}",

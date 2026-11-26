@@ -5,7 +5,6 @@ authors = [
 ]
 categories = ["command-line-utilities"]
 description = "Multi-dimensional command-line benchmarking tool with Performance per Watt, Hardware Counter Ratios, and Deep Statistics"
-homepage = "https://github.com/BenchCommons/perfratio"
 license = "MIT OR Apache-2.0"
 name = "perfratio"
 readme = "README.md"
