@@ -68,6 +68,8 @@ pub trait Executor {
 struct ProcessSettings<'a> {
     /// --affinity
     affinity: Option<&'a [usize]>,
+    /// --affinity p-cores|e-cores (macOS)
+    core_class: Option<crate::util::affinity::CoreClass>,
     /// --priority
     priority: Priority,
     /// --timeout
@@ -86,6 +88,7 @@ impl<'a> ProcessSettings<'a> {
     fn from_options(options: &'a Options) -> Self {
         ProcessSettings {
             affinity: options.affinity.as_deref(),
+            core_class: options.core_class,
             priority: options.priority,
             timeout: options.timeout,
             until: options.until.as_ref(),
@@ -107,6 +110,7 @@ fn run_command_and_measure_common(
 ) -> Result<TimerResult> {
     let ProcessSettings {
         affinity,
+        core_class,
         priority,
         timeout,
         until,
@@ -156,6 +160,13 @@ fn run_command_and_measure_common(
     if let Some(cpus) = affinity {
         crate::util::affinity::apply(&mut command, cpus);
     }
+
+    #[cfg(target_os = "macos")]
+    if let Some(class) = core_class {
+        crate::util::affinity::apply_core_class(&mut command, class);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = core_class;
 
     #[cfg(unix)]
     crate::util::priority::apply(&mut command, priority);

@@ -522,7 +522,7 @@ Generate a shell completions script for the given shell and print it to stdout.
 .HP
 \fB\-\-affinity\fR \fICPUS\fP
 .IP
-Pin every benchmarked command (and \fB\-\-prepare\fR/\fB\-\-conclude\fR/\fB\-\-setup\fR/\fB\-\-cleanup\fR) to the given CPUs, e.g. 2, 0-3 or 0,2,4-5. Reduces noise from migrations between cores, especially on CPUs with performance and efficiency cores. Linux and Windows only.
+Pin every benchmarked command (and \fB\-\-prepare\fR/\fB\-\-conclude\fR/\fB\-\-setup\fR/\fB\-\-cleanup\fR) to the given CPUs, e.g. 2, 0-3 or 0,2,4-5. Reduces noise from migrations between cores, especially on CPUs with performance and efficiency cores. Linux and Windows. macOS has no API to pin a process to CPUs: \fB\-\-affinity\fR p-cores or e-cores (Apple Silicon only) is a scheduling preference instead. e-cores puts the process in the darwin background state (PRIO_DARWIN_BG), which keeps it on the efficiency cores and also lowers its I/O priority; p-cores gives it the foreground task role, but the scheduler may still use efficiency cores under load.
 .HP
 \fB\-\-check\-system\fR\fI[=MODE]\fP
 .IP
@@ -530,7 +530,7 @@ Before benchmarking, report system conditions that make results noisy or irrepro
 .HP
 \fB\-\-priority\fR \fIPOLICY\fP
 .IP
-Scheduling priority of every benchmarked command (and \fB\-\-prepare\fR/\fB\-\-conclude\fR/\fB\-\-setup\fR/\fB\-\-cleanup\fR): normal (default, inherits perfratio's priority), high (nice -20 on Linux and macOS, HIGH_PRIORITY_CLASS on Windows), idle (SCHED_IDLE on Linux, nice 19 on macOS, IDLE_PRIORITY_CLASS on Windows) or realtime (SCHED_FIFO at the maximum priority on Linux, REALTIME_PRIORITY_CLASS on Windows; not available on macOS). high and realtime need privileges: root or the CAP_SYS_NICE capability on Linux, root on macOS, administrator rights on Windows (otherwise realtime silently becomes high). A realtime command that never blocks can starve the rest of the system, including perfratio itself.
+Scheduling priority of every benchmarked command (and \fB\-\-prepare\fR/\fB\-\-conclude\fR/\fB\-\-setup\fR/\fB\-\-cleanup\fR): normal (default, inherits perfratio's priority), high (nice -20 on Linux and macOS, HIGH_PRIORITY_CLASS on Windows), idle (SCHED_IDLE on Linux, nice 19 on macOS, IDLE_PRIORITY_CLASS on Windows) or realtime (SCHED_FIFO at the maximum priority on Linux, REALTIME_PRIORITY_CLASS on Windows; on macOS nice -20 plus the foreground task role, which is not a real-time policy because exec resets Mach thread policies). high and realtime need privileges: root or the CAP_SYS_NICE capability on Linux, root on macOS, administrator rights on Windows (otherwise realtime silently becomes high). A realtime command that never blocks can starve the rest of the system, including perfratio itself.
 .HP
 \fB\-\-resource\-usage\fR
 .IP
