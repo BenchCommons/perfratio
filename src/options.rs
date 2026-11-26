@@ -504,6 +504,9 @@ pub struct Options {
     /// `--until`: stop timer upon readiness output pattern
     pub until: Option<UntilSettings>,
 
+    /// `--region`: names of the instrumented regions to measure
+    pub regions: Vec<String>,
+
     /// `--output-metric`: custom metrics to extract from command output
     pub output_metrics: Vec<crate::output_metric::OutputMetric>,
 
@@ -572,6 +575,7 @@ impl Default for Options {
             artifact_dir: None,
             cpu_partition: None,
             until: None,
+            regions: Vec::new(),
             output_metrics: Vec::new(),
             output_metrics_stderr: false,
         }
@@ -904,6 +908,19 @@ impl Options {
             }
         }
 
+        if let Some(names) = matches.get_many::<String>("region") {
+            for name in names {
+                if !crate::region::is_valid_name(name) {
+                    return Err(OptionsError::InvalidRegion(format!(
+                        "invalid region name '{name}': use ASCII letters, digits and '_' (at most 64 characters)"
+                    )));
+                }
+                if !options.regions.contains(name) {
+                    options.regions.push(name.clone());
+                }
+            }
+        }
+
         options.output_metrics_stderr = matches.get_flag("output-metric-stderr");
         if !options.output_metrics.is_empty()
             && options.command_output_policies.iter().any(|p| {
@@ -957,6 +974,14 @@ impl Options {
                 return Err(OptionsError::InvalidOutputMetric(format!(
                     "'--metric custom:{name}' needs a matching '--output-metric {name}=<REGEX>'"
                 )));
+            }
+        }
+        // `--metric region:<name>` implies measuring that region
+        if let Some(name) = options.metric.region_name() {
+            if matches.get_one::<String>("import-json").is_none()
+                && !options.regions.iter().any(|r| r == name)
+            {
+                options.regions.push(name.to_string());
             }
         }
         // Only look at the backend choice (and its environment variable) when

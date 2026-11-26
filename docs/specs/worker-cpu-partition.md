@@ -1,6 +1,6 @@
 # Spec: `--pin-workers` and `--reserve-cpus`, CPU partitioning of the `--jobs` workers (#307)
 
-**Status:** Shipped in 1.1 (schemaVersion 1.23). Depends on `worker-pool.md` (#306); reuses the
+**Status:** Shipped in 1.1 (schemaVersion 1.24). Depends on `worker-pool.md` (#306); reuses the
 `--affinity` plumbing (`affinity.md`). Parent tracker: #53.
 
 ## Problem / Motivation
@@ -63,7 +63,7 @@ The default (`auto`) never warns on a platform without pinning, because nothing 
 Adds "Worker CPUs": ok with the partition, or a warning when `shared_siblings` is set (more
 workers than physical cores), with the hint to use fewer jobs or `--pin-workers=none`.
 
-### JSON (additive, MINOR bump to 1.23)
+### JSON (additive, MINOR bump to 1.24)
 ```jsonc
 "perfratio": { "execution": { "jobs": 2, "schedule_policy": "saturate", "contended": true,
   "cpu_partition": { "workers": [[0,1],[2,3]], "reserved": [15], "shared_siblings": true } } }

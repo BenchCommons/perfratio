@@ -22,7 +22,7 @@ change; descriptors point to them through `fields`.
 
 | Key | Values (all open enums except where noted) |
 |---|---|
-| `id` | dotted lowercase: `time.wall`, `time.user`, `time.system`, `cpu.utilization`, `memory.peak_rss`, `energy.total`, `energy.net`, `energy.domain.<name>`, `power.average`, `power.idle`, `resources.<field>`, `counter.<key>` (key as in `results[].counters`, with its `:u`/`:k` suffix), `cpu.ipc`, `cpu.cpi`, `cache.miss_rate`, `branch.miss_rate`, `cpu.effective_frequency`, `topdown.<class>`, `simd.<bucket>`, `simd.vectorization_ratio`, `batch.throughput`, `batch.instance_time`, `custom.<name>` |
+| `id` | dotted lowercase: `time.wall`, `time.user`, `time.system`, `cpu.utilization`, `memory.peak_rss`, `energy.total`, `energy.net`, `energy.domain.<name>`, `power.average`, `power.idle`, `resources.<field>`, `counter.<key>` (key as in `results[].counters`, with its `:u`/`:k` suffix), `cpu.ipc`, `cpu.cpi`, `cache.miss_rate`, `branch.miss_rate`, `cpu.effective_frequency`, `topdown.<class>`, `simd.<bucket>`, `simd.vectorization_ratio`, `batch.throughput`, `batch.instance_time`, `custom.<name>`, `region.<name>` (seconds, scope `region`, new in 1.21, `region-protocol.md`) |
 | `unit` | `s`, `bytes`, `J`, `W`, `Hz`, `ns`, `count`, `ratio`, `percent`, `runs/s`, `unitless` (custom metrics) |
 | `direction` | `lower_is_better`, `higher_is_better`, `neutral` |
 | `scope` | `process`, `process_tree`, `batch`, `package`, `system`, `region`. Energy is `system` for one instance and `batch` with `--concurrency` (see `results[].energy_scope`). |
