@@ -1,7 +1,7 @@
 //! Preflight for Linux hardware performance counters (`perf_event_open`):
 //! `kernel.perf_event_paranoid`, permission errors (kernel setting, container
 //! seccomp profile, missing capability) and machines without a PMU (VMs).
-//! The decision logic is pure; only [`probe`] talks to the kernel (Linux only).
+//! The decision logic is pure; only `probe` talks to the kernel (Linux only).
 
 /// Highest `perf_event_paranoid` value that still lets an unprivileged process
 /// count user-space events of itself and its children.

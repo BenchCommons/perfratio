@@ -916,6 +916,7 @@ impl<'a> Scheduler<'a> {
     }
 }
 
+#[cfg(feature = "cli")]
 #[cfg(test)]
 fn generate_results(args: &[&'static str]) -> Result<Vec<BenchmarkResult>> {
     use crate::cli::get_cli_arguments;
@@ -945,6 +946,7 @@ fn generate_results(args: &[&'static str]) -> Result<Vec<BenchmarkResult>> {
     Ok(scheduler.results)
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn scheduler_basic() -> Result<()> {
     insta::assert_yaml_snapshot!(generate_results(&["--runs=2", "sleep 0.123", "sleep 0.456"])?, @r#"
@@ -1013,6 +1015,7 @@ fn scheduler_basic() -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn scheduler_round_robin() -> Result<()> {
     insta::assert_yaml_snapshot!(generate_results(&["--schedule=round-robin", "--runs=2", "sleep 0.123", "sleep 0.456"])?, @r#"

@@ -20,7 +20,9 @@ use self::csv::CsvExporter;
 use self::html::HtmlExporter;
 use self::json::JsonExporter;
 use self::markdown::MarkdownExporter;
-use self::metadata::{parse_labels, ExportMetadata, Measurements};
+use self::metadata::ExportMetadata;
+#[cfg(feature = "cli")]
+use self::metadata::{parse_labels, Measurements};
 use self::orgmode::OrgmodeExporter;
 use self::runs::RunsExporter;
 
@@ -30,6 +32,7 @@ use crate::options::SortOrder;
 use crate::util::units::Unit;
 
 use anyhow::{Context, Result};
+#[cfg(feature = "cli")]
 use clap::ArgMatches;
 
 /// The desired form of exporter to use for a given file.
@@ -106,6 +109,7 @@ pub struct ExportManager {
 impl ExportManager {
     /// Build the ExportManager that will export the results specified
     /// in the given ArgMatches
+    #[cfg(feature = "cli")]
     pub fn from_cli_arguments(
         matches: &ArgMatches,
         time_unit: Option<Unit>,
@@ -346,6 +350,7 @@ pub fn write_to_file(filename: &str, content: &[u8]) -> Result<()> {
         .with_context(|| format!("Failed to export results to '{filename}'"))
 }
 
+#[cfg(feature = "cli")]
 /// Determine the export-type from the file extension. Defaults to JSON.
 fn get_export_type_from_filename(filename: &str) -> ExportType {
     match Path::new(filename)
