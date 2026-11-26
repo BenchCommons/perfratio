@@ -73,6 +73,8 @@ pub mod import;
 #[doc(hidden)]
 pub mod metric;
 #[doc(hidden)]
+pub mod metric_registry;
+#[doc(hidden)]
 pub mod optimize;
 #[doc(hidden)]
 pub mod options;
