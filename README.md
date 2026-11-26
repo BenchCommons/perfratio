@@ -21,6 +21,7 @@ borrow from [`Gabriella439/bench`](https://github.com/Gabriella439/bench). perfr
 - A regression gate against an earlier export (`--compare`, `--fail-if-regressed`).
 - Cross-language helpers: `--warmup auto`, `--first-run`, `--output-metric`, `--target-precision`.
 - Time-budgeted sampling (`--duration 5s`), a primary metric (`--metric`), a multi-dimensional `--delta-table`, and significance indicators on speedups and regressions.
+- `--pareto wall,energy,memory` marks the commands on the Pareto frontier; `--constraint 'memory <= 256MiB'` and `--objective minimize:energy` pick the best candidate under limits.
 - A versioned JSON export for tools that consume the results (`schemaVersion`).
 
 Run `perfratio --help` for every option. perfratio can read hyperfine and joulex JSON

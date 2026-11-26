@@ -1,6 +1,6 @@
 # Spec: `--jobs <N|auto>` independent parallel worker pool (#306)
 
-**Status:** Shipped in 1.1 (schemaVersion 1.16). Parent tracker: #53. Follow-up: #307 (CPU partitioning).
+**Status:** Shipped in 1.1 (schemaVersion 1.17). Parent tracker: #53. Follow-up: #307 (CPU partitioning).
 
 ## Problem / Motivation
 References: #306, #53, #304 (trust tracker), `megafine` (`-j/--jobs`, `--schedule`), hyperfine#58.
@@ -68,7 +68,7 @@ worker is free. Commands are served least-started-first, so they interleave.
 - Hardware counters (`--counters` etc.) are opened per run on the worker thread and work as
   before. Energy is rejected (see above).
 
-### JSON (additive, MINOR bump to 1.16; see `output-schema-contract.md`)
+### JSON (additive, MINOR bump to 1.17; see `output-schema-contract.md`)
 Only with `--jobs` > 1:
 ```jsonc
 "perfratio": { "execution": { "jobs": 4, "schedule_policy": "saturate", "contended": true } }

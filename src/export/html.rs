@@ -12,6 +12,7 @@ use crate::benchmark::relative_speed;
 use crate::metric::Metric;
 use crate::options::SortOrder;
 use crate::output::format::format_duration_value;
+use crate::pareto::{self, Analysis, ParetoConfig};
 use crate::stats::summary::percentile;
 use crate::util::units::Unit;
 
@@ -21,6 +22,8 @@ use anyhow::Result;
 pub struct HtmlExporter {
     /// `--optimize`: the best command of every search, marked in the summary table
     best_commands: std::sync::Mutex<Vec<String>>,
+    /// `--pareto`: configuration and analysis of the results being serialized
+    pareto: std::sync::Mutex<Option<(ParetoConfig, Analysis)>>,
 }
 
 const WIDTH: f64 = 640.0;
@@ -47,6 +50,7 @@ svg text { fill: var(--muted); font-size: 11px; font-family: system-ui, sans-ser
 .whisker, .median { stroke: var(--line); stroke-width: 1.5; }
 .muted { color: var(--muted); font-size: 0.85rem; }
 .best { color: var(--line); }
+tr.frontier td { font-weight: 600; }
 "#;
 
 /// Escape text for HTML element content and attribute values.
@@ -342,6 +346,15 @@ impl Exporter for HtmlExporter {
             metric,
         ));
 
+        if let Some((config, analysis)) = self
+            .pareto
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+        {
+            html.push_str(&pareto::html(config, analysis, results, &escape_html));
+        }
+
         let with_times: Vec<&BenchmarkResult> = results
             .iter()
             .filter(|r| r.times.as_ref().is_some_and(|t| !t.is_empty()))
@@ -365,6 +378,11 @@ impl Exporter for HtmlExporter {
 
         html.push_str("</body></html>\n");
         Ok(html.into_bytes())
+    }
+
+    fn set_pareto(&self, analysis: Option<(&ParetoConfig, &Analysis)>) {
+        *self.pareto.lock().unwrap_or_else(|e| e.into_inner()) =
+            analysis.map(|(c, a)| (c.clone(), a.clone()));
     }
 
     fn set_optimize(&self, value: Option<&serde_json::Value>) {

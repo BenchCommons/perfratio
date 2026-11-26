@@ -99,6 +99,8 @@ pub enum OptionsError<'a> {
     InvalidOutputMetric(String),
     #[error("{0}")]
     InvalidOptimize(String),
+    #[error("Invalid Pareto option: {0}")]
+    InvalidPareto(String),
 }
 
 #[derive(Debug, Error)]
