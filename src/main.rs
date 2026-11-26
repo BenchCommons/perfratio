@@ -87,6 +87,7 @@ fn run() -> Result<()> {
         options.metric,
         options.counters.as_ref(),
         options.topdown.as_ref(),
+        options.execution_info(),
     )?;
 
     // Load the baseline before benchmarking, so that a bad file fails fast

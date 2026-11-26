@@ -136,6 +136,31 @@ pub enum FirstRunPolicy {
     Discard,
 }
 
+/// The schedule from `--schedule` (`None`: not given) and `--jobs`.
+#[cfg(feature = "cli")]
+fn resolve_schedule<'a>(
+    explicit: Option<ScheduleMode>,
+    jobs: usize,
+) -> Result<ScheduleMode, OptionsError<'a>> {
+    match (explicit, jobs > 1) {
+        (None, false) => Ok(ScheduleMode::Grouped),
+        (None, true) => Ok(ScheduleMode::Saturate),
+        (Some(mode), false) if mode.pool_policy().is_some() => {
+            Err(OptionsError::InvalidSchedule(format!(
+                "'{}' needs '--jobs' > 1 (it schedules the workers of the pool)",
+                mode.name()
+            )))
+        }
+        (Some(mode), true) if mode.pool_policy().is_none() => {
+            Err(OptionsError::InvalidSchedule(format!(
+                "'{}' cannot be combined with '--jobs' > 1; use 'saturate', 'exclusive' or 'fair'",
+                mode.name()
+            )))
+        }
+        (Some(mode), _) => Ok(mode),
+    }
+}
+
 /// Benchmark execution schedule mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ScheduleMode {
@@ -145,6 +170,43 @@ pub enum ScheduleMode {
 
     /// Interleave iterations across all commands in round-robin fashion
     RoundRobin,
+
+    /// `--jobs`: keep every worker busy (default with `--jobs` > 1)
+    Saturate,
+
+    /// `--jobs`: a command never runs concurrently with itself
+    Exclusive,
+
+    /// `--jobs`: every command keeps the same number of runs
+    Fair,
+}
+
+impl ScheduleMode {
+    /// The worker-pool policy, for the schedules that need `--jobs` > 1.
+    pub fn pool_policy(self) -> Option<crate::benchmark::pool::Policy> {
+        use crate::benchmark::pool::Policy;
+        match self {
+            ScheduleMode::Saturate => Some(Policy::Saturate),
+            ScheduleMode::Exclusive => Some(Policy::Exclusive),
+            ScheduleMode::Fair => Some(Policy::Fair),
+            ScheduleMode::Grouped | ScheduleMode::RoundRobin => None,
+        }
+    }
+
+    /// Runs of different commands are interleaved
+    pub fn interleaves(self) -> bool {
+        self != ScheduleMode::Grouped
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            ScheduleMode::Grouped => "grouped",
+            ScheduleMode::RoundRobin => "round-robin",
+            ScheduleMode::Saturate => "saturate",
+            ScheduleMode::Exclusive => "exclusive",
+            ScheduleMode::Fair => "fair",
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -436,6 +498,8 @@ pub struct Options {
     /// (`Command::with_concurrency_template`); `concurrency` stays 1
     pub concurrency_template: Option<String>,
 
+    /// `--jobs`: independent runs executed at the same time (1: sequential)
+    pub jobs: usize,
     /// `--artifact-dir`: parent of the per-run directories (`PERFRATIO_RUN_DIR`)
     pub artifact_dir: Option<PathBuf>,
 
@@ -508,6 +572,7 @@ impl Default for Options {
             timeout: None,
             concurrency: 1,
             concurrency_template: None,
+            jobs: 1,
             artifact_dir: None,
             until: None,
             output_metrics: Vec::new(),
@@ -799,6 +864,16 @@ impl Options {
                     .ok_or_else(|| OptionsError::InvalidConcurrency(val.clone()))?;
             }
         }
+        if let Some(val) = matches.get_one::<String>("jobs") {
+            options.jobs = if val.eq_ignore_ascii_case("auto") {
+                std::thread::available_parallelism().map_or(1, |n| n.get())
+            } else {
+                val.parse::<usize>()
+                    .ok()
+                    .filter(|&n| n >= 1)
+                    .ok_or_else(|| OptionsError::InvalidJobs(val.clone()))?
+            };
+        }
         options.artifact_dir = matches.get_one::<String>("artifact-dir").map(PathBuf::from);
         if let Some(val) = matches.get_one::<String>("energy-baseline") {
             options.energy_baseline = parse_energy_baseline(val)
@@ -1041,20 +1116,67 @@ impl Options {
             return Err(OptionsError::OmitFailedRunsRequiresIgnoreFailure);
         }
 
-        options.schedule = if matches.get_flag("round-robin") {
-            ScheduleMode::RoundRobin
+        let explicit = if matches.get_flag("round-robin") {
+            Some(ScheduleMode::RoundRobin)
         } else {
             match matches.get_one::<String>("schedule").map(|s| s.as_str()) {
-                Some("round-robin") | Some("interleaved") => ScheduleMode::RoundRobin,
-                _ => ScheduleMode::Grouped,
+                Some("round-robin") | Some("interleaved") => Some(ScheduleMode::RoundRobin),
+                Some("grouped") => Some(ScheduleMode::Grouped),
+                Some("saturate") => Some(ScheduleMode::Saturate),
+                Some("exclusive") => Some(ScheduleMode::Exclusive),
+                Some("fair") => Some(ScheduleMode::Fair),
+                _ => None,
             }
         };
+        options.schedule = resolve_schedule(explicit, options.jobs)?;
 
         options.allow_setup_with_round_robin = matches.get_flag("allow-setup-with-round-robin");
 
         options.warn_concurrency();
+        options.warn_jobs();
 
         Ok(options)
+    }
+
+    #[cfg(feature = "cli")]
+    /// Warnings for `--jobs N` with N > 1 (printed once, to stderr).
+    fn warn_jobs(&self) {
+        if self.jobs <= 1 {
+            return;
+        }
+        let warning = crate::output::colors::yellow("Warning:");
+        let usable = self.usable_cpus();
+        if self.jobs > usable {
+            eprintln!(
+                "{warning} '--jobs {}' exceeds the {usable} usable CPUs: workers will queue on the \
+                 CPU and the times include that waiting.",
+                self.jobs
+            );
+        }
+        eprintln!(
+            "{warning} '--jobs {}' runs benchmark runs in parallel. They compete for caches, memory \
+             bandwidth and CPUs, so the times differ from sequential sampling; the results are \
+             marked as contended.",
+            self.jobs
+        );
+    }
+
+    /// The `perfratio.execution` metadata of the export (`--jobs` > 1)
+    pub fn execution_info(&self) -> Option<crate::export::metadata::Execution> {
+        let policy = self.schedule.pool_policy()?;
+        (self.jobs > 1).then(|| crate::export::metadata::Execution {
+            jobs: self.jobs,
+            schedule_policy: policy.name(),
+            contended: true,
+        })
+    }
+
+    /// Logical CPUs that benchmarked processes may use (after `--affinity`).
+    pub fn usable_cpus(&self) -> usize {
+        match &self.affinity {
+            Some(cpus) => cpus.len(),
+            None => std::thread::available_parallelism().map_or(1, |n| n.get()),
+        }
     }
 
     #[cfg(feature = "cli")]
@@ -1125,7 +1247,7 @@ impl Options {
             }
         }
 
-        if self.schedule == ScheduleMode::RoundRobin && !self.allow_setup_with_round_robin {
+        if self.schedule.interleaves() && !self.allow_setup_with_round_robin {
             // Setup/cleanup differ between benchmarks if they contain a parameter
             // placeholder, or if they are given per command with different values.
             let has_param = |values: &Option<Vec<String>>| {
@@ -1154,9 +1276,10 @@ impl Options {
             if let Some(reason) = reason {
                 bail!(
                     "The '--setup' and/or '--cleanup' options differ between benchmarks ({reason}) \
-                     and cannot be combined with '--schedule round-robin'. \
-                     Setup runs once per benchmark batch, but round-robin interleaves runs across benchmarks. \
-                     Use '--prepare' for per-run state, or use the default grouped schedule."
+                     and cannot be combined with '--schedule {}'. \
+                     Setup runs once per benchmark batch, but this schedule interleaves runs across benchmarks. \
+                     Use '--prepare' for per-run state, or use the default grouped schedule.",
+                    self.schedule.name()
                 );
             }
         }

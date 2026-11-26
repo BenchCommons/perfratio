@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.22 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.23 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.22",
+      "const": "1.23",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -242,6 +242,30 @@
         "measurements": {
           "$ref": "#/$defs/measurements"
         },
+        "execution": {
+          "type": "object",
+          "properties": {
+            "jobs": {
+              "type": "integer",
+              "minimum": 2,
+              "description": "Runs executing at the same time (--jobs N, N > 1)."
+            },
+            "schedule_policy": {
+              "type": "string",
+              "description": "Open enum: saturate, exclusive, fair."
+            },
+            "contended": {
+              "const": true,
+              "description": "The runs disturbed each other; always true."
+            }
+          },
+          "required": [
+            "jobs",
+            "schedule_policy",
+            "contended"
+          ],
+          "description": "Only with --jobs > 1 (new in 1.22, #306)."
+        },
         "metrics": {
           "type": "array",
           "description": "Descriptor of every metric of this export, generated from one registry (new in 1.20, #317). A metric that could not be measured keeps its descriptor with a `status` other than `available` and has no values in `results`; it is never written as 0. `status`, `reason`, `kind`, `scope` and `direction` are open enums.",
@@ -275,7 +299,7 @@
             "wall_floor_mad",
             "runs"
           ],
-          "description": "Runner floor measured by --calibrate (new in 1.22, #313). Omitted with --calibrate=off, with --debug-mode, or when it could not be measured."
+          "description": "Runner floor measured by --calibrate (new in 1.23, #313). Omitted with --calibrate=off, with --debug-mode, or when it could not be measured."
         },
         "statistics": {
           "type": "object",
@@ -799,7 +823,7 @@
         },
         "below_resolution": {
           "type": "boolean",
-          "description": "The mean is within the runner floor (new in 1.22, #313). Omitted when no floor was measured."
+          "description": "The mean is within the runner floor (new in 1.23, #313). Omitted when no floor was measured."
         }
       },
       "required": [
@@ -1232,6 +1256,15 @@
         "leftover_processes": {
           "type": "boolean",
           "description": "Only present when true (1.19): processes started by the command outlived it in at least one run and were killed."
+        },
+        "workers_used": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Workers that executed at least one timed run (--jobs N, N > 1; new in 1.22)."
+        },
+        "contended": {
+          "const": true,
+          "description": "Runs were executed in parallel (--jobs N, N > 1) and may have disturbed each other; do not compare with sequential samples (new in 1.22)."
         },
         "simd": {
           "type": "object",

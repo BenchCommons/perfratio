@@ -34,7 +34,7 @@ impl BenchmarkIteration {
     }
 }
 
-pub trait Executor {
+pub trait Executor: Sync {
     /// Run the given command and measure the execution time
     fn run_command_and_measure(
         &self,
@@ -182,7 +182,8 @@ fn run_command_and_measure_common(
     // command and the conclude of one run see the same id
     let identity = crate::run_id::identity();
     command.env("PERFRATIO_RUN_ID", identity.run_id.to_string());
-    match identity.worker_id {
+    // `--jobs`: the worker slot of the pool (`docs/specs/worker-pool.md`)
+    match identity.worker_id.or_else(super::pool::current_worker) {
         Some(worker) => command.env("PERFRATIO_WORKER_ID", worker.to_string()),
         // not inherited from an outer perfratio
         None => command.env_remove("PERFRATIO_WORKER_ID"),

@@ -1,7 +1,7 @@
 # Specification: Measurement floor (`--calibrate`, `--below-floor`)
 
 **Issue:** [#313](https://github.com/BenchCommons/perfratio/issues/313)
-**Status:** Shipped. JSON `schemaVersion` 1.22.
+**Status:** Shipped. JSON `schemaVersion` 1.23.
 **Related:** #318 (`measurement-quality.md`), #240 (contract), `post-fork-timing-linux.md`, `subtract-followups.md`.
 
 ## 1. Problem / Motivation
@@ -51,7 +51,7 @@ a ratio involves a below-resolution command.
 `--below-floor fail` makes the `measurement_floor` check `fail` (grade `unreliable`). perfratio prints and
 exports the statistics, then exits with code **6** (`--fail-on-quality` is 5, `--fail-if-regressed` is 3).
 
-### 2.4 JSON (`schemaVersion` 1.22, additive)
+### 2.4 JSON (`schemaVersion` 1.23, additive)
 
 ```json
 "perfratio": { "calibration": { "wall_floor": 0.0018, "wall_floor_mad": 0.0003, "rss_floor": 917504, "runs": 20 } },

@@ -204,6 +204,8 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR DURATION ]
 .RB [ \-\-concurrency
 .IR N ]
+.RB [ \-j | \-\-jobs
+.IR N|auto ]
 .RB [ \-\-artifact\-dir
 .IR DIR ]
 .RB [ \-\-until
@@ -531,6 +533,10 @@ Kill a benchmark run that exceeds DURATION (e.g. 500ms, 2s, 1m). The benchmark i
 .IP
 Start N instances of the command simultaneously for every run. The reported time is the wall time until all N instances finished (the makespan). User and system time are summed over the instances and memory is the maximum of any instance. The JSON export gains \fBconcurrency\fR, \fBinstance_times\fR, \fBthroughput\fR and \fBinstance_percentiles\fR. N may contain a parameter such as \fB{c}\fR (with \fB\-L c 1,2,4\fR) for one benchmark per value. Conflicts with \fB\-\-until\fR, \fB\-\-show\-output\-on\-failure\fR, \fB\-\-output\-metric\fR and \fB\-\-subtract\fR. Default: 1.
 .HP
+\fB\-j\fR, \fB\-\-jobs\fR \fIN|auto\fP
+.IP
+Run up to N independent invocations at the same time to collect samples faster. Every run is still timed on its own, unlike with \fB\-\-concurrency\fR. Parallel runs compete for caches, memory bandwidth and CPUs, so the results are marked \fBcontended\fR in the JSON export and are not equivalent to sequential samples; a warning says so. auto uses the number of logical CPUs. Each worker exports its 0-based slot to the commands and to \fB\-\-prepare\fR/\fB\-\-conclude\fR as \fBPERFRATIO_WORKER_ID\fR. Conflicts with \fB\-\-concurrency\fR, \fB\-\-energy\fR, \fB\-\-optimize\fR and \fB\-\-subtract\fR. Default: 1.
+.HP
 \fB\-\-artifact\-dir\fR \fIDIR\fP
 .IP
 Create \fIDIR\fR/run\-<id> for every run and export its path as \fBPERFRATIO_RUN_DIR\fR to \fB\-\-prepare\fR, the command and \fB\-\-conclude\fR of that run (and to \fB\-\-setup\fR and \fB\-\-cleanup\fR), so that parallel runs never share artifact files. The directories are kept.
@@ -704,7 +710,7 @@ Suppress specific warning types ('off-cpu', 'outliers', 'all').
 .HP
 \fB\-\-schedule\fR \fIMODE\fP
 .IP
-Set benchmark execution schedule: grouped (default; run all iterations per command) or round-robin / interleaved (interleave iterations across commands to mitigate temporal bias).
+Set benchmark execution schedule: grouped (default; run all iterations per command) or round-robin / interleaved (interleave iterations across commands to mitigate temporal bias). With \fB\-\-jobs\fR > 1: saturate (default; keep every worker busy), exclusive (a command never runs concurrently with itself) or fair (every command keeps the same number of runs).
 .HP
 \fB\-\-round\-robin\fR
 .IP
