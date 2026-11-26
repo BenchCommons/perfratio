@@ -616,12 +616,14 @@ impl<'a> BenchmarkRunner<'a> {
         self.resource_counters.iter().copied().collect()
     }
 
-    /// "ctx-sw 3 vol / 12 invol · faults 1.2k minor / 0 major · I/O 0 in / 0 out blocks"
+    /// "ctx-sw 3 vol / 12 invol · faults 1.2k minor / 0 major · I/O 0 in / 0 out blocks".
+    /// Counters the platform cannot report are shown as "n/a".
     fn resource_summary(&self) -> Option<String> {
         let counters = self.all_resource_counters()?;
-        let mean_of = |f: fn(&timing_result::ResourceCounters) -> u64| {
-            let values: Vec<f64> = counters.iter().map(|c| f(c) as f64).collect();
-            format_count(mean(&values))
+        let mean_of = |f: fn(&timing_result::ResourceCounters) -> Option<u64>| {
+            let values: Option<Vec<f64>> =
+                counters.iter().map(|c| f(c).map(|v| v as f64)).collect();
+            values.map_or_else(|| "n/a".to_string(), |v| format_count(mean(&v)))
         };
         Some(format!(
             "ctx-sw {} vol / {} invol · faults {} minor / {} major · I/O {} in / {} out blocks",
@@ -1185,10 +1187,7 @@ impl<'a> BenchmarkRunner<'a> {
                 if self.options.show_resource_usage {
                     match self.resource_summary() {
                         Some(line) => crate::outln!("  Resources (mean):   {}", line.dimmed()),
-                        None => crate::outln!(
-                            "  Resources:          {}",
-                            "not available (Unix only)".dimmed()
-                        ),
+                        None => crate::outln!("  Resources:          {}", "not available".dimmed()),
                     }
                 }
 
