@@ -122,7 +122,9 @@ Benchmark 1: sleep 0.1
 `--energy-backend <auto|sysfs|perf|ioreport|emi>` (or `PERFRATIO_ENERGY_BACKEND`) picks the source (`ioreport` on macOS, `emi` on Windows; `auto` picks the native one). On Linux:
 `auto`, the default, uses sysfs powercap and falls back to the perf power PMU
 (`power/energy-pkg`) when `energy_uj` is unreadable. `--energy-baseline <DURATION>` measures
-idle power first and also reports net energy (measured minus idle power times run time).
+idle power first and also reports net energy (measured minus idle power times run time). It is
+off by default so that `--energy` does not add a delay; `--energy-baseline 2s` is a good value
+when you compare commands of different duration.
 `--metric energy` ranks by energy and turns on `--energy`.
 
 `--energy-domains` adds a per-run breakdown (`package`, `core`, `uncore`, `dram`, `psys`) to the

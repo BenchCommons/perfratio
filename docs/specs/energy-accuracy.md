@@ -34,8 +34,23 @@ Deferred, commented on #59 (not done here):
 - Overhead alignment: subtracting the shell's energy as its time is subtracted
   (`ShellExecutor::calibrate`). Needs measurement on RAPL hardware to check the calibration.
 - Permission-denied message with the udev rule, and the README udev example.
-- Default of 2 s when `--energy` is set. The baseline is opt-in here, so existing runs do not
-  gain a 2 s delay.
+- Default of 2 s when `--energy` is set: **decided, not done.** See "Decision: the baseline stays
+  opt-in" below.
+
+## Decision: the baseline stays opt-in
+The issue proposed a 2 s default whenever `--energy` is set. It is not adopted: every `--energy`
+run would wait 2 s before the first benchmark (the cost is paid once per process, but it is paid
+by CI jobs and scripts that already use `--energy` and never asked for net energy), and the idle
+window is only meaningful on a quiet machine, which is not known in advance. `--energy` without
+`--energy-baseline` keeps its behavior and output. Recommended for comparisons between commands of
+different duration: `--energy-baseline 2s`. Revisit only with measurements on RAPL hardware showing
+that gross energy misleads more often than the delay costs.
+
+Bare-metal check (`#[ignore]`, `tests/energy_baseline_tests.rs`,
+`bare_metal_net_energy_of_sleep_is_about_zero`): `sleep 0.2` with `--energy-baseline=2s` must give
+a net energy that is small against the gross energy (at most 35% of it plus 0.1 J). The thresholds
+are a first guess and were not validated on hardware; run with `cargo test -- --ignored` on Linux
+with readable `energy_uj`.
 
 ## Contract
 CLI: `--energy-baseline <DURATION>`, same duration syntax as `--timeout`.
