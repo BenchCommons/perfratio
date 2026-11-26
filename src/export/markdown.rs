@@ -121,3 +121,34 @@ fn test_markdown_efficiency_columns_only_when_present() {
     assert!(!with.contains("Branch miss rate"), "{with}");
     assert!(with.contains("| 1.15 | 0.87 | 18.20 |"), "{with}");
 }
+
+/// The concurrency column appears only when a benchmark used `--concurrency`
+#[test]
+fn test_markdown_concurrency_column_only_when_present() {
+    use crate::benchmark::benchmark_result::BenchmarkResult;
+    use crate::benchmark::relative_speed::BenchmarkResultWithRelativeSpeed;
+    use crate::util::units::Unit;
+    let result = |concurrency| BenchmarkResult {
+        command: "sleep 0.1".into(),
+        concurrency,
+        ..Default::default()
+    };
+    let entry = |result| BenchmarkResultWithRelativeSpeed {
+        result,
+        relative_speed: 1.0,
+        relative_speed_stddev: None,
+        is_reference: true,
+        relative_ordering: std::cmp::Ordering::Equal,
+    };
+    let formatter = MarkdownExporter::default();
+    let plain = result(None);
+    let text = formatter.table_results(&[entry(&plain)], Unit::Second);
+    assert!(!text.contains("Concurrency"), "{text}");
+
+    let eight = result(Some(8));
+    let text = formatter.table_results(&[entry(&plain), entry(&eight)], Unit::Second);
+    assert!(text.contains("| Relative | Concurrency |"), "{text}");
+    let rows: Vec<&str> = text.lines().skip(2).collect();
+    assert!(rows[0].ends_with("| 1 |"), "{text}");
+    assert!(rows[1].ends_with("| 8 |"), "{text}");
+}
