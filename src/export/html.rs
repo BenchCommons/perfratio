@@ -18,7 +18,10 @@ use crate::util::units::Unit;
 use anyhow::Result;
 
 #[derive(Default)]
-pub struct HtmlExporter {}
+pub struct HtmlExporter {
+    /// `--optimize`: the best command of every search, marked in the summary table
+    best_commands: std::sync::Mutex<Vec<String>>,
+}
 
 const WIDTH: f64 = 640.0;
 
@@ -43,6 +46,7 @@ svg text { fill: var(--muted); font-size: 11px; font-family: system-ui, sans-ser
 .box { fill: var(--bar); opacity: 0.6; stroke: var(--line); }
 .whisker, .median { stroke: var(--line); stroke-width: 1.5; }
 .muted { color: var(--muted); font-size: 0.85rem; }
+.best { color: var(--line); }
 "#;
 
 /// Escape text for HTML element content and attribute values.
@@ -249,6 +253,7 @@ fn boxplot_svg(results: &[&BenchmarkResult], unit: Unit) -> String {
 
 fn summary_table(
     results: &[BenchmarkResult],
+    best_commands: &[String],
     reference: Option<&BenchmarkResult>,
     unit: Unit,
     sort_order: SortOrder,
@@ -278,9 +283,15 @@ fn summary_table(
         } else {
             "n/a".into()
         };
+        // `--optimize`: the value the search found
+        let marker = if best_commands.contains(&r.command) {
+            " <strong class=\"best\" title=\"best value found by --optimize\">★ best</strong>"
+        } else {
+            ""
+        };
         let _ = write!(
             table,
-            "<tr><td><code>{}</code></td><td>{}{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            "<tr><td><code>{}</code>{marker}</td><td>{}{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
             escape_html(&r.command_with_unused_parameters),
             mean,
             stddev,
@@ -317,7 +328,19 @@ impl Exporter for HtmlExporter {
         }
 
         html.push_str("<h2>Summary</h2>");
-        html.push_str(&summary_table(results, reference, unit, sort_order, metric));
+        let best_commands = self
+            .best_commands
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        html.push_str(&summary_table(
+            results,
+            &best_commands,
+            reference,
+            unit,
+            sort_order,
+            metric,
+        ));
 
         let with_times: Vec<&BenchmarkResult> = results
             .iter()
@@ -342,6 +365,18 @@ impl Exporter for HtmlExporter {
 
         html.push_str("</body></html>\n");
         Ok(html.into_bytes())
+    }
+
+    fn set_optimize(&self, value: Option<&serde_json::Value>) {
+        let reports: Vec<&serde_json::Value> = match value {
+            Some(serde_json::Value::Array(all)) => all.iter().collect(),
+            Some(one) => vec![one],
+            None => Vec::new(),
+        };
+        *self.best_commands.lock().unwrap_or_else(|e| e.into_inner()) = reports
+            .iter()
+            .filter_map(|r| r.get("best_command")?.as_str().map(str::to_string))
+            .collect();
     }
 }
 
@@ -437,5 +472,34 @@ mod tests {
     fn empty_results_give_a_valid_page() {
         let html = render(&[]);
         assert!(html.contains("No results.") && html.ends_with("</html>\n"));
+    }
+
+    #[test]
+    fn optimize_marks_the_best_value_in_the_summary() {
+        let results = vec![
+            result("make -j 2", vec![0.2, 0.2]),
+            result("make -j <8>", vec![0.1, 0.1]),
+        ];
+        let exporter = HtmlExporter::default();
+        exporter.set_optimize(Some(&serde_json::json!({
+            "var": "j", "best_command": "make -j <8>"
+        })));
+        let html = String::from_utf8(
+            exporter
+                .serialize(
+                    &results,
+                    None,
+                    Some(Unit::MilliSecond),
+                    SortOrder::Command,
+                    Metric::Wall,
+                )
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(html.matches("★ best").count(), 1, "{html}");
+        let row = html.split("<tr>").find(|r| r.contains("★ best")).unwrap();
+        assert!(row.contains("make -j &lt;8&gt;"), "{row}");
+        // without a search there is no marker
+        assert!(!render(&results).contains("★ best"));
     }
 }

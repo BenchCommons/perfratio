@@ -305,7 +305,8 @@ pub fn build_command() -> Command {
                 .value_names(["VAR", "MIN", "MAX"])
                 .conflicts_with_all(["import-json", "reference"])
                 .help(
-                    "Search the integer parameter VAR in MIN..MAX for the value that minimizes the \
+                    "Search the parameter VAR in MIN..MAX (integers, or fractional values in steps of \
+                     '-D DELTA') for the value that minimizes the \
                      primary metric (see '--metric'; default: mean wall time) instead of benchmarking \
                      every value. Replaces '{VAR}' in the command by the current value.\n\n  \
                      Example:  perfratio --optimize j 1 64 --metric energy 'make -j {j}'\n\n\
@@ -328,15 +329,29 @@ pub fn build_command() -> Command {
                 ),
         )
         .arg(
+            Arg::new("optimize-confirm")
+                .long("optimize-confirm")
+                .action(ArgAction::Set)
+                .value_name("N")
+                .value_parser(clap::value_parser!(usize))
+                .default_value("2")
+                .help(
+                    "After the search, '--optimize' runs the best value and up to N other values \
+                     whose difference from it is not significant a second time, and pools both \
+                     runs before declaring the best value. 0 disables this. The extra runs are not \
+                     separate results entries.",
+                ),
+        )
+        .arg(
             Arg::new("parameter-step-size")
                 .long("parameter-step-size")
                 .short('D')
                 .action(ArgAction::Set)
                 .value_names(["DELTA"])
-                .requires("parameter-scan")
                 .help(
-                    "This argument requires --parameter-scan to be specified as well. \
-                     Traverse the range MIN..MAX in steps of DELTA.\n\n  \
+                    "This argument requires --parameter-scan (or --optimize) to be specified as \
+                     well. Traverse the range MIN..MAX in steps of DELTA. With '--optimize', the \
+                     search runs over these values, which allows fractional parameters.\n\n  \
                      Example:  perfratio -P delay 0.3 0.7 -D 0.2 'sleep {delay}'\n\n\
                      This performs benchmarks for 'sleep 0.3', 'sleep 0.5' and 'sleep 0.7'.",
                 ),

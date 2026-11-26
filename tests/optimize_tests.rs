@@ -224,3 +224,150 @@ fn json_export_without_optimize_has_no_optimize_key() {
     let json = export(&["sleep 0.1"]);
     assert!(json.get("optimize").is_none());
 }
+
+#[test]
+fn close_candidates_are_run_again_and_pooled_but_not_duplicated_in_results() {
+    // The mock executor has no noise, so the samples of every value are constant and
+    // their difference cannot be tested: the best value and its runner-up are confirmed.
+    let json = export(&["--optimize", "n", "1", "40", "sleep {n}"]);
+    let optimize = &json["optimize"];
+    let re = optimize["reevaluated"].as_array().unwrap();
+    assert_eq!(re[0], optimize["best"], "the best value is confirmed first");
+    assert!(!re.is_empty() && re.len() <= 3, "{re:?}");
+    // results[] keeps one entry per evaluated value
+    let evaluated = optimize["evaluated"].as_array().unwrap().len();
+    assert_eq!(optimize["evaluations"], evaluated);
+    assert_eq!(json["results"].as_array().unwrap().len(), evaluated);
+    // pooling the (identical) runs does not change the value
+    assert_eq!(optimize["best_value"], json["results"][0]["mean"]);
+    assert_eq!(
+        json["results"][0]["times"].as_array().unwrap().len(),
+        3,
+        "the results keep the first run's samples"
+    );
+}
+
+#[test]
+fn confirmation_can_be_disabled() {
+    let json = export(&[
+        "--optimize",
+        "n",
+        "1",
+        "40",
+        "--optimize-confirm",
+        "0",
+        "sleep {n}",
+    ]);
+    assert!(json["optimize"].get("reevaluated").is_none());
+}
+
+#[test]
+fn confirmation_is_mentioned_in_the_summary() {
+    perfratio()
+        .args([
+            "--debug-mode",
+            "--runs=3",
+            "--optimize",
+            "n",
+            "1",
+            "40",
+            "sleep {n}",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("run a second time"));
+}
+
+#[test]
+fn fractional_values_with_a_step() {
+    let json = export(&[
+        "--optimize",
+        "d",
+        "0.1",
+        "0.9",
+        "-D",
+        "0.1",
+        "--optimize-budget",
+        "5",
+        "sleep {d}",
+    ]);
+    let optimize = &json["optimize"];
+    assert_eq!(optimize["min"], 0.1);
+    assert_eq!(optimize["max"], 0.9);
+    assert_eq!(optimize["best"], 0.1);
+    assert_eq!(optimize["best_command"], "sleep 0.1");
+    assert!(optimize["evaluated"].as_array().unwrap().len() <= 5);
+    // whole-number values stay integers
+    let json = export(&["--optimize", "d", "1", "3", "-D", "1", "sleep {d}"]);
+    assert_eq!(json["optimize"]["evaluated"][0], 1);
+    assert_eq!(json["optimize"]["algorithm"], "exhaustive");
+}
+
+#[test]
+fn step_validation() {
+    fails_with(&["--optimize", "d", "0.5", "3", "sleep {d}"], "-D DELTA");
+    fails_with(
+        &["--optimize", "d", "1", "3", "-D", "0", "sleep {d}"],
+        "step",
+    );
+    fails_with(
+        &[
+            "--optimize",
+            "d",
+            "1",
+            "3",
+            "--parameter-step-size=-1",
+            "sleep {d}",
+        ],
+        "positive",
+    );
+    fails_with(
+        &[
+            "--optimize",
+            "d",
+            "1",
+            "3",
+            "-D",
+            "1",
+            "-P",
+            "x",
+            "1",
+            "2",
+            "sleep {d} {x}",
+        ],
+        "ambiguous",
+    );
+    fails_with(&["-D", "1", "sleep 1"], "requires");
+}
+
+#[test]
+fn reference_stays_rejected() {
+    fails_with(
+        &[
+            "--optimize",
+            "n",
+            "1",
+            "9",
+            "--reference",
+            "sleep 1",
+            "sleep {n}",
+        ],
+        "--reference",
+    );
+}
+
+#[test]
+fn html_report_marks_the_best_value() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("report.html");
+    perfratio()
+        .args(["--debug-mode", "--runs=2", "--style=none", "--export-html"])
+        .arg(&path)
+        .args(["--optimize", "n", "1", "40", "sleep {n}"])
+        .assert()
+        .success();
+    let html = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(html.matches("★ best").count(), 1, "{html}");
+    let row = html.split("<tr>").find(|r| r.contains("★ best")).unwrap();
+    assert!(row.contains("sleep 1<"), "{row}");
+}

@@ -1,7 +1,7 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Partly shipped (schemaVersion 1.10; 1.10 adds `results[].counters_coverage` (#219); 1.9 adds the `:u`/`:k` counter key suffixes, `counters_scope` values `kernel` and `perfratio.measurements.counters_requested_scope` from #218 (`counter-scope-modifiers.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
+Partly shipped (schemaVersion 1.11; 1.11 adds `optimize.reevaluated` and fractional `optimize` values with `-D` (#98); 1.10 adds `results[].counters_coverage` (#219); 1.9 adds the `:u`/`:k` counter key suffixes, `counters_scope` values `kernel` and `perfratio.measurements.counters_requested_scope` from #218 (`counter-scope-modifiers.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
@@ -141,7 +141,11 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
   `evaluations`, `best`, `best_value` (mean of `metric`), `best_command`, `evaluated` (values in
   evaluation order), `at_boundary`, `unimodal_warning`; optional `runner_up`, `p_value`,
   `significant` (best vs runner-up; omitted when not computable), `fixed` (values of the
-  other parameters of this search) and `interrupted` (only `true`). Every evaluated value is
+  other parameters of this search), `reevaluated` (**new in 1.11**: the values that
+  `--optimize-confirm` ran a second time; their samples are pooled into `best_value`, while
+  `results[]` keeps the first run) and `interrupted` (only `true`). With `-D DELTA` the
+  searched values are `MIN, MIN+DELTA, ...`; `min`, `max`, `best`, `runner_up`, `evaluated`
+  and `reevaluated` are then JSON numbers that may be fractional (integers stay integers). Every evaluated value is
   also an ordinary `results[]` entry with `parameters: { "<var>": "<value>" }`, in
   evaluation order. See `optimize.md`.
 - `results` (array, guaranteed, may be empty).
