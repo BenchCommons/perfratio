@@ -433,6 +433,14 @@ pub struct PrecisionReached {
     pub confidence: f64,
     /// Whether the target was reached
     pub met: bool,
+    /// The rule that decides the interval is narrow enough: `fixed_ci` or
+    /// `confidence_sequence` (new in 1.22, #322)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stopping_rule: Option<crate::stats::sequential::StoppingRule>,
+    /// Half-width of that rule's interval, relative to the mean; the same value as
+    /// `reached` (new in 1.22, #322)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub achieved_half_width: Option<f64>,
 }
 
 /// Per-run parameter values, aligned with `times`, and statistics per value.

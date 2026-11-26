@@ -777,6 +777,20 @@ pub fn build_command() -> Command {
                        Low-noise commands then finish early and noisy ones get more runs."),
         )
         .arg(
+            Arg::new("target-precision-method")
+                .long("target-precision-method")
+                .action(ArgAction::Set)
+                .value_name("METHOD")
+                .value_parser(["fixed", "sequential"])
+                .requires("target-precision")
+                .help("How '--target-precision' decides that the interval is narrow enough: \
+                       'fixed' (default) re-checks the Student-t interval of the mean after \
+                       every run, which stops too early more often than the confidence level \
+                       says; 'sequential' uses an anytime-valid confidence sequence of the \
+                       mean, valid however the run count was chosen, at the cost of about 2.5x \
+                       the runs. Assumes independent runs with finite variance."),
+        )
+        .arg(
             Arg::new("max-benchmarking-time")
                 .long("max-benchmarking-time")
                 .action(ArgAction::Set)

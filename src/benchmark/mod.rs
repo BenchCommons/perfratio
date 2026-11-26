@@ -538,17 +538,31 @@ impl<'a> BenchmarkRunner<'a> {
         if started.elapsed().as_secs_f64() >= budget {
             return false;
         }
-        let (base_sd, base_runs) = self
-            .baseline
-            .as_ref()
-            .map(|b| (b.stddev, b.runs))
-            .unwrap_or((None, 0));
-        crate::stats::precision::relative_ci_half_width_with_baseline(
-            self.measured_times(),
-            base_sd,
-            base_runs,
-        )
-        .is_none_or(|width| width > target)
+        self.precision_half_width(self.measured_times())
+            .is_none_or(|width| width > target)
+    }
+
+    /// Relative half-width of the interval that `--target-precision-method` stops on:
+    /// the fixed Student-t interval of the mean (with the uncertainty of a subtracted
+    /// baseline), or the confidence sequence of the mean.
+    fn precision_half_width(&self, times: &[Second]) -> Option<f64> {
+        use crate::stats::sequential::StoppingRule;
+        match self.options.target_precision_method {
+            StoppingRule::FixedCi => {
+                let (base_sd, base_runs) = self
+                    .baseline
+                    .as_ref()
+                    .map(|b| (b.stddev, b.runs))
+                    .unwrap_or((None, 0));
+                crate::stats::precision::relative_ci_half_width_with_baseline(
+                    times, base_sd, base_runs,
+                )
+            }
+            StoppingRule::ConfidenceSequence => crate::stats::sequential::relative_half_width(
+                times,
+                crate::stats::settings::current().confidence_level,
+            ),
+        }
     }
 
     /// `--aggregate-parameter-runs`: round the run count up to whole cycles
@@ -1176,27 +1190,21 @@ impl<'a> BenchmarkRunner<'a> {
         let median_str = format_duration(t_median, Some(time_unit));
         let max_str = format_duration(t_max, Some(time_unit));
         let mut excluded = Vec::new();
-        let (base_sd, base_runs) = self
-            .baseline
-            .as_ref()
-            .map(|b| (b.stddev, b.runs))
-            .unwrap_or((None, 0));
         // --target-precision: the precision reached (and the target)
-        let precision_reached = self.options.target_precision.map(|target| {
-            (
-                target,
-                crate::stats::precision::relative_ci_half_width_with_baseline(
-                    &self.times_real,
-                    base_sd,
-                    base_runs,
-                ),
-            )
-        });
+        let precision_reached = self
+            .options
+            .target_precision
+            .map(|target| (target, self.precision_half_width(&self.times_real)));
         if let Some((target, reached)) = precision_reached {
             excluded.push(format!(
-                "±{} @{}%, target {}",
+                "±{} @{}%{}, target {}",
                 reached.map_or("?".to_string(), |r| format!("{:.1}%", r * 100.0)),
                 crate::stats::settings::current().confidence_percent(),
+                match self.options.target_precision_method {
+                    crate::stats::sequential::StoppingRule::FixedCi => "",
+                    crate::stats::sequential::StoppingRule::ConfidenceSequence =>
+                        " confidence sequence",
+                },
                 format_percent(target)
             ));
         }
@@ -2076,8 +2084,10 @@ impl<'a> BenchmarkRunner<'a> {
                 benchmark_result::PrecisionReached {
                     target,
                     reached,
-                    confidence: 0.95,
+                    confidence: crate::stats::settings::current().confidence_level,
                     met: reached.is_some_and(|r| r <= target),
+                    stopping_rule: Some(self.options.target_precision_method),
+                    achieved_half_width: reached,
                 }
             }),
             timed_out: self.timed_out,

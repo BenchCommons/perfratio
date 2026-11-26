@@ -283,6 +283,8 @@ pub struct Options {
     /// `--target-precision`: run until the 95% CI of the mean is at most this
     /// fraction of the mean (0.01 = ±1%)
     pub target_precision: Option<f64>,
+    /// `--target-precision-method`: the rule that decides the interval is narrow enough
+    pub target_precision_method: crate::stats::sequential::StoppingRule,
 
     /// `--estimator`, `--confidence-level`, `--significance-level`,
     /// `--bootstrap-resamples` and `--seed` (#320)
@@ -452,6 +454,7 @@ impl Default for Options {
             first_run: FirstRunPolicy::default(),
             min_benchmarking_time: 3.0,
             target_precision: None,
+            target_precision_method: Default::default(),
             stat_settings: Default::default(),
             duration: None,
             max_benchmarking_time: 60.0,
@@ -754,6 +757,23 @@ impl Options {
             options.target_precision = Some(pct / 100.0);
         }
         options.stat_settings = parse_stat_settings(matches)?;
+        if matches
+            .get_one::<String>("target-precision-method")
+            .is_some_and(|m| m == "sequential")
+        {
+            if !options.stat_settings.estimator.is_mean() {
+                return Err(OptionsError::InvalidStatistics(
+                    "'--target-precision-method sequential' is defined for the mean: it cannot be combined with another '--estimator'".into(),
+                ));
+            }
+            if matches.get_one::<String>("subtract").is_some() {
+                return Err(OptionsError::InvalidStatistics(
+                    "'--target-precision-method sequential' cannot be combined with '--subtract': the uncertainty of the subtracted baseline is not part of the confidence sequence".into(),
+                ));
+            }
+            options.target_precision_method =
+                crate::stats::sequential::StoppingRule::ConfidenceSequence;
+        }
         if let Some(time) = matches.get_one::<String>("max-benchmarking-time") {
             options.max_benchmarking_time = time
                 .parse::<f64>()
