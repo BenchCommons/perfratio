@@ -114,7 +114,7 @@ impl RunOutcome {
     }
 }
 
-/// The `validation` object of a result (`schemaVersion` 1.16)
+/// The `validation` object of a result (`schemaVersion` 1.17)
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ValidationSummary {
     /// `output_sha256`, `command` or `output_sha256+command`

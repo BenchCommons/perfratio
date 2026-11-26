@@ -1,7 +1,7 @@
 # Specification: Workload validation (`--expect-output-sha256`, `--validate`)
 
 **Issue:** [#316](https://github.com/BenchCommons/perfratio/issues/316)
-**Status:** Completed. JSON `schemaVersion` 1.16.
+**Status:** Completed. JSON `schemaVersion` 1.17.
 **Related:** #240 (output contract), `omit-failed-runs.md`, `omit-failed-runs-alignment.md`,
 catalog-algorithms#11 (what "correct" means is defined there; this is the generic hook).
 
@@ -58,7 +58,7 @@ stdout per run can be validated; more fails the benchmark with a message
 words after the fifth field of `sleep <s> <user> <system> <memory> <words>` (empty by default), so
 tests are deterministic without a shell.
 
-### 2.4 JSON (`schemaVersion` 1.16, additive)
+### 2.4 JSON (`schemaVersion` 1.17, additive)
 
 `results[].validation`, present only with the options above:
 
