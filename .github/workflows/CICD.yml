@@ -94,6 +94,10 @@ jobs:
       run: cargo clippy --locked --all-targets ${{ env.MSRV_FEATURES }} -- -D warnings
     - name: Run tests
       run: cargo test --locked ${{ env.MSRV_FEATURES }}
+    - name: Check the library without the `cli` feature (no clap, indicatif)
+      run: |
+        cargo clippy --locked --lib --no-default-features -- -D warnings
+        cargo test --locked --lib --no-default-features
 
   build:
     name: ${{ matrix.job.target }} (${{ matrix.job.os }})

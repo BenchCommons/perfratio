@@ -6,6 +6,27 @@
 //! that the binary can use them, are hidden from the documentation and carry
 //! no compatibility promise.
 //!
+//! Use `perfratio = { version = "...", default-features = false }` to leave
+//! out the command-line front end (`cli` feature: `clap`, `clap_complete`,
+//! `indicatif`). The `perfratio` binary needs the default features.
+//!
+//! [`api::Benchmark`] runs a full benchmark (warmup, statistics, optional
+//! energy and bootstrap intervals) without printing anything:
+//!
+//! ```
+//! use perfratio::api::Benchmark;
+//!
+//! # fn main() -> anyhow::Result<()> {
+//! # if cfg!(unix) {
+//! let report = Benchmark::new(["true"]).runs(5).deep_stats(true).run()?;
+//! println!("{:.6} s", report.result.mean);
+//! # }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! [`api::measure`] returns the raw per-run samples:
+//!
 //! ```
 //! use perfratio::api::{measure, stats};
 //!
@@ -26,6 +47,7 @@ pub mod api;
 
 #[doc(hidden)]
 pub mod benchmark;
+#[cfg(feature = "cli")]
 #[doc(hidden)]
 pub mod cli;
 #[doc(hidden)]

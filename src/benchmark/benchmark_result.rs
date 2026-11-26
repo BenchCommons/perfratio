@@ -169,7 +169,7 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub baseline: Option<Baseline>,
 
-    /// Whether this benchmark timed out (--timeout <DURATION>)
+    /// Whether this benchmark timed out (`--timeout <DURATION>`)
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub timed_out: bool,
 

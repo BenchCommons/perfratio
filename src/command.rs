@@ -1,20 +1,27 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
+#[cfg(feature = "cli")]
 use std::str::FromStr;
 
-#[cfg(test)]
+#[cfg(feature = "cli")]
+use crate::error::OptionsError;
+#[cfg(all(test, feature = "cli"))]
 use crate::parameter::range_step::Numeric;
+#[cfg(feature = "cli")]
 use crate::parameter::tokenize::tokenize;
+use crate::parameter::ParameterNameAndValue;
 use crate::parameter::ParameterValue;
-use crate::{
-    error::{OptionsError, ParameterScanError},
-    parameter::{range_step::RangeStep, ParameterNameAndValue},
-};
+#[cfg(feature = "cli")]
+use crate::{error::ParameterScanError, parameter::range_step::RangeStep};
 
+#[cfg(feature = "cli")]
 use clap::ArgMatches;
 
-use anyhow::{anyhow, bail, Context, Result};
+#[cfg(feature = "cli")]
+use anyhow::anyhow;
+use anyhow::{bail, Context, Result};
+#[cfg(feature = "cli")]
 use rust_decimal::Decimal;
 
 /// Name of the built-in placeholder `{iteration}`, which expands to the same
@@ -414,6 +421,7 @@ fn split_windows_command_line(command_line: &str) -> Vec<String> {
 pub struct Commands<'a>(Vec<Command<'a>>);
 
 impl<'a> Commands<'a> {
+    #[cfg(feature = "cli")]
     pub fn from_cli_arguments(matches: &'a ArgMatches) -> Result<Commands<'a>> {
         let has_parameters = ["parameter-scan", "parameter-list", "parameter-file"]
             .iter()
@@ -501,6 +509,7 @@ impl<'a> Commands<'a> {
         Ok(commands)
     }
 
+    #[cfg(feature = "cli")]
     fn expand_parameters(matches: &'a ArgMatches) -> Result<Commands<'a>> {
         let command_names = matches.get_many::<String>("command-name");
         let argv = matches
@@ -719,6 +728,7 @@ impl<'a> Commands<'a> {
 
     /// `--aggregate-parameter-runs`: one command per template, whose runs go
     /// through all parameter combinations in turn.
+    #[cfg(feature = "cli")]
     fn aggregated(
         matches: &ArgMatches,
         command_strings: &[&'a str],
@@ -767,6 +777,7 @@ impl<'a> Commands<'a> {
         Ok(Self(commands))
     }
 
+    #[cfg(feature = "cli")]
     /// `--expand-used-parameters`: drop the parameters a command doesn't use and
     /// remove the resulting duplicate benchmarks.
     ///
@@ -817,6 +828,7 @@ impl<'a> Commands<'a> {
         self.0.len() + if has_reference_command { 1 } else { 0 }
     }
 
+    #[cfg(feature = "cli")]
     /// Finds all the strings that appear multiple times in the input iterator, returning them in
     /// sorted order. If no string appears more than once, the result is an empty vector.
     fn find_duplicates<'b, I: IntoIterator<Item = &'b str>>(i: I) -> Vec<&'b str> {
@@ -830,6 +842,7 @@ impl<'a> Commands<'a> {
             .collect()
     }
 
+    #[cfg(feature = "cli")]
     #[cfg(test)]
     fn build_parameter_scan_commands<'b, T: Numeric>(
         param_name: &'b str,
@@ -872,6 +885,7 @@ impl<'a> Commands<'a> {
         Ok(commands)
     }
 
+    #[cfg(feature = "cli")]
     fn parse_parameter_scan(
         param_min: &str,
         param_max: &str,
@@ -936,6 +950,7 @@ impl fmt::Display for Command<'_> {
     }
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_build_commands_cross_product() {
     use crate::cli::get_cli_arguments;
@@ -974,6 +989,7 @@ fn test_build_commands_cross_product() {
     assert_eq!(result, expected);
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_build_parameter_list_commands() {
     use crate::cli::get_cli_arguments;
@@ -995,6 +1011,7 @@ fn test_build_parameter_list_commands() {
     assert_eq!(commands[1].get_command_line(), "echo 2");
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_build_parameter_scan_commands() {
     use crate::cli::get_cli_arguments;
@@ -1018,6 +1035,7 @@ fn test_build_parameter_scan_commands() {
     assert_eq!(commands[1].get_command_line(), "echo 2");
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_build_parameter_scan_commands_named() {
     use crate::cli::get_cli_arguments;
@@ -1052,6 +1070,7 @@ fn test_build_parameter_scan_commands_named() {
     assert_eq!(commands[3].get_command_line(), "sleep 2");
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_parameter_scan_commands_int() {
     let commands = Commands::build_parameter_scan_commands(
@@ -1068,6 +1087,7 @@ fn test_parameter_scan_commands_int() {
     assert_eq!(commands[2].get_command_line(), "echo 7");
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_parameter_scan_commands_decimal() {
     let param_min = Decimal::from_str("0").unwrap();
@@ -1088,6 +1108,7 @@ fn test_parameter_scan_commands_decimal() {
     assert_eq!(commands[3].get_command_line(), "echo 0.99");
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_parameter_scan_commands_names() {
     let commands = Commands::build_parameter_scan_commands(
@@ -1107,6 +1128,7 @@ fn test_parameter_scan_commands_names() {
     assert_eq!(command_names, vec!["name-1", "name-2", "name-3"]);
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_get_specified_command_names() {
     let commands = Commands::build_parameter_scan_commands(
@@ -1126,6 +1148,7 @@ fn test_get_specified_command_names() {
     assert_eq!(command_names, vec!["name-a", "name-b", "name-c"]);
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_different_command_name_count_with_parameters() {
     let result = Commands::build_parameter_scan_commands(
@@ -1142,6 +1165,7 @@ fn test_different_command_name_count_with_parameters() {
     ));
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_parameter_file_support() {
     use crate::cli::get_cli_arguments;
@@ -1159,6 +1183,7 @@ fn test_parameter_file_support() {
     assert_eq!(names, vec!["echo foo", "echo bar", "echo baz"]);
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_parameter_file_and_list_combined() {
     use crate::cli::get_cli_arguments;
@@ -1183,6 +1208,7 @@ fn test_parameter_file_and_list_combined() {
     assert_eq!(commands.iter().count(), 4);
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_multiple_parameter_scans() {
     use crate::cli::get_cli_arguments;
@@ -1208,6 +1234,7 @@ fn test_multiple_parameter_scans() {
     );
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_parameter_scan_and_list_combined() {
     use crate::cli::get_cli_arguments;
@@ -1237,6 +1264,7 @@ fn test_parameter_scan_and_list_combined() {
     );
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_parameter_scan_and_file_combined() {
     use crate::cli::get_cli_arguments;
@@ -1267,6 +1295,7 @@ fn test_parameter_scan_and_file_combined() {
     );
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_multiple_parameter_scans_with_step_size_fails() {
     use crate::cli::get_cli_arguments;
@@ -1291,6 +1320,7 @@ fn test_multiple_parameter_scans_with_step_size_fails() {
         .contains("The '--parameter-step-size' ('-D') option cannot be used when multiple '--parameter-scan' ('-P') options are specified"));
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_single_parameter_scan_with_step_size_succeeds() {
     use crate::cli::get_cli_arguments;
@@ -1311,6 +1341,7 @@ fn test_single_parameter_scan_with_step_size_succeeds() {
     assert_eq!(lines, vec!["echo 1", "echo 3", "echo 5"]);
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_parameter_combinations_exceeding_default_limit_fails() {
     use crate::cli::get_cli_arguments;
@@ -1333,6 +1364,7 @@ fn test_parameter_combinations_exceeding_default_limit_fails() {
     assert!(msg.contains("commands: 1 × a: 20000 × b: 20000"));
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_parameter_combinations_max_benchmarks_override() {
     use crate::cli::get_cli_arguments;
@@ -1398,6 +1430,7 @@ fn test_with_iteration_substitutes_placeholder() {
     assert_eq!(command.get_name(), "echo run-{iteration} {iteration}");
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_iteration_is_a_reserved_parameter_name() {
     use crate::cli::get_cli_arguments;
@@ -1458,6 +1491,7 @@ fn test_argv_command_substitutes_parameters_per_argument() {
     );
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_argv_from_cli_arguments() {
     let matches = crate::cli::get_cli_arguments(vec![

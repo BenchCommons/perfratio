@@ -1,10 +1,14 @@
 use std::fs::File;
+#[cfg(feature = "cli")]
 use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::{cmp, env, fmt, io};
+#[cfg(feature = "cli")]
+use std::{cmp, env};
+use std::{fmt, io};
 
 use anyhow::{bail, ensure, Result};
+#[cfg(feature = "cli")]
 use clap::ArgMatches;
 
 use crate::command::Commands;
@@ -454,6 +458,7 @@ impl Default for Options {
 }
 
 impl Options {
+    #[cfg(feature = "cli")]
     pub fn from_cli_arguments<'a>(matches: &ArgMatches) -> Result<Self, OptionsError<'a>> {
         let mut options = Self::default();
         let param_to_u64 = |param| {
@@ -871,6 +876,7 @@ impl Options {
         Ok(options)
     }
 
+    #[cfg(feature = "cli")]
     /// Warnings for `--concurrency N` with N > 1 (printed once, to stderr).
     fn warn_concurrency(&self) {
         if self.concurrency <= 1 {
@@ -1047,6 +1053,7 @@ fn test_can_parse_shell_command_line_from_str() {
     ));
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_suppress_outlier_warnings_option() {
     let matches = crate::cli::build_command().get_matches_from(vec![
@@ -1063,6 +1070,7 @@ fn test_suppress_outlier_warnings_option() {
     assert!(!options_default.suppress_outlier_warnings);
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_schedule_options() {
     let matches = crate::cli::build_command().get_matches_from(vec![
@@ -1099,6 +1107,7 @@ fn test_schedule_options() {
     assert_eq!(options_default.schedule, ScheduleMode::Grouped);
 }
 
+#[cfg(feature = "cli")]
 #[test]
 fn test_warning_suppression_options() {
     let matches_no_off_cpu = crate::cli::build_command().get_matches_from(vec![
@@ -1138,6 +1147,7 @@ fn test_warning_suppression_options() {
     assert!(opts.suppress_outlier_warnings);
 }
 
+#[cfg(feature = "cli")]
 /// `--energy-baseline` value: `None` for an explicit zero ("0", "0s", "0ms"), which disables
 /// the baseline; otherwise a positive duration. `parse_duration` rejects zero, so zero is
 /// recognised here, after checking that the unit is valid.
@@ -1154,7 +1164,7 @@ fn parse_energy_baseline(val: &str) -> Result<Option<std::time::Duration>, Strin
     crate::util::units::parse_duration(t).map(Some)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "cli"))]
 mod energy_baseline_tests {
     use super::parse_energy_baseline;
     use std::time::Duration;

@@ -79,7 +79,7 @@ pub struct BenchmarkRunner<'a> {
     pub cold_warmup_time: Option<Second>,
     /// `--subtract`: the baseline subtracted from every run
     pub baseline: Option<benchmark_result::Baseline>,
-    /// Whether this runner timed out (--timeout <DURATION>)
+    /// Whether this runner timed out (`--timeout <DURATION>`)
     pub timed_out: bool,
     /// Extracted custom metrics per run
     pub custom_metrics: std::collections::BTreeMap<String, Vec<Option<f64>>>,
@@ -731,7 +731,22 @@ impl<'a> BenchmarkRunner<'a> {
         }
     }
 
-    pub fn finish(mut self, print_header: bool) -> Result<BenchmarkResult> {
+    /// Compute the result and print the summary and warnings to the terminal.
+    pub fn finish(self, print_header: bool) -> Result<BenchmarkResult> {
+        self.finalize(Some(print_header)).map(|(result, _)| result)
+    }
+
+    /// Compute the result without any terminal output (library use). The
+    /// rendered warnings are returned next to the result instead of being
+    /// printed.
+    pub fn finish_quiet(self) -> Result<(BenchmarkResult, Vec<String>)> {
+        self.finalize(None)
+    }
+
+    /// The statistics of [`finish`](Self::finish) and
+    /// [`finish_quiet`](Self::finish_quiet). `report` is `None` for no output,
+    /// otherwise whether to print the "Benchmark N: ..." header.
+    fn finalize(mut self, report: Option<bool>) -> Result<(BenchmarkResult, Vec<String>)> {
         if self.options.metric == crate::metric::Metric::Energy {
             let missing = self
                 .energy_measurements
@@ -957,8 +972,8 @@ impl<'a> BenchmarkRunner<'a> {
             concurrency.and_then(|_| benchmark_result::InstancePercentiles::new(&instance_flat));
         let throughput = concurrency.and_then(|n| benchmark_result::throughput(n, t_mean));
 
-        if self.options.output_style != OutputStyleOption::Disabled {
-            if print_header {
+        if report.is_some() && self.options.output_style != OutputStyleOption::Disabled {
+            if report == Some(true) {
                 let suffix = if is_interrupted {
                     colors::yellow(format!(
                         "  (interrupted after {runs_done} of {planned} runs)"
@@ -1514,15 +1529,16 @@ impl<'a> BenchmarkRunner<'a> {
             Diagnostics::default()
         };
 
-        if !warnings.is_empty() {
+        if report.is_some() && !warnings.is_empty() {
             eprintln!(" ");
 
             for warning in &warnings {
                 eprintln!("  {}: {}", colors::yellow("Warning"), warning);
             }
         }
+        let warning_texts: Vec<String> = warnings.iter().map(ToString::to_string).collect();
 
-        if self.options.output_style != OutputStyleOption::Disabled {
+        if report.is_some() && self.options.output_style != OutputStyleOption::Disabled {
             crate::outln!(" ");
         }
 
@@ -1571,7 +1587,7 @@ impl<'a> BenchmarkRunner<'a> {
             b
         });
 
-        Ok(BenchmarkResult {
+        let result = BenchmarkResult {
             command: self.command.get_name(),
             command_with_unused_parameters: self.command.get_name_with_unused_parameters(),
             mean: t_mean,
@@ -1645,7 +1661,8 @@ impl<'a> BenchmarkRunner<'a> {
             },
             custom_metrics,
             custom_metrics_summary,
-        })
+        };
+        Ok((result, warning_texts))
     }
 }
 
@@ -1810,6 +1827,18 @@ impl<'a> Benchmark<'a> {
     }
 
     pub fn run(&self) -> Result<Option<BenchmarkResult>> {
+        Ok(self.run_inner(false)?.map(|(result, _)| result))
+    }
+
+    /// Like [`run`](Self::run), but the summary and warnings are not printed.
+    /// The rendered warnings are returned next to the result. Together with
+    /// `OutputStyleOption::Disabled` in the options this produces no terminal
+    /// output at all.
+    pub fn run_quiet(&self) -> Result<Option<(BenchmarkResult, Vec<String>)>> {
+        self.run_inner(true)
+    }
+
+    fn run_inner(&self, quiet: bool) -> Result<Option<(BenchmarkResult, Vec<String>)>> {
         let mut runner = BenchmarkRunner::new(
             self.number,
             self.display_number,
@@ -2074,8 +2103,12 @@ impl<'a> Benchmark<'a> {
                 );
             }
             Ok(None)
+        } else if quiet {
+            runner.finish_quiet().map(Some)
         } else {
-            runner.finish(false).map(Some)
+            runner
+                .finish(false)
+                .map(|result| Some((result, Vec::new())))
         }
     }
 }
