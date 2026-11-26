@@ -943,6 +943,7 @@ impl Options {
                         parsed.name
                     )));
                 }
+                parsed.declare();
                 options.output_metrics.push(parsed);
             }
         }

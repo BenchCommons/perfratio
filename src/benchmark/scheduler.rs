@@ -1510,7 +1510,13 @@ fn custom_difference(
                 );
                 return format!("({v}, {sign}{d})");
             }
-            format!("({value:.3}, {sign}{:.3})", diff.abs())
+            let unit = metric
+                .custom_name()
+                .and_then(crate::metric::custom_meta)
+                .and_then(|m| m.unit)
+                .map(|u| format!(" {u}"))
+                .unwrap_or_default();
+            format!("({value:.3}{unit}, {sign}{:.3}{unit})", diff.abs())
         }
         _ => String::new(),
     }

@@ -1,6 +1,6 @@
 # Spec: Metric descriptors and status taxonomy (`perfratio.metrics`) (#317)
 
-Shipped in `schemaVersion` 1.20 (additive, MINOR). Part of the output contract of #240.
+Shipped in `schemaVersion` 1.20 (additive, MINOR); unit and direction of custom metrics and descriptor import in 1.28. Part of the output contract of #240.
 
 ## Problem / Motivation
 Every metric of the export was a special case: fixed fields for time, memory, energy and counters,
@@ -43,8 +43,7 @@ Rules:
   the single id `counter`; with partial counters every requested event that could not be opened
   has its own `counter.<key>` descriptor.
 - A counter or custom metric that has no value in some runs is `partial`. Custom metrics are
-  `unitless` and `lower_is_better` (the documented default); declaring unit and direction in
-  `--output-metric` is not implemented yet.
+  `unitless` and `lower_is_better` unless declared with `--output-metric` (below).
 - `status`, `reason`, `kind`, `scope`, `unit` and `direction` are open enums: consumers tolerate
   new values.
 - `docs/schema/perfratio-export.schema.json` describes `perfratio.metrics[]`
@@ -61,10 +60,45 @@ import; `--import-json` ignores the key and the descriptors are regenerated on t
   groups are described and carry no values.
 - Unit tests in `src/metric_registry.rs` for ids, directions and the status mapping.
 
-## Not done (remaining of #317)
-- `--output-metric NAME=REGEX[:unit][:higher]` and direction-aware ranking, delta table and
-  `--compare` (they still assume lower is better).
-- Reading descriptors back in `--import-json`.
+## Declaring unit and direction (1.28)
+`--output-metric NAME[unit,higher]=REGEX`. The brackets are optional and follow `NAME`:
+
+| Form | Meaning |
+|---|---|
+| `NAME=REGEX` | unitless, lower is better (unchanged) |
+| `NAME[ms]=REGEX` | unit `ms`, lower is better |
+| `NAME[higher]=REGEX` | unitless, higher is better |
+| `NAME[ops/s,higher]=REGEX` | unit and direction, in either order; `lower` is accepted and is the default |
+
+A unit is 1 to 16 characters without whitespace, control characters, `[`, `]`, `,` or `=`. An
+empty item, a repeated unit or direction, more than two items or a missing `]` is an options
+error. The declaration sets `unit` and `direction` of the `custom.<NAME>` descriptor; the flat
+fields (`custom_metrics`, `custom_metrics_summary`) are unchanged.
+
+Direction is read by:
+- ranking and the summary of `--metric custom:<NAME>`: the largest value is the reference and
+  `relative_speed` stays >= 1 (best over worst value); the words are "higher value" / "lower
+  value" so that "X had 2.50 times higher value than Y" is the better one first;
+- `--sort`/`--sort-order` by mean, `best_of`, and the bootstrap interval of the ratio;
+- `--pareto` and `--constraint`: the default direction of an axis `custom:<NAME>`;
+  `--objective` still overrides it;
+- the exported descriptor, and the terminal (`NAME [unit] (mean ± σ)`, and the unit next to
+  the value and difference of the summary).
+
+`--compare` and the delta table (#212) only handle wall time (always lower is better), so they
+have nothing to flip. `--fail-if-regressed` budgets apply to wall time too.
+
+## Import (1.28)
+`--import-json` reads `perfratio.metrics[]` of the file: for each `custom.<name>` descriptor
+whose name is in the results, `unit` and `direction` (`higher_is_better`; every other value
+means lower) are used for ranking and written again by the next export. A declaration on the
+command line wins over the file. Descriptors are untrusted: a unit that breaks the rules above
+is dropped, other ids and malformed entries are ignored. Files without descriptors import as
+before (lower is better).
+
+## Tests (1.28)
+`tests/metric_direction_tests.rs`, unit tests in `src/output_metric.rs` (syntax) and
+`src/benchmark/relative_speed.rs` (direction-aware ranking).
 
 ## References
 #317, #240, #319, `output-schema-contract.md`.

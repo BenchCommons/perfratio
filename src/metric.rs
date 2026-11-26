@@ -26,6 +26,40 @@ fn intern(name: &str) -> &'static str {
     leaked
 }
 
+/// Unit and direction declared for a custom metric, with `--output-metric NAME[unit,higher]=REGEX`
+/// or by the descriptors of an imported file (#317).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CustomMeta {
+    /// Unit label (`ms`, `ops/s`, ...), `None` for a unitless metric
+    pub unit: Option<String>,
+    /// `true` if a larger value is better
+    pub higher_is_better: bool,
+}
+
+fn custom_meta_table(
+) -> std::sync::MutexGuard<'static, std::collections::HashMap<String, CustomMeta>> {
+    static META: OnceLock<Mutex<std::collections::HashMap<String, CustomMeta>>> = OnceLock::new();
+    META.get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+}
+
+/// Declares unit and direction of the custom metric `name`, replacing an earlier declaration.
+pub fn set_custom_meta(name: &str, meta: CustomMeta) {
+    custom_meta_table().insert(name.to_string(), meta);
+}
+
+/// Declares unit and direction of `name` unless it has been declared already (the command
+/// line wins over an imported file).
+pub fn set_custom_meta_if_absent(name: &str, meta: CustomMeta) {
+    custom_meta_table().entry(name.to_string()).or_insert(meta);
+}
+
+/// Declared unit and direction of the custom metric `name`.
+pub fn custom_meta(name: &str) -> Option<CustomMeta> {
+    custom_meta_table().get(name).cloned()
+}
+
 /// Target metric used as the primary objective for benchmarking, comparison, and sorting.
 ///
 /// Serialized as its name (`wall`, `cpu`, ..., or `custom:<name>`), see
@@ -120,6 +154,14 @@ impl Metric {
         }
     }
 
+    /// Whether a larger value of the metric is better. Only a custom metric declared with
+    /// `higher` (or imported with `higher_is_better`) is; every other metric improves downwards.
+    pub fn higher_is_better(&self) -> bool {
+        self.custom_name()
+            .and_then(custom_meta)
+            .is_some_and(|m| m.higher_is_better)
+    }
+
     /// Comparison words: (better, worse), e.g. ("faster", "slower") or ("less energy", "more energy")
     pub fn comparison_words(&self) -> (&'static str, &'static str) {
         match self {
@@ -129,6 +171,7 @@ impl Metric {
             Metric::Instructions => ("fewer instructions", "more instructions"),
             Metric::Cycles => ("fewer cycles", "more cycles"),
             Metric::Custom(_) if self.is_region() => ("faster", "slower"),
+            Metric::Custom(_) if self.higher_is_better() => ("higher value", "lower value"),
             Metric::Custom(_) => ("lower value", "higher value"),
         }
     }

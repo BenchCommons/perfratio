@@ -1644,10 +1644,14 @@ impl<'a> BenchmarkRunner<'a> {
                         if self.options.metric.custom_name() == Some(name.as_str()) {
                             continue;
                         }
+                        let label = match crate::metric::custom_meta(name).and_then(|m| m.unit) {
+                            Some(unit) => format!("{name} [{unit}]"),
+                            None => name.clone(),
+                        };
                         if let Some(stddev) = summary.stddev {
                             crate::outln!(
                                 "  {} ({} ± {}):    {:>width$} ± {:>width$}",
-                                name,
+                                label,
                                 colors::green("mean").bold(),
                                 colors::green("σ"),
                                 colors::green(format!("{:.3}", summary.mean)).bold(),
@@ -1657,7 +1661,7 @@ impl<'a> BenchmarkRunner<'a> {
                         } else {
                             crate::outln!(
                                 "  {} ({}):        {:>width$}",
-                                name,
+                                label,
                                 colors::green("mean").bold(),
                                 colors::green(format!("{:.3}", summary.mean)).bold(),
                                 width = width

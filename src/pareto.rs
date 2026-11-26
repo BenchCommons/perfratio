@@ -18,10 +18,14 @@ pub enum Direction {
     HigherIsBetter,
 }
 
-/// Direction of a metric. Every metric perfratio measures today improves downwards;
-/// the metric descriptors of #317 will replace this table.
-pub fn direction(_metric: Metric) -> Direction {
-    Direction::LowerIsBetter
+/// Direction of a metric. Every built-in metric improves downwards; a custom metric follows
+/// its descriptor (`--output-metric NAME[unit,higher]=REGEX`, #317).
+pub fn direction(metric: Metric) -> Direction {
+    if metric.higher_is_better() {
+        Direction::HigherIsBetter
+    } else {
+        Direction::LowerIsBetter
+    }
 }
 
 /// Statistic of the per-run samples that represents a command.

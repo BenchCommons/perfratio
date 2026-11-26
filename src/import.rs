@@ -10,6 +10,59 @@ struct PerfratioSummary {
     #[serde(default)]
     metric: Option<crate::metric::Metric>,
     results: Vec<BenchmarkResult>,
+    /// Run metadata with the metric descriptors (absent in older files, #317)
+    #[serde(default)]
+    perfratio: Option<serde_json::Value>,
+}
+
+/// Unit and direction declared by the `custom.<name>` descriptors of an imported file, for the
+/// custom metrics that its results contain. A declaration made on the command line wins.
+/// The file is untrusted: malformed descriptors and unknown values are ignored, and the unit is
+/// held to the same rules as in `--output-metric`.
+fn adopt_custom_descriptors(perfratio: Option<&serde_json::Value>, results: &[BenchmarkResult]) {
+    let Some(descriptors) = perfratio
+        .and_then(|p| p.get("metrics"))
+        .and_then(|m| m.as_array())
+    else {
+        return;
+    };
+    for descriptor in descriptors {
+        let Some(name) = descriptor
+            .get("id")
+            .and_then(|v| v.as_str())
+            .and_then(|id| id.strip_prefix("custom."))
+        else {
+            continue;
+        };
+        let known = results.iter().any(|r| {
+            r.custom_metrics
+                .as_ref()
+                .is_some_and(|m| m.contains_key(name))
+        });
+        if !known {
+            continue;
+        }
+        let unit = descriptor
+            .get("unit")
+            .and_then(|v| v.as_str())
+            .filter(|u| *u != "unitless")
+            .filter(|u| {
+                !u.is_empty()
+                    && u.chars().count() <= 16
+                    && u.chars()
+                        .all(|c| !c.is_control() && !c.is_whitespace() && !"[]=,".contains(c))
+            })
+            .map(str::to_string);
+        let higher_is_better =
+            descriptor.get("direction").and_then(|v| v.as_str()) == Some("higher_is_better");
+        crate::metric::set_custom_meta_if_absent(
+            name,
+            crate::metric::CustomMeta {
+                unit,
+                higher_is_better,
+            },
+        );
+    }
 }
 
 /// Import previously exported JSON benchmark results from the given file path.
@@ -39,6 +92,7 @@ pub fn import_json_for_metric(
     if summary.results.is_empty() {
         bail!("Import file '{path}' contains no benchmark results");
     }
+    adopt_custom_descriptors(summary.perfratio.as_ref(), &summary.results);
     for (index, res) in summary.results.iter().enumerate() {
         validate(res).with_context(|| {
             format!(

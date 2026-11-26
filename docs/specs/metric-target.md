@@ -94,7 +94,7 @@ perfratio owns the JSON export contract (`output-schema-contract.md`, `BenchComm
 
 ### 8. `--metric custom:<name>` (#90)
 A value extracted with `--output-metric <name>=<regex>` (`custom-output-metrics.md`) can be the primary metric.
-- **Direction:** lower is better, like every other metric. To rank by a higher-is-better quantity (throughput), print or extract its inverse (e.g. seconds per item).
+- **Direction:** lower is better, like every other metric, unless declared with `--output-metric 'NAME[unit,higher]=REGEX'` (throughput): then the largest value is best (#317, `metric-descriptors.md`).
 - **Unit:** none. The value is used as printed; the terminal shows it with three decimals under the header `<name> (mean ± σ)`, and the secondary `Time` line stays. The summary reads `'A' had 2.50 ± 0.10 times lower value than 'B'`, followed by the absolute value and difference.
 - **Validation (OptionsError::InvalidOutputMetric):** `<name>` must match `[A-Za-z0-9_]+` (case-sensitive), and an `--output-metric <name>=...` with the same name must be present. With `--import-json` the second check is skipped because nothing is extracted.
 - **Missing values (checked in `finish()`, same null-alignment as #265):** every recorded run needs a value. If no run produced one, the benchmark fails with `'--metric custom:<name>' requires a value for every run, but no run produced '<name>'`. If only some did (possible with `-i`, which writes `null` for the others), it fails with `... but N of M runs have none for '<name>'`. This keeps ranking from silently using a subset of the runs.
