@@ -92,6 +92,8 @@ pub enum OptionsError<'a> {
     InvalidConcurrency(String),
     #[error("Invalid '--jobs' value '{0}': expected an integer >= 1 or 'auto'")]
     InvalidJobs(String),
+    #[error("Invalid '--pin-workers' / '--reserve-cpus': {0}")]
+    InvalidPinWorkers(String),
     #[error("Invalid '--schedule': {0}")]
     InvalidSchedule(String),
     #[error("Invalid duration '{0}' for '--energy-baseline': {1}")]

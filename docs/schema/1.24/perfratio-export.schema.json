@@ -266,6 +266,39 @@
             "contended": {
               "const": true,
               "description": "The runs disturbed each other; always true."
+            },
+            "cpu_partition": {
+              "type": "object",
+              "properties": {
+                "workers": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "minItems": 1
+                  },
+                  "description": "CPUs of worker i; disjoint."
+                },
+                "reserved": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "description": "CPUs kept for perfratio's own threads; no worker uses them. Omitted when none."
+                },
+                "shared_siblings": {
+                  "const": true,
+                  "description": "More workers than physical cores: some workers share a core with another worker. Omitted when false."
+                }
+              },
+              "required": [
+                "workers"
+              ],
+              "description": "Only when the workers were pinned (--pin-workers=auto, the default with --jobs > 1 on Linux and Windows). New in 1.24, #307."
             }
           },
           "required": [
@@ -307,17 +340,6 @@
               "type": "integer",
               "minimum": 0,
               "description": "Unsigned 64-bit; may exceed 2^53, so read it as an integer, not a double."
-            },
-            "correction": {
-              "type": "object",
-              "description": "New in 1.22 (#321): the multiple-comparison correction behind p_value_adjusted and significance. Present only with --correction other than none.",
-              "properties": {
-                "method": { "type": "string", "enum": ["bonferroni", "holm", "bh"] },
-                "family": { "type": "string", "enum": ["reference", "all-pairs"] },
-                "family_size": { "type": "integer", "minimum": 0, "description": "Number of comparisons with a defined p-value in the family." },
-                "alpha": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 }
-              },
-              "required": ["method", "family", "family_size", "alpha"]
             }
           },
           "required": [
@@ -919,12 +941,6 @@
         "p_value": {
           "type": "number",
           "description": "p-value of the bootstrap Welch test against the reference."
-        },
-        "p_value_adjusted": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1,
-          "description": "New in 1.22 (#321): p_value after statistics.correction; significance is decided on this value. Omitted without a correction."
         },
         "percentiles": {
           "$ref": "#/$defs/percentiles"

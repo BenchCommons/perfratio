@@ -209,6 +209,9 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR N|auto ]
 .RB [ \-\-artifact\-dir
 .IR DIR ]
+.RB [ \-\-pin\-workers [ =auto|none ]]
+.RB [ \-\-reserve\-cpus
+.IR N|LIST ]
 .RB [ \-\-until
 .IR TEXT ]
 .RB [ \-\-until\-stderr ]
@@ -542,6 +545,14 @@ Run up to N independent invocations at the same time to collect samples faster. 
 \fB\-\-artifact\-dir\fR \fIDIR\fP
 .IP
 Create \fIDIR\fR/run\-<id> for every run and export its path as \fBPERFRATIO_RUN_DIR\fR to \fB\-\-prepare\fR, the command and \fB\-\-conclude\fR of that run (and to \fB\-\-setup\fR and \fB\-\-cleanup\fR), so that parallel runs never share artifact files. The directories are kept.
+.HP
+\fB\-\-pin\-workers\fR[=\fIauto|none\fP]
+.IP
+With \fB\-\-jobs\fR > 1: give every worker its own CPUs, one physical core (with its SMT siblings) per worker, within \fB\-\-affinity\fR. The default with \fB\-\-jobs\fR > 1 is auto; none leaves the workers unpinned. With more workers than physical cores every worker gets one hardware thread and the siblings of a core are shared (reported by \fB\-\-check\-system\fR). Fails when there are fewer usable CPUs than jobs. A worker's CPUs replace \fB\-\-affinity\fR for its benchmarked command, \fB\-\-prepare\fR and \fB\-\-conclude\fR. Linux (sched_setaffinity) and Windows (SetProcessAffinityMask, CPUs 0-63). macOS has no API to pin to CPUs: an explicit flag warns and the workers are not pinned; use \fB\-\-affinity\fR p-cores or e-cores for a core type preference. The partition is recorded in the JSON export (perfratio.execution.cpu_partition).
+.HP
+\fB\-\-reserve\-cpus\fR \fIN|LIST\fP
+.IP
+With \fB\-\-jobs\fR > 1: keep N CPUs (the highest usable ones, together with their SMT siblings) or the CPUs of a list such as 0,1 or 0-0 for perfratio's own threads. Workers never run there, and perfratio's threads are pinned to them while the workers run. A bare number is a count. Needs pinned workers. Linux and Windows.
 .HP
 \fB\-\-until\fR \fITEXT\fP
 .IP

@@ -1269,6 +1269,32 @@ pub fn build_command() -> Command {
                        'p-cores' or 'e-cores' (Apple Silicon) to prefer a core type."),
         )
         .arg(
+            Arg::new("pin-workers")
+                .long("pin-workers")
+                .action(ArgAction::Set)
+                .value_name("MODE")
+                .num_args(0..=1)
+                .require_equals(true)
+                .default_missing_value("auto")
+                .value_parser(["auto", "none"])
+                .help("With '--jobs' > 1: give every worker its own CPUs, one physical core \
+                       (with its SMT siblings) per worker, within '--affinity'. Default with \
+                       '--jobs' > 1: auto; 'none' leaves the workers unpinned. Fails when \
+                       there are fewer usable CPUs than jobs. Linux and Windows; elsewhere \
+                       an explicit flag warns and the workers are not pinned. The partition \
+                       is recorded in the JSON export."),
+        )
+        .arg(
+            Arg::new("reserve-cpus")
+                .long("reserve-cpus")
+                .action(ArgAction::Set)
+                .value_name("N|LIST")
+                .help("With '--jobs' > 1: keep N CPUs (the highest ones, with their SMT \
+                       siblings) or the CPUs of an explicit list such as '0' written as \
+                       '0-0' or '0,1' for perfratio's own threads. Workers never run there. \
+                       Linux and Windows."),
+        )
+        .arg(
             Arg::new("check-system")
                 .long("check-system")
                 .action(ArgAction::Set)
