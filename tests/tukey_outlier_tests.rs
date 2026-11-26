@@ -7,11 +7,25 @@ use common::perfratio;
 
 use predicates::prelude::*;
 
-fn slow_in(iterations: &str) -> String {
-    format!("sh -c 'case $JOULEX_ITERATION in {iterations}) sleep 0.3;; esac; true'")
+/// `--debug-mode` arguments simulating 20 runs of 0.01 s, except 0.3 s in the
+/// given (0-based) runs. One run per `-L` value, pooled in order, so the times
+/// are exact and independent of machine load.
+fn simulated(slow: &[usize]) -> Vec<String> {
+    let values: Vec<&str> = (0..20)
+        .map(|i| if slow.contains(&i) { "0.3" } else { "0.01" })
+        .collect();
+    vec![
+        "--debug-mode".into(),
+        "--runs=1".into(),
+        "--aggregate-parameter-runs".into(),
+        "-L".into(),
+        "t".into(),
+        values.join(","),
+        "sleep {t} 0.001 0.001 1000".into(),
+    ]
 }
 
-fn run_json(args: &[&str]) -> (serde_json::Value, String) {
+fn run_json<S: AsRef<std::ffi::OsStr>>(args: &[S]) -> (serde_json::Value, String) {
     let dir = tempfile::tempdir().unwrap();
     let export = dir.path().join("out.json");
     let out = perfratio()
@@ -31,27 +45,17 @@ fn run_json(args: &[&str]) -> (serde_json::Value, String) {
 
 #[test]
 fn reports_count_and_percentage() {
-    if common::is_rosetta() {
-        return;
-    }
-    // Real timings are not deterministic: only check the shape and that the
-    // numbers are consistent with each other and with the warning.
-    let (result, stderr) = run_json(&["-N", "--runs=20", "--outlier-method=iqr", &slow_in("3|11")]);
+    // Exact simulated times: runs 3 and 11 are the only outliers.
+    let mut args = simulated(&[3, 11]);
+    args.push("--outlier-method=iqr".into());
+    let (result, stderr) = run_json(&args);
     let o = &result["outliers"];
     assert_eq!(o["method"], "iqr");
-    let count = o["count"].as_u64().expect("count is an integer");
-    assert!(count <= 20, "{o}");
-    assert_eq!(o["percent"].as_f64().unwrap(), count as f64 / 20.0 * 100.0);
+    assert_eq!(o["count"], 2, "{o}");
+    assert_eq!(o["percent"].as_f64().unwrap(), 10.0);
     assert!(o["lower_fence"].as_f64().unwrap() <= o["upper_fence"].as_f64().unwrap());
     assert!(o["memory_usage_byte"]["count"].is_u64());
-    // The slow-first-run and inflated-variance warnings take precedence over
-    // the count message, and either can fire on a noisy CI runner.
-    let preempted = stderr.contains("The first benchmarking run")
-        || stderr.contains("of the variance is caused by");
-    if count > 0 && !preempted {
-        let pct = format!("{count} of 20 runs ({:.1}%)", count as f64 / 20.0 * 100.0);
-        assert!(stderr.contains(&pct), "{stderr}");
-    }
+    assert!(stderr.contains("2 of 20 runs (10.0%)"), "{stderr}");
 }
 
 #[test]
@@ -82,34 +86,26 @@ fn iqr_method_is_opt_in() {
 
 #[test]
 fn fewer_than_four_runs_have_no_outlier_statistics() {
-    if common::is_rosetta() {
-        return;
-    }
-    let (result, _) = run_json(&["-N", "--runs=3", "true"]);
+    let (result, _) = run_json(&["--debug-mode", "--runs=3", "sleep 0.01"]);
     assert!(result.get("outliers").is_none());
 }
 
 #[test]
 fn modified_z_method_is_selectable() {
-    if common::is_rosetta() {
-        return;
-    }
-    let (result, _) = run_json(&["-N", "--runs=20", "--outlier-method=modified-z", "true"]);
+    let (result, _) = run_json(&[
+        "--debug-mode",
+        "--runs=20",
+        "--outlier-method=modified-z",
+        "sleep 0.01",
+    ]);
     assert_eq!(result["outliers"]["method"], "modified-z");
 }
 
 #[test]
 fn suppress_flag_hides_the_counts() {
-    if common::is_rosetta() {
-        return;
-    }
     perfratio()
-        .args([
-            "-N",
-            "--runs=20",
-            "--suppress-outlier-warnings",
-            &slow_in("3|11"),
-        ])
+        .args(simulated(&[3, 11]))
+        .arg("--suppress-outlier-warnings")
         .assert()
         .success()
         .stderr(predicate::str::contains("Statistical outliers").not());
