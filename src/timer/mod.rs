@@ -56,6 +56,8 @@ pub struct TimerResult {
     pub until_matched: Option<bool>,
     /// Extracted custom metrics
     pub custom_metrics: std::collections::BTreeMap<String, f64>,
+    /// Stdout of the run, kept for `--expect-output-sha256` / `--validate`
+    pub validation_stdout: Option<Vec<u8>>,
 }
 
 #[cfg(windows)]
@@ -738,6 +740,7 @@ pub fn execute_and_measure(
         timed_out,
         until_matched,
         custom_metrics: std::collections::BTreeMap::new(),
+        validation_stdout: None,
     })
 }
 

@@ -84,6 +84,8 @@ struct ProcessSettings<'a> {
     counters: Option<&'a crate::perf_counters::CounterConfig>,
     /// --topdown
     topdown: Option<&'a crate::topdown::TopdownConfig>,
+    /// --expect-output-sha256, --validate
+    validation: Option<&'a crate::validation::ValidationConfig>,
 }
 
 impl<'a> ProcessSettings<'a> {
@@ -98,6 +100,7 @@ impl<'a> ProcessSettings<'a> {
             output_metrics_stderr: options.output_metrics_stderr,
             counters: options.counters.as_ref(),
             topdown: options.topdown.as_ref(),
+            validation: options.validation.as_ref(),
         }
     }
 }
@@ -121,7 +124,9 @@ fn run_command_and_measure_common(
         output_metrics_stderr,
         counters,
         topdown,
+        validation,
     } = process;
+    let validate_stdout = validation.is_some_and(|v| v.applies_to(iteration));
     let (until, capture_metrics) = match iteration {
         BenchmarkIteration::NonBenchmarkRun => (None, false),
         BenchmarkIteration::Warmup(_) | BenchmarkIteration::Benchmark(_) => {
@@ -142,6 +147,9 @@ fn run_command_and_measure_common(
                 } else {
                     out = std::process::Stdio::piped();
                 }
+            }
+            if validate_stdout {
+                out = std::process::Stdio::piped();
             }
             (out, err)
         }
@@ -180,7 +188,9 @@ fn run_command_and_measure_common(
     let capture = *command_output_policy == CommandOutputPolicy::CaptureTail;
     let metrics_limit = capture_metrics.then_some(1 << 20);
     let stderr_capture_limit = metrics_limit.filter(|_| output_metrics_stderr);
-    let stdout_capture_limit = if capture_metrics && !output_metrics_stderr {
+    let stdout_capture_limit = if validate_stdout {
+        Some(crate::validation::OUTPUT_LIMIT)
+    } else if capture_metrics && !output_metrics_stderr {
         metrics_limit
     } else if capture {
         Some(crate::timer::CAPTURE_LIMIT)
@@ -289,6 +299,10 @@ fn run_command_and_measure_common(
         } else if let Some(captured) = &result.captured {
             warn_failed_run_output(command_name, iteration, captured);
         }
+    }
+
+    if validate_stdout && result.status.success() && !result.timed_out {
+        result.validation_stdout = result.captured.as_ref().map(|c| c.stdout.clone());
     }
 
     if capture_metrics {
@@ -560,6 +574,7 @@ pub fn aggregate_batch(instances: Vec<BatchInstance>) -> (TimerResult, Vec<Insta
         timed_out: instances.iter().any(|i| i.result.timed_out),
         until_matched: None,
         custom_metrics: std::collections::BTreeMap::new(),
+        validation_stdout: None,
     };
     (aggregate, timings)
 }
@@ -658,6 +673,7 @@ impl Executor for RawExecutor<'_> {
                 hw_counters: result.hw_counters,
                 timed_out: result.timed_out,
                 custom_metrics: result.custom_metrics,
+                stdout: result.validation_stdout,
                 instances,
             },
             status,
@@ -811,6 +827,7 @@ impl Executor for ShellExecutor<'_> {
                 hw_counters: result.hw_counters,
                 timed_out: result.timed_out,
                 custom_metrics: result.custom_metrics,
+                stdout: result.validation_stdout,
                 instances,
             },
             status,
@@ -897,6 +914,7 @@ impl Executor for ShellExecutor<'_> {
             timed_out: false,
             custom_metrics: std::collections::BTreeMap::new(),
             instances: Vec::new(),
+            stdout: None,
         });
 
         Ok(())
@@ -921,6 +939,7 @@ pub struct MockExecutor {
     counters: Option<crate::perf_counters::CounterConfig>,
     topdown: Option<crate::topdown::TopdownConfig>,
     concurrency: usize,
+    validation: Option<crate::validation::ValidationConfig>,
 }
 
 impl MockExecutor {
@@ -931,7 +950,19 @@ impl MockExecutor {
             counters: None,
             topdown: None,
             concurrency: 1,
+            validation: None,
         }
+    }
+
+    /// Simulate the stdout of validated runs (`--expect-output-sha256`,
+    /// `--validate`): the words after the fifth of `sleep <s> <user> <system>
+    /// <memory> <words…>`, else empty output.
+    pub fn with_validation(
+        mut self,
+        validation: Option<crate::validation::ValidationConfig>,
+    ) -> Self {
+        self.validation = validation;
+        self
     }
 
     /// Simulate `--topdown` with deterministic values.
@@ -1017,6 +1048,16 @@ impl MockExecutor {
     }
 }
 
+/// Simulated stdout of a `--debug-mode` command: see `MockExecutor::with_validation`
+fn mock_stdout(command_line: &str) -> Vec<u8> {
+    let words: Vec<&str> = command_line.split_whitespace().skip(5).collect();
+    if words.is_empty() {
+        Vec::new()
+    } else {
+        format!("{}\n", words.join(" ")).into_bytes()
+    }
+}
+
 impl Executor for MockExecutor {
     fn run_command_and_measure(
         &self,
@@ -1086,6 +1127,11 @@ impl Executor for MockExecutor {
                 timed_out,
                 custom_metrics: std::collections::BTreeMap::new(),
                 instances,
+                stdout: self
+                    .validation
+                    .as_ref()
+                    .is_some_and(|v| v.applies_to(iteration))
+                    .then(|| mock_stdout(&command.get_command_line())),
             },
             status,
         ))
@@ -1192,6 +1238,7 @@ mod batch_tests {
                 timed_out: false,
                 until_matched: None,
                 custom_metrics: Default::default(),
+                validation_stdout: None,
             },
         }
     }

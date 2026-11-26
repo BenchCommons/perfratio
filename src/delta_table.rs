@@ -612,6 +612,12 @@ fn render_terminal(
         if let Some(note) = multiplex_note(reference, target, &rows) {
             out.push_str(&format!("  {note}\n"));
         }
+        for note in [reference, target]
+            .iter()
+            .filter_map(|r| r.validation_note())
+        {
+            out.push_str(&format!("  Warning: {note}\n"));
+        }
         out.push('\n');
     }
     out
@@ -651,6 +657,12 @@ pub fn markdown(results: &[BenchmarkResult], reference: Option<&BenchmarkResult>
         }
         if let Some(note) = multiplex_note(reference, target, &rows) {
             out.push_str(&format!("\n_{note}_\n"));
+        }
+        for note in [reference, target]
+            .iter()
+            .filter_map(|r| r.validation_note())
+        {
+            out.push_str(&format!("\n_Warning: {note}_\n"));
         }
     }
     out

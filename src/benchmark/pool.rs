@@ -276,8 +276,12 @@ pub fn run_pool(
             match done.outcome {
                 Ok(Outcome::Run(res, status)) => {
                     runner.workers_seen.insert(done.slot);
-                    runner.record_run(*res, status, None, done.iteration);
-                    on_run(runner);
+                    match runner.record_run(*res, status, None, done.iteration) {
+                        Ok(()) => on_run(runner),
+                        Err(e) => {
+                            first_error.get_or_insert(e);
+                        }
+                    }
                 }
                 Ok(Outcome::TimedOut) => runner.timed_out = true,
                 Err(e) if e.is::<crate::error::Interrupted>() => {}
