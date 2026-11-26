@@ -23,7 +23,7 @@ pub struct PrimaryMetricStats {
 }
 
 /// Version of the JSON output contract (`docs/specs/output-schema-contract.md`).
-pub const SCHEMA_VERSION: &str = "1.3";
+pub const SCHEMA_VERSION: &str = "1.4";
 
 #[derive(Serialize, Debug)]
 struct PerfratioSummary<'a> {
@@ -37,6 +37,9 @@ struct PerfratioSummary<'a> {
     perfratio: Option<&'a ExportMetadata>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     interrupted: bool,
+    /// Result of `--optimize` (object, or array with one entry per search)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    optimize: Option<serde_json::Value>,
     results: Vec<ResultEntry<'a>>,
 }
 
@@ -64,6 +67,8 @@ struct ResultEntry<'a> {
 #[derive(Default)]
 pub struct JsonExporter {
     pub metadata: Option<ExportMetadata>,
+    /// Result of `--optimize`, set once the search is done
+    pub optimize: std::sync::Mutex<Option<serde_json::Value>>,
 }
 
 impl Exporter for JsonExporter {
@@ -126,6 +131,11 @@ impl Exporter for JsonExporter {
             metric,
             perfratio: self.metadata.as_ref(),
             interrupted: crate::util::interrupt::interrupted(),
+            optimize: self
+                .optimize
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone(),
             results,
         });
         if let Ok(ref mut content) = output {
@@ -133,5 +143,9 @@ impl Exporter for JsonExporter {
         }
 
         Ok(output?)
+    }
+
+    fn set_optimize(&self, value: Option<&serde_json::Value>) {
+        *self.optimize.lock().unwrap_or_else(|e| e.into_inner()) = value.cloned();
     }
 }

@@ -1,7 +1,7 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Partly shipped (schemaVersion 1.3; 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
+Partly shipped (schemaVersion 1.4; 1.3 plus the optional `optimize` object from #98; 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
@@ -103,6 +103,7 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
     }
   },
   "interrupted": true,                                        // optional
+  "optimize": { "var": "j", "best": 24, "...": "..." },       // optional, new in 1.4 (#98)
   "results": [ /* one entry per benchmarked command */ ]
 }
 ```
@@ -124,6 +125,16 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
   Groups in 1.0: `time` (always `measured`), `memory`, `energy` (`-E/--energy`),
   `resources` (`--resource-usage`). New groups are MINOR.
 - `interrupted` (bool, optional, only `true`): the run was stopped by Ctrl-C.
+- `optimize` (object or array of objects, optional, **new in 1.4**, #98): present with
+  `--optimize <VAR> <MIN> <MAX>`. One object per search (an array when other parameters
+  produce several searches). Fields: `var`, `min`, `max`, `metric`, `algorithm`
+  (`golden-section`, or `exhaustive` when the range fits into the budget), `budget`,
+  `evaluations`, `best`, `best_value` (mean of `metric`), `best_command`, `evaluated` (values in
+  evaluation order), `at_boundary`, `unimodal_warning`; optional `runner_up`, `p_value`,
+  `significant` (best vs runner-up; omitted when not computable), `fixed` (values of the
+  other parameters of this search) and `interrupted` (only `true`). Every evaluated value is
+  also an ordinary `results[]` entry with `parameters: { "<var>": "<value>" }`, in
+  evaluation order. See `optimize.md`.
 - `results` (array, guaranteed, may be empty).
 
 ### 3. `results[]` fields and units
