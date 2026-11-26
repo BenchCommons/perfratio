@@ -131,6 +131,7 @@ impl Measurements {
                 self.counters = MeasurementStatus::Partial;
                 self.counters_unavailable_events =
                     Some(events.iter().map(|s| s.key(config.scope)).collect());
+                self.counters_unavailable_reason = config.partial_reason.map(|r| r.as_str());
             }
             Availability::Unavailable(reason) => {
                 self.counters = MeasurementStatus::Unavailable;
