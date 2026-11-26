@@ -543,7 +543,11 @@ Show the mean voluntary/involuntary context switches, minor/major page faults an
 .HP
 \fB\-\-counters\fR[=\fILIST\fP]
 .IP
-Collect performance counters per run (Linux): instructions, cycles, cache\-references, cache\-misses, branches, branch\-misses (default: all; give a list with \fB\-\-counters\fR=cycles,instructions) and the software events cpu\-migrations, context\-switches, page\-faults and task\-clock. Shorthands: default, sw (cpu\-migrations, context\-switches), frequency (cycles). With cycles the effective CPU frequency (cycles / task\-clock) is shown and a warning is printed when it varies or falls. The scheduler events need kernel scope (perf_event_paranoid <= 1) and are 'unavailable', never 0, otherwise. Counts user and kernel space, or user space only when perf_event_paranoid > 1 ('counters_scope' in JSON). Adds counts, a summary, IPC/CPI and miss rates, and one terminal line. Unavailable counters (no PMU, permissions, macOS, Windows) give one warning and status 'unavailable' in perfratio.measurements.counters.
+Collect performance counters per run (Linux): instructions, cycles, cache\-references, cache\-misses, branches, branch\-misses (default: all; give a list with \fB\-\-counters\fR=cycles,instructions) and the software events cpu\-migrations, context\-switches, page\-faults and task\-clock (which cannot be scoped). Shorthands: default, sw (cpu\-migrations, context\-switches), frequency (cycles). With cycles the effective CPU frequency (cycles / task\-clock) is shown and a warning is printed when it varies or falls. The scheduler events need kernel scope (perf_event_paranoid <= 1) and are 'unavailable', never 0, otherwise. An event takes a ':u' (user) or ':k' (kernel) modifier, e.g. instructions:u,instructions:k; the JSON key keeps the suffix. Counts user and kernel space, or user space only when perf_event_paranoid > 1 ('counters_scope' in JSON). Adds counts, a summary, IPC/CPI and miss rates, and one terminal line. Unavailable counters (no PMU, permissions, macOS, Windows) give one warning and status 'unavailable' in perfratio.measurements.counters.
+.HP
+\fB\-\-scope\fR \fISCOPE\fP
+.IP
+Privilege levels that \fB\-\-counters\fR counts: user, kernel, all (default, like 'perf stat') or split (every event as ':u' plus ':k'). Kernel counting needs perf_event_paranoid <= 1 or CAP_PERFMON: the default falls back to user space with one warning, while kernel, split or a ':k' modifier fail with an error. Requires \fB\-\-counters\fR.
 .HP
 \fB\-\-first\-run\fR \fIMODE\fP
 .IP

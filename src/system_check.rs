@@ -99,13 +99,17 @@ pub fn run_checks() -> Vec<Check> {
 pub fn scheduler_check(config: Option<&crate::perf_counters::CounterConfig>) -> Option<Check> {
     use crate::perf_counters::{Availability, CounterKind, UnavailableReason};
     let config = config?;
-    if !config.requested.contains(&CounterKind::CpuMigrations) {
+    if !config
+        .requested
+        .iter()
+        .any(|s| s.kind == CounterKind::CpuMigrations)
+    {
         return None;
     }
     let denied = match &config.availability {
         Availability::Unavailable(UnavailableReason::KernelScopeDenied) => true,
         Availability::Partial(events) => {
-            events.contains(&CounterKind::CpuMigrations)
+            events.iter().any(|s| s.kind == CounterKind::CpuMigrations)
                 && config.partial_reason == Some(UnavailableReason::KernelScopeDenied)
         }
         _ => false,
@@ -955,12 +959,19 @@ mod tests {
     #[test]
     fn scheduler_check_reports_a_denied_kernel_scope() {
         use crate::perf_counters::{
-            Availability, CounterConfig, CounterKind, Scope, UnavailableReason,
+            Availability, CounterConfig, CounterKind, CounterSpec, Scope, UnavailableReason,
         };
         let config = |requested: &[CounterKind], availability, partial_reason| CounterConfig {
-            requested: requested.to_vec(),
+            requested: requested
+                .iter()
+                .map(|&kind| CounterSpec {
+                    kind,
+                    scope: Scope::All,
+                })
+                .collect(),
             active: vec![],
             scope: Scope::All,
+            requested_scope: Scope::All,
             availability,
             partial_reason,
             hidden: vec![],
@@ -978,7 +989,10 @@ mod tests {
         assert!(check.hint.unwrap().contains("perf_event_paranoid=1"));
         let partial = config(
             &[CounterKind::Cycles, CounterKind::CpuMigrations],
-            Availability::Partial(vec![CounterKind::CpuMigrations]),
+            Availability::Partial(vec![CounterSpec {
+                kind: CounterKind::CpuMigrations,
+                scope: Scope::All,
+            }]),
             Some(UnavailableReason::KernelScopeDenied),
         );
         assert!(scheduler_check(Some(&partial)).is_some());

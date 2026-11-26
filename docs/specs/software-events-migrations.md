@@ -1,6 +1,6 @@
 # Spec: software events: CPU migrations and context switches (#220)
 
-**Status:** Implemented on Linux (#220, schemaVersion 1.9) for `cpu-migrations`,
+**Status:** Implemented on Linux (#220, schemaVersion 1.10) for `cpu-migrations`,
 `context-switches`, `page-faults` and `task-clock`. Not implemented: `alignment-faults` and
 `emulation-faults` (names not accepted yet), the `--check-system` line after the runs, and the
 rusage fallback for context switches.
@@ -13,7 +13,10 @@ rusage fallback for context switches.
   list, so `--counters=default,sw` works) and `frequency` (see `effective-frequency.md`).
   The default list is unchanged.
 - Every software event is opened with `exclude_kernel = 0`, whatever the hardware scope became.
-  `counters_scope` describes the hardware events only.
+  `counters_scope` describes the hardware events only. A `:u`/`:k` modifier on a software event
+  is an error ("software events cannot be scoped"); `--scope` does not change them, their JSON
+  keys never carry a suffix, and they take no part in the user-space fallback of the hardware
+  events (`counter-scope-modifiers.md`).
 - Denied kernel scope: the events are `unavailable` with `kernel_scope_denied`. With only
   software events requested, `measurements.counters` is `unavailable`; mixed with hardware
   events it is `partial`, with `counters_unavailable_events` and

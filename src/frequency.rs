@@ -10,6 +10,7 @@
 //! [`max_frequency_hz`], which reads `/sys/devices/system/cpu/cpu*/cpufreq`
 //! on Linux.
 
+use crate::perf_counters::Scope;
 use crate::stats::basic;
 use std::path::Path;
 
@@ -48,14 +49,13 @@ impl Basis {
     }
 }
 
-/// Picks the time source for the scope `cycles` was counted in.
-/// `all_scope`: user + kernel. `None`: the frequency is not available
-/// (user + kernel cycles without `task-clock`).
-pub fn choose_basis(all_scope: bool, task_clock_available: bool) -> Option<Basis> {
-    match (all_scope, task_clock_available) {
-        (true, true) => Some(Basis::TaskClock),
-        (true, false) => None,
-        (false, _) => Some(Basis::UserTime),
+/// Picks the time source for the scope `cycles` was counted in. `None`: the
+/// frequency is not available (user + kernel cycles without `task-clock`).
+pub fn choose_basis(scope: Scope, task_clock_available: bool) -> Option<Basis> {
+    match scope {
+        Scope::All => task_clock_available.then_some(Basis::TaskClock),
+        Scope::User => Some(Basis::UserTime),
+        Scope::Kernel => Some(Basis::SystemTime),
     }
 }
 
@@ -228,10 +228,11 @@ mod tests {
 
     #[test]
     fn basis_follows_the_scope() {
-        assert_eq!(choose_basis(true, true), Some(Basis::TaskClock));
-        assert_eq!(choose_basis(true, false), None);
-        assert_eq!(choose_basis(false, true), Some(Basis::UserTime));
-        assert_eq!(choose_basis(false, false), Some(Basis::UserTime));
+        assert_eq!(choose_basis(Scope::All, true), Some(Basis::TaskClock));
+        assert_eq!(choose_basis(Scope::All, false), None);
+        assert_eq!(choose_basis(Scope::User, true), Some(Basis::UserTime));
+        assert_eq!(choose_basis(Scope::User, false), Some(Basis::UserTime));
+        assert_eq!(choose_basis(Scope::Kernel, true), Some(Basis::SystemTime));
         assert_eq!(Basis::TaskClock.as_str(), "task_clock");
         assert_eq!(Basis::UserTime.as_str(), "user_time");
         assert_eq!(Basis::SystemTime.as_str(), "system_time");

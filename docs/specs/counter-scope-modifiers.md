@@ -1,6 +1,17 @@
 # Spec: user/kernel counter scope: `--scope` and `:u` / `:k` modifiers (#218)
 
-**Status:** Proposed. Scheduled for 1.x, not 1.0.
+**Status:** Implemented (schemaVersion 1.9) on top of `--counters`: `--scope user|kernel|all|split`,
+`:u` / `:k` / `:uk` modifiers, per-scope preflight probe with fallback or error, suffixed JSON
+keys, `counters_scope` (now also `kernel`) and `counters_requested_scope`. D1 resolved as the
+recommendation: default `all` with fallback. Not run on hardware (macOS dev host, CI has no PMU):
+the `PERFRATIO_TEST_PERF=1` comparisons against `perf stat` below are still to be done on a
+bare-metal runner. Not yet done: `--simd` / `--topdown` scope (those flags do not exist yet).
+Details that the spec left open: `--scope kernel` or `split` with a denied kernel scope is an
+error (explicit), `--scope all` or no `--scope` falls back; when the fallback makes `E` and `E:u`
+the same event they are merged; with `split` (or any pair of `E:u` + `E:k` without `E`) the
+terminal shows `instr 1.70M [user 421k, kernel 1.28M]`; derived rates never mix scopes (the JSON
+`efficiency` uses the unsuffixed scope, or the only scope in use, and is absent otherwise);
+`--debug-mode` mock values are user = 1/4 and kernel = 3/4 of the `all` value.
 
 ## Problem / Motivation
 References: #218, #49, #217, `andrewrk/poop#42`, `perf-stat(1)`, `perf_event_open(2)`.

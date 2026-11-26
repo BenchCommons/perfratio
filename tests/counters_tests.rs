@@ -54,6 +54,103 @@ fn explicit_list_and_terminal_line() {
 }
 
 #[test]
+fn modifiers_suffix_the_keys_and_split_the_values() {
+    let json = export(&[
+        "--runs=2",
+        "--counters=instructions:u,instructions:k,cycles",
+        "sleep 0.5",
+    ]);
+    let r = &json["results"][0];
+    assert_eq!(r["counters_scope"], "all");
+    let c = r["counters"].as_object().unwrap();
+    assert_eq!(
+        c.keys().collect::<Vec<_>>(),
+        ["cycles", "instructions:k", "instructions:u"]
+    );
+    let user = c["instructions:u"][0].as_u64().unwrap();
+    let kernel = c["instructions:k"][0].as_u64().unwrap();
+    assert_eq!(user + kernel, 1_000_000_000);
+    assert_eq!(c["instructions:u"].as_array().unwrap().len(), 2);
+    assert!(r["counters_summary"]["instructions:k"]["mean"].is_f64());
+    let m = &json["perfratio"]["measurements"];
+    assert_eq!(m["counters"], "measured");
+    assert!(m.get("counters_requested_scope").is_none());
+}
+
+#[test]
+fn scope_split_and_user_and_kernel() {
+    let json = export(&[
+        "--runs=1",
+        "--counters=cycles",
+        "--scope=split",
+        "sleep 0.5",
+    ]);
+    let keys: Vec<_> = json["results"][0]["counters"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
+    assert_eq!(keys, ["cycles:k", "cycles:u"]);
+    assert_eq!(json["results"][0]["counters_scope"], "all");
+
+    let json = export(&["--runs=1", "--counters=cycles", "--scope=user", "sleep 0.5"]);
+    let r = &json["results"][0];
+    assert_eq!(r["counters_scope"], "user");
+    assert_eq!(r["counters"]["cycles"][0], 125_000_000u64);
+
+    let json = export(&[
+        "--runs=1",
+        "--counters=cycles",
+        "--scope=kernel",
+        "sleep 0.5",
+    ]);
+    let r = &json["results"][0];
+    assert_eq!(r["counters_scope"], "kernel");
+    assert_eq!(r["counters"]["cycles"][0], 375_000_000u64);
+}
+
+#[test]
+fn split_terminal_line_shows_the_breakdown() {
+    perfratio()
+        .args([
+            "--debug-mode",
+            "--runs=2",
+            "--counters=instructions,cycles",
+            "--scope=split",
+        ])
+        .arg("sleep 0.1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "instr 200.0M [user 50.0M, kernel 150.0M] · cycles 100.0M [user 25.0M, kernel 75.0M] (IPC 2.00) @1.00 GHz",
+        ));
+}
+
+#[test]
+fn bad_modifiers_and_scope_are_rejected() {
+    perfratio()
+        .args(["--debug-mode", "--counters=cycles:h", "sleep 0.1"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("modifier ':h' is not supported"));
+    perfratio()
+        .args(["--debug-mode", "--counters=cycles:x", "sleep 0.1"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unknown modifier ':x'"));
+    perfratio()
+        .args(["--debug-mode", "--counters", "--scope=both", "sleep 0.1"])
+        .assert()
+        .failure();
+    perfratio()
+        .args(["--debug-mode", "--scope=user", "sleep 0.1"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--counters"));
+}
+
+#[test]
 fn without_the_flag_nothing_is_added() {
     let json = export(&["--runs=2", "sleep 0.1"]);
     assert_eq!(

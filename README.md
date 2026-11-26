@@ -97,7 +97,7 @@ how to reduce noise. The manual page is [doc/perfratio.1](doc/perfratio.1).
 **Memory.** Peak memory (RSS) of each run is always measured and shown as `Peak Memory`.
 `--resource-usage` adds context switches, page faults and block I/O per run. Windows reports
 page faults and I/O operation counts only; the other counters show as `n/a` ([spec](docs/specs/windows-resource-usage.md)).
-`--counters` (Linux) adds hardware counters (instructions, cycles, cache and branch misses), IPC and the effective CPU frequency per run, and with `--counters=default,sw` CPU migrations and context switches (a warning points to `--affinity` when migrations slow runs down); see `docs/specs/hardware-counters.md`, `docs/specs/software-events-migrations.md` and `docs/specs/effective-frequency.md`.
+`--counters` (Linux) adds hardware counters (instructions, cycles, cache and branch misses), IPC and the effective CPU frequency per run, and with `--counters=default,sw` CPU migrations and context switches (a warning points to `--affinity` when migrations slow runs down); see `docs/specs/hardware-counters.md`, `docs/specs/software-events-migrations.md` and `docs/specs/effective-frequency.md`. `--scope user|kernel|all|split` and per-event `:u` / `:k` modifiers (`--counters=instructions:u,instructions:k`) choose the privilege level; see `docs/specs/counter-scope-modifiers.md`.
 
 **Energy.** `-E, --energy` measures energy in joules and average power in watts. It reads RAPL
 counters through Linux powercap sysfs, so it needs **bare-metal Linux with a readable
@@ -179,7 +179,7 @@ request comment. A GitHub Actions example is in [doc/ci.md](doc/ci.md).
 
 `--export-json <FILE>` (or `-e results.json`) writes the summary statistics and every run's
 timings. perfratio owns this output, and consumers such as `tools-benchmark` read it.
-The current version is `"1.9"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested. The legacy top-level `joulex` key was removed in `schemaVersion` 1.0: read `perfratio` instead ([docs/MIGRATION.md](docs/MIGRATION.md)).
+The current version is `"1.10"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested. The legacy top-level `joulex` key was removed in `schemaVersion` 1.0: read `perfratio` instead ([docs/MIGRATION.md](docs/MIGRATION.md)).
 
 The contract is a top-level `"schemaVersion": "MAJOR.MINOR"` string. Consumers must ignore
 unknown keys and accept any MINOR version of the MAJOR version they support. A removed or

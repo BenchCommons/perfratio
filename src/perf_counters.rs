@@ -66,7 +66,8 @@ impl CounterKind {
     ];
 
     /// Software events need no PMU, but the scheduler events are counted from
-    /// kernel context, so they cannot be scoped to user space.
+    /// kernel context, so they cannot be scoped: they are always opened with
+    /// user + kernel (`Scope::All`).
     pub fn is_software(self) -> bool {
         Self::SOFTWARE.contains(&self)
     }
@@ -126,57 +127,16 @@ impl CounterKind {
     }
 }
 
-/// Parses a comma-separated `--counters` list. Duplicates are dropped, the
-/// order is kept. Names are lowercase. Shorthands: `default` (the hardware
-/// list), `sw` (`cpu-migrations,context-switches`) and `frequency` (`cycles`;
-/// `task-clock` is added automatically).
-pub fn parse_list(list: &str) -> Result<Vec<CounterKind>, String> {
-    let mut kinds = Vec::new();
-    let mut push = |kind: CounterKind| {
-        if !kinds.contains(&kind) {
-            kinds.push(kind);
-        }
-    };
-    for name in list.split(',') {
-        match name.trim() {
-            "default" => CounterKind::ALL.into_iter().for_each(&mut push),
-            "sw" => {
-                push(CounterKind::CpuMigrations);
-                push(CounterKind::ContextSwitches);
-            }
-            "frequency" => push(CounterKind::Cycles),
-            name => {
-                let kind = CounterKind::ALL
-                    .into_iter()
-                    .chain(CounterKind::SOFTWARE)
-                    .find(|k| k.name() == name)
-                    .ok_or_else(|| {
-                        let valid: Vec<&str> = CounterKind::ALL
-                            .iter()
-                            .chain(CounterKind::SOFTWARE.iter())
-                            .map(|k| k.name())
-                            .collect();
-                        format!(
-                            "unknown counter '{name}' for '--counters' (valid: {}; shorthands: \
-                             default, sw, frequency)",
-                            valid.join(", ")
-                        )
-                    })?;
-                push(kind);
-            }
-        }
-    }
-    Ok(kinds)
-}
-
-/// Which privilege levels are counted. The default is `All` (user + kernel,
-/// like `perf stat`), see decision D1 in `pmu-extensions-common.md`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Which privilege levels one event counts (`perf_event_attr` exclude bits).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Scope {
     /// User and kernel space. Needs `perf_event_paranoid <= 1` or `CAP_PERFMON`.
     All,
     /// User space only (`exclude_kernel`)
     User,
+    /// Kernel space only (`exclude_user`). Needs `perf_event_paranoid <= 1`
+    /// or `CAP_PERFMON`.
+    Kernel,
 }
 
 impl Scope {
@@ -184,7 +144,174 @@ impl Scope {
         match self {
             Scope::All => "all",
             Scope::User => "user",
+            Scope::Kernel => "kernel",
         }
+    }
+
+    /// `perf stat` modifier suffix of a scoped key (`all` has none).
+    fn suffix(self) -> &'static str {
+        match self {
+            Scope::All => "",
+            Scope::User => ":u",
+            Scope::Kernel => ":k",
+        }
+    }
+}
+
+/// The `--scope` option. The default is `all` (like `perf stat`), decision D1
+/// in `counter-scope-modifiers.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ScopeMode {
+    User,
+    Kernel,
+    #[default]
+    All,
+    /// Every unmodified event is counted twice, as `E:u` and `E:k`
+    Split,
+}
+
+impl ScopeMode {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "user" => Some(ScopeMode::User),
+            "kernel" => Some(ScopeMode::Kernel),
+            "all" => Some(ScopeMode::All),
+            "split" => Some(ScopeMode::Split),
+            _ => None,
+        }
+    }
+
+    /// The scope that unsuffixed keys stand for (`counters_scope`).
+    pub fn default_scope(self) -> Scope {
+        match self {
+            ScopeMode::User => Scope::User,
+            ScopeMode::Kernel => Scope::Kernel,
+            ScopeMode::All | ScopeMode::Split => Scope::All,
+        }
+    }
+}
+
+/// One counted event: what and at which privilege level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CounterSpec {
+    pub kind: CounterKind,
+    pub scope: Scope,
+}
+
+impl CounterSpec {
+    /// JSON key: the event name, with `:u` / `:k` unless the scope is the
+    /// effective default scope (`counters_scope`).
+    pub fn key(self, default: Scope) -> String {
+        if self.scope == default {
+            self.kind.name().to_string()
+        } else {
+            format!("{}{}", self.kind.name(), self.scope.suffix())
+        }
+    }
+}
+
+/// Parses a comma-separated `--counters` list with optional `:u` / `:k`
+/// modifiers (`:uk` and no modifier both mean the `--scope` default). A
+/// modifier overrides `--scope` for its event; `--scope split` expands an
+/// unmodified event to `E:u` and `E:k`. Duplicates after expansion are
+/// dropped, the order is kept. Names are lowercase.
+///
+/// Shorthands: `default` (the hardware list), `sw` (`cpu-migrations`,
+/// `context-switches`) and `frequency` (`cycles`; `task-clock` is added
+/// automatically). The software events cannot be scoped: they are counted
+/// from kernel context and are always user + kernel.
+pub fn parse_list(list: &str, mode: ScopeMode) -> Result<Vec<CounterSpec>, String> {
+    let mut specs: Vec<CounterSpec> = Vec::new();
+    let mut push = |spec: CounterSpec| {
+        if !specs.contains(&spec) {
+            specs.push(spec);
+        }
+    };
+    for item in list.split(',') {
+        let item = item.trim();
+        let (name, modifier) = match item.split_once(':') {
+            Some((n, m)) => (n, Some(m)),
+            None => (item, None),
+        };
+        let expanded: Vec<CounterKind> = match name {
+            "default" | "sw" | "frequency" if modifier.is_some() => {
+                return Err(format!(
+                    "the shorthand '{name}' cannot take a modifier (in '{item}')"
+                ));
+            }
+            "default" => CounterKind::ALL.to_vec(),
+            "sw" => vec![CounterKind::CpuMigrations, CounterKind::ContextSwitches],
+            "frequency" => vec![CounterKind::Cycles],
+            _ => vec![CounterKind::ALL
+                .into_iter()
+                .chain(CounterKind::SOFTWARE)
+                .find(|k| k.name() == name)
+                .ok_or_else(|| {
+                    let valid: Vec<&str> = CounterKind::ALL
+                        .iter()
+                        .chain(CounterKind::SOFTWARE.iter())
+                        .map(|k| k.name())
+                        .collect();
+                    format!(
+                        "unknown counter '{name}' for '--counters' (valid: {}; shorthands: \
+                         default, sw, frequency)",
+                        valid.join(", ")
+                    )
+                })?],
+        };
+        for kind in expanded {
+            if kind.is_software() {
+                if modifier.is_some() {
+                    return Err(format!(
+                        "software events cannot be scoped (in '{item}'): '{}' is always counted \
+                         in user and kernel space",
+                        kind.name()
+                    ));
+                }
+                push(CounterSpec {
+                    kind,
+                    scope: Scope::All,
+                });
+                continue;
+            }
+            let scope = match modifier {
+                None => None,
+                Some(m) => parse_modifier(m, item)?,
+            };
+            match (scope, mode) {
+                (Some(scope), _) => push(CounterSpec { kind, scope }),
+                (None, ScopeMode::Split) => {
+                    push(CounterSpec {
+                        kind,
+                        scope: Scope::User,
+                    });
+                    push(CounterSpec {
+                        kind,
+                        scope: Scope::Kernel,
+                    });
+                }
+                (None, mode) => push(CounterSpec {
+                    kind,
+                    scope: mode.default_scope(),
+                }),
+            }
+        }
+    }
+    Ok(specs)
+}
+
+/// `u`, `k` or `uk`/`ku`. `None` means "the `--scope` default".
+fn parse_modifier(modifier: &str, item: &str) -> Result<Option<Scope>, String> {
+    match modifier {
+        "u" => Ok(Some(Scope::User)),
+        "k" => Ok(Some(Scope::Kernel)),
+        "uk" | "ku" => Ok(None),
+        m if m.contains('h') => Err(format!(
+            "modifier ':h' is not supported (in '{item}'); use ':u', ':k' or ':uk'"
+        )),
+        m => Err(format!(
+            "unknown modifier ':{m}' in '{item}' for '--counters' (valid: ':u', ':k', ':uk')"
+        )),
     }
 }
 
@@ -215,22 +342,27 @@ impl UnavailableReason {
 pub enum Availability {
     Measured,
     /// Some requested events cannot be opened
-    Partial(Vec<CounterKind>),
+    Partial(Vec<CounterSpec>),
     Unavailable(UnavailableReason),
 }
 
 /// The resolved `--counters` request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CounterConfig {
-    pub requested: Vec<CounterKind>,
-    /// Events that are really collected, a subset of `requested`
-    pub active: Vec<CounterKind>,
+    pub requested: Vec<CounterSpec>,
+    /// Events that are really collected, a subset of `requested` (after the
+    /// scope fallback)
+    pub active: Vec<CounterSpec>,
+    /// Effective default scope (`counters_scope`): what unsuffixed keys count
     pub scope: Scope,
+    /// Default scope that was asked for; differs from `scope` after a fallback
+    pub requested_scope: Scope,
     pub availability: Availability,
     /// Why events are missing when `availability` is `Partial`
     pub partial_reason: Option<UnavailableReason>,
-    /// `task-clock` that was added only to compute the effective frequency:
-    /// collected, but not exported or printed as a counter
+    /// Events that are collected but neither exported nor printed as counters:
+    /// the `task-clock` that only divides `cycles` for the effective
+    /// frequency (#222)
     pub hidden: Vec<CounterKind>,
     /// `--debug-mode`: synthetic values, nothing is opened
     pub mock: bool,
@@ -240,6 +372,11 @@ impl CounterConfig {
     pub fn is_active(&self) -> bool {
         !self.active.is_empty()
     }
+
+    /// JSON key of the event at `index` of `active`.
+    pub fn key(&self, index: usize) -> String {
+        self.active[index].key(self.scope)
+    }
 }
 
 /// Raw counts of one run, one entry per active event (`None`: not readable).
@@ -248,13 +385,17 @@ pub type HwReading = Vec<Option<ScaledCounter>>;
 const EPERM: i32 = 1;
 const EACCES: i32 = 13;
 
-fn is_denied(errno: i32) -> bool {
-    matches!(errno, EPERM | EACCES)
+fn kernel_denied_message(paranoid: Option<i32>) -> String {
+    format!(
+        "kernel counters need kernel.perf_event_paranoid <= 1 or CAP_PERFMON (it is {}). \
+         Run `sudo sysctl kernel.perf_event_paranoid=1` or grant CAP_PERFMON",
+        paranoid.map_or("unknown".to_string(), |p| p.to_string())
+    )
 }
 
 /// Why one event could not be opened.
 fn reason_for(kind: CounterKind, errno: i32, paranoid: Option<i32>) -> UnavailableReason {
-    if kind.is_software() && is_denied(errno) {
+    if kind.is_software() && matches!(errno, EPERM | EACCES) {
         return UnavailableReason::KernelScopeDenied;
     }
     match pmu::decide(paranoid, Some(pmu::Probe::Failed(errno))) {
@@ -266,54 +407,84 @@ fn reason_for(kind: CounterKind, errno: i32, paranoid: Option<i32>) -> Unavailab
 
 /// Adds `task-clock` when `cycles` is requested (the divisor of the effective
 /// frequency, #222). Returns the events to open and the one that stays hidden.
-fn with_frequency_divisor(mut requested: Vec<CounterKind>) -> (Vec<CounterKind>, Vec<CounterKind>) {
+fn with_frequency_divisor(mut requested: Vec<CounterSpec>) -> (Vec<CounterSpec>, Vec<CounterKind>) {
     let mut hidden = Vec::new();
-    if requested.contains(&CounterKind::Cycles) && !requested.contains(&CounterKind::TaskClock) {
-        requested.push(CounterKind::TaskClock);
+    let has =
+        |kind: CounterKind, requested: &[CounterSpec]| requested.iter().any(|s| s.kind == kind);
+    if has(CounterKind::Cycles, &requested) && !has(CounterKind::TaskClock, &requested) {
+        requested.push(CounterSpec {
+            kind: CounterKind::TaskClock,
+            scope: Scope::All,
+        });
         hidden.push(CounterKind::TaskClock);
     }
     (requested, hidden)
 }
 
 /// Pure planning step: opens nothing itself, `probe` tries one event.
-/// `hidden` events are collected but a failure to open them is silent (the
-/// frequency is then unavailable). Software events are always probed with
-/// scope `All`: the kernel does not count them with `exclude_kernel`.
-/// Returns the config and the warnings to print once.
+/// `requested_scope` is the scope of unsuffixed keys. `hidden` events are
+/// collected, but failing to open them is silent (the frequency is then
+/// unavailable). Software events are never scoped: they are probed and
+/// opened in `Scope::All`, because the kernel does not count them with
+/// `exclude_kernel`, and they do not take part in the scope fallback.
+/// Returns the config and the warnings to print once, or an error when kernel
+/// counting was asked for explicitly (`--scope kernel|split`, a `:k` modifier)
+/// and is denied: a silent downgrade would invalidate the request.
 pub fn plan(
-    requested: Vec<CounterKind>,
+    mut requested: Vec<CounterSpec>,
     hidden: Vec<CounterKind>,
+    requested_scope: Scope,
     paranoid: Option<i32>,
     mut probe: impl FnMut(CounterKind, Scope) -> Result<(), i32>,
-) -> (CounterConfig, Vec<String>) {
+) -> Result<(CounterConfig, Vec<String>), String> {
     let mut warnings = Vec::new();
-    let mut scope = Scope::All;
-    // Kernel-side counting is denied at the default paranoid level 2:
-    // fall back to user space and say so (never report user-only as `all`).
-    if let Some(&first) = requested.iter().find(|k| !k.is_software()) {
-        if matches!(probe(first, Scope::All), Err(EPERM | EACCES)) {
-            scope = Scope::User;
-            warnings.push(format!(
-                "counting user-space events only (kernel counting is denied, perf_event_paranoid={}). \
-                 Run `sudo sysctl kernel.perf_event_paranoid=1` or grant CAP_PERFMON to count kernel \
-                 instructions too.",
-                paranoid.map_or("unknown".to_string(), |p| p.to_string())
-            ));
-        }
+    let mut scope = requested_scope;
+    // Kernel-side counting is denied at the default paranoid level 2. Probe
+    // the real scope (a user-only probe says nothing about it), once per
+    // distinct scope in use.
+    let mut denied = |wanted: Scope, requested: &[CounterSpec]| {
+        requested
+            .iter()
+            .find(|s| s.scope == wanted && !s.kind.is_software())
+            .is_some_and(|s| matches!(probe(s.kind, wanted), Err(EPERM | EACCES)))
+    };
+    if denied(Scope::Kernel, &requested) {
+        return Err(format!(
+            "{}, or do not ask for kernel counters ('--scope kernel|split', ':k')",
+            kernel_denied_message(paranoid)
+        ));
     }
-    let mut active = Vec::new();
-    let mut failed: Vec<(CounterKind, i32)> = Vec::new();
-    for &kind in &requested {
-        let event_scope = if kind.is_software() {
-            Scope::All
+    if denied(Scope::All, &requested) {
+        warnings.push(format!(
+            "{}; counting user space only",
+            kernel_denied_message(paranoid)
+        ));
+        for spec in &mut requested {
+            if spec.scope == Scope::All && !spec.kind.is_software() {
+                spec.scope = Scope::User;
+            }
+        }
+        // `instructions` and `instructions:u` are one event now
+        let mut seen = Vec::new();
+        requested.retain(|s| {
+            let new = !seen.contains(s);
+            seen.push(*s);
+            new
+        });
+        scope = if scope == Scope::All {
+            Scope::User
         } else {
             scope
         };
-        match probe(kind, event_scope) {
-            Ok(()) => active.push(kind),
+    }
+    let mut active = Vec::new();
+    let mut failed: Vec<(CounterSpec, i32)> = Vec::new();
+    for &spec in &requested {
+        match probe(spec.kind, spec.scope) {
+            Ok(()) => active.push(spec),
             Err(errno) => {
-                if !hidden.contains(&kind) {
-                    failed.push((kind, errno));
+                if !hidden.contains(&spec.kind) {
+                    failed.push((spec, errno));
                 }
             }
         }
@@ -322,11 +493,11 @@ pub fn plan(
     let availability = if failed.is_empty() {
         Availability::Measured
     } else {
-        let (first_kind, first_errno) = failed[0];
-        let reason = reason_for(first_kind, first_errno, paranoid);
-        let names: Vec<&str> = failed.iter().map(|f| f.0.name()).collect();
-        if active.iter().all(|k| hidden.contains(k)) {
-            let scheduler_only = failed.iter().all(|f| f.0.is_software());
+        let (first, first_errno) = failed[0];
+        let reason = reason_for(first.kind, first_errno, paranoid);
+        let names: Vec<String> = failed.iter().map(|f| f.0.key(scope)).collect();
+        if active.iter().all(|s| hidden.contains(&s.kind)) {
+            let scheduler_only = failed.iter().all(|f| f.0.kind.is_software());
             warnings.push(if scheduler_only {
                 format!(
                     "software counters ({}) need kernel-scope access, which is denied \
@@ -355,67 +526,76 @@ pub fn plan(
             Availability::Partial(failed.iter().map(|f| f.0).collect())
         }
     };
-    (
+    Ok((
         CounterConfig {
             requested,
             active,
             scope,
+            requested_scope,
             availability,
             partial_reason,
             hidden,
             mock: false,
         },
         warnings,
-    )
+    ))
 }
 
 /// Resolves a `--counters` request against the machine. Returns the config and
 /// the warnings to print (once, before the first benchmark).
-pub fn resolve(requested: Vec<CounterKind>, debug_mode: bool) -> (CounterConfig, Vec<String>) {
+pub fn resolve(
+    requested: Vec<CounterSpec>,
+    requested_scope: Scope,
+    debug_mode: bool,
+) -> Result<(CounterConfig, Vec<String>), String> {
     let (requested, hidden) = with_frequency_divisor(requested);
     if debug_mode {
-        return (
+        return Ok((
             CounterConfig {
                 active: requested.clone(),
                 requested,
-                scope: Scope::All,
+                scope: requested_scope,
+                requested_scope,
                 availability: Availability::Measured,
                 partial_reason: None,
                 hidden,
                 mock: true,
             },
             vec![],
-        );
+        ));
     }
-    resolve_native(requested, hidden)
+    resolve_native(requested, hidden, requested_scope)
 }
 
 #[cfg(target_os = "linux")]
 fn resolve_native(
-    requested: Vec<CounterKind>,
+    requested: Vec<CounterSpec>,
     hidden: Vec<CounterKind>,
-) -> (CounterConfig, Vec<String>) {
+    requested_scope: Scope,
+) -> Result<(CounterConfig, Vec<String>), String> {
     let paranoid = std::fs::read_to_string("/proc/sys/kernel/perf_event_paranoid")
         .ok()
         .and_then(|c| pmu::parse_paranoid(&c));
-    plan(requested, hidden, paranoid, linux::probe)
+    plan(requested, hidden, requested_scope, paranoid, linux::probe)
 }
 
 #[cfg(not(target_os = "linux"))]
 fn resolve_native(
-    requested: Vec<CounterKind>,
+    requested: Vec<CounterSpec>,
     hidden: Vec<CounterKind>,
-) -> (CounterConfig, Vec<String>) {
+    requested_scope: Scope,
+) -> Result<(CounterConfig, Vec<String>), String> {
     let why = if cfg!(target_os = "macos") {
         "on macOS the kperf framework needs root and cannot follow child processes"
     } else {
         "no supported counter API on this platform"
     };
-    (
+    Ok((
         CounterConfig {
             requested,
             active: vec![],
-            scope: Scope::All,
+            scope: requested_scope,
+            requested_scope,
             availability: Availability::Unavailable(UnavailableReason::UnsupportedPlatform),
             partial_reason: None,
             hidden,
@@ -424,7 +604,7 @@ fn resolve_native(
         vec![format!(
             "'--counters' is only supported on Linux ({why}); continuing without hardware counters."
         )],
-    )
+    ))
 }
 
 /// Deterministic values for `--debug-mode`, derived from the simulated time.
@@ -432,8 +612,8 @@ pub fn mock_reading(config: &CounterConfig, time_real: f64) -> HwReading {
     config
         .active
         .iter()
-        .map(|&kind| {
-            let per_second = match kind {
+        .map(|&spec| {
+            let per_second = match spec.kind {
                 CounterKind::Instructions => 2_000_000_000.0,
                 CounterKind::Cycles => 1_000_000_000.0,
                 CounterKind::CacheReferences => 10_000_000.0,
@@ -446,7 +626,13 @@ pub fn mock_reading(config: &CounterConfig, time_real: f64) -> HwReading {
                 // nanoseconds: with 1e9 cycles/s the mock clock runs at 1 GHz
                 CounterKind::TaskClock => 1_000_000_000.0,
             };
-            let value = (per_second * time_real) as u64;
+            let all = (per_second * time_real) as u64;
+            // user is a quarter of everything, so user + kernel = all
+            let value = match spec.scope {
+                Scope::All => all,
+                Scope::User => all / 4,
+                Scope::Kernel => all - all / 4,
+            };
             Some(ScaledCounter {
                 value,
                 raw: value,
@@ -581,8 +767,20 @@ fn format_event_count(mean: f64) -> String {
     }
 }
 
+/// The scope whose events feed the derived rates (IPC, miss rates): the
+/// default scope if it was counted, else the only scope in use. Rates never
+/// mix scopes.
+fn rate_scope(config: &CounterConfig) -> Option<Scope> {
+    let mut hardware = config.active.iter().filter(|s| !s.kind.is_software());
+    if hardware.clone().any(|s| s.scope == config.scope) {
+        return Some(config.scope);
+    }
+    let first = hardware.next()?.scope;
+    hardware.all(|s| s.scope == first).then_some(first)
+}
+
 /// Builds the export of all runs. `runs` has one entry per run (aligned with
-/// the times in `ctx`); `None` is a run whose counters could not be read.
+/// `times`); `None` is a run whose counters could not be read.
 pub fn export(
     config: &CounterConfig,
     runs: &[Option<HwReading>],
@@ -593,67 +791,77 @@ pub fn export(
     }
     let cell =
         |run: &Option<HwReading>, i: usize| run.as_ref().and_then(|r| r.get(i).copied().flatten());
-    let position = |kind: CounterKind| config.active.iter().position(|&k| k == kind);
-    let series_of = |kind: CounterKind| -> Vec<Option<u64>> {
-        runs.iter()
-            .map(|run| position(kind).and_then(|i| cell(run, i)).map(|c| c.value))
-            .collect()
-    };
     let mut counters = BTreeMap::new();
     let mut summary = BTreeMap::new();
-    let mut means: Vec<(CounterKind, f64)> = Vec::new();
-    let mut scaling: Vec<(&str, Vec<ScaledCounter>)> = Vec::new();
-    for (i, kind) in config.active.iter().enumerate() {
-        if config.hidden.contains(kind) {
+    let mut means: Vec<(CounterSpec, f64)> = Vec::new();
+    let mut scaling: Vec<(String, Vec<ScaledCounter>)> = Vec::new();
+    for (i, spec) in config.active.iter().enumerate() {
+        if config.hidden.contains(&spec.kind) {
             continue;
         }
+        let key = config.key(i);
         let cells: Vec<Option<ScaledCounter>> = runs.iter().map(|r| cell(r, i)).collect();
         let values: Vec<Option<u64>> = cells.iter().map(|c| c.map(|c| c.value)).collect();
         let floats: Vec<f64> = values.iter().flatten().map(|&v| v as f64).collect();
         if let Some(s) = crate::benchmark::benchmark_result::MetricSummary::from_values(&floats) {
-            means.push((*kind, s.mean));
-            summary.insert(kind.name().to_string(), s);
+            means.push((*spec, s.mean));
+            summary.insert(key.clone(), s);
         }
-        scaling.push((kind.name(), cells.iter().flatten().copied().collect()));
-        counters.insert(kind.name().to_string(), values);
+        scaling.push((key.clone(), cells.iter().flatten().copied().collect()));
+        counters.insert(key, values);
     }
     let multiplexed_runs = (0..runs.len())
         .filter(|&r| {
             (0..config.active.len()).any(|i| cell(&runs[r], i).is_some_and(|c| c.scaled()))
         })
         .count();
-    let samples: Vec<CounterSample> = runs
-        .iter()
-        .map(|run| {
-            let get =
-                |kind: CounterKind| position(kind).and_then(|i| cell(run, i)).map(|c| c.value);
-            CounterSample {
-                instructions: get(CounterKind::Instructions),
-                cycles: get(CounterKind::Cycles),
-                cache_references: get(CounterKind::CacheReferences),
-                cache_misses: get(CounterKind::CacheMisses),
-                branches: get(CounterKind::Branches),
-                branch_misses: get(CounterKind::BranchMisses),
-            }
-        })
-        .collect();
-    let efficiency = Efficiency::mean_of(&samples);
-    let frequency = frequency_export(config, &series_of, runs.len(), ctx);
+    let efficiency = rate_scope(config).and_then(|scope| {
+        let samples: Vec<CounterSample> = runs
+            .iter()
+            .map(|run| {
+                let get = |kind: CounterKind| {
+                    config
+                        .active
+                        .iter()
+                        .position(|&s| s.kind == kind && s.scope == scope)
+                        .and_then(|i| cell(run, i))
+                        .map(|c| c.value)
+                };
+                CounterSample {
+                    instructions: get(CounterKind::Instructions),
+                    cycles: get(CounterKind::Cycles),
+                    cache_references: get(CounterKind::CacheReferences),
+                    cache_misses: get(CounterKind::CacheMisses),
+                    branches: get(CounterKind::Branches),
+                    branch_misses: get(CounterKind::BranchMisses),
+                }
+            })
+            .collect();
+        Efficiency::mean_of(&samples)
+    });
+    let frequency = frequency_export(config, runs, ctx);
     let mut advisories = Vec::new();
     if let Some(f) = &frequency {
-        let eligible: Vec<f64> = f.eligible.clone();
-        advisories.extend(frequency::warnings(&eligible, ctx.max_frequency_hz));
+        advisories.extend(frequency::warnings(&f.eligible, ctx.max_frequency_hz));
     }
-    if config.active.contains(&CounterKind::CpuMigrations) {
+    if let Some(i) = config
+        .active
+        .iter()
+        .position(|s| s.kind == CounterKind::CpuMigrations)
+    {
+        let migrations: Vec<Option<u64>> = runs
+            .iter()
+            .map(|run| cell(run, i).map(|c| c.value))
+            .collect();
         advisories.extend(jitter_warning(
-            &series_of(CounterKind::CpuMigrations),
+            &migrations,
             ctx.real_seconds,
             ctx.single_cpu,
         ));
     }
     let freq_label = frequency.as_ref().and_then(|f| {
         f.export.mean.map(|mean| {
-            let mut s = format!(
+            let mut label = format!(
                 "{}{}",
                 if f.export.basis == Basis::UserTime {
                     "~"
@@ -663,17 +871,25 @@ pub fn export(
                 frequency::format_hz(mean)
             );
             if let Some(sd) = f.export.stddev.filter(|&sd| sd > 0.0) {
-                s.push_str(&format!(" ± {}", frequency::format_hz(sd)));
+                label.push_str(&format!(" ± {}", frequency::format_hz(sd)));
             }
-            s
+            (f.scope, label)
         })
     });
     let line = summary_line(
         &means,
+        config.scope,
+        rate_scope(config),
         efficiency.as_ref(),
-        freq_label.as_deref(),
+        freq_label
+            .as_ref()
+            .map(|(scope, label)| (*scope, label.as_str())),
         multiplexed_runs,
     );
+    let scaling: Vec<(&str, Vec<ScaledCounter>)> = scaling
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.clone()))
+        .collect();
     Some(CounterExport {
         counters,
         summary,
@@ -688,33 +904,66 @@ pub fn export(
 
 struct FrequencyWork {
     export: FrequencyExport,
+    /// The scope of the `cycles` that were divided (`All` also for a `:u` + `:k` sum)
+    scope: Scope,
     /// Per-run frequencies of the runs with enough time on CPU, in run order
     eligible: Vec<f64>,
 }
 
 /// Effective frequency of every run, when `cycles` was collected (#222).
+/// `cycles` over user + kernel (or the sum of `cycles:u` and `cycles:k`) is
+/// divided by `task-clock`; user-only `cycles` by the user CPU time and
+/// kernel-only by the system CPU time, never by `task-clock`.
 fn frequency_export(
     config: &CounterConfig,
-    series_of: &dyn Fn(CounterKind) -> Vec<Option<u64>>,
-    run_count: usize,
+    runs: &[Option<HwReading>],
     ctx: &RunContext,
 ) -> Option<FrequencyWork> {
-    if !config.active.contains(&CounterKind::Cycles) {
+    let value = |run: &Option<HwReading>, kind: CounterKind, scope: Scope| -> Option<u64> {
+        let i = config
+            .active
+            .iter()
+            .position(|s| s.kind == kind && s.scope == scope)?;
+        run.as_ref()?.get(i).copied().flatten().map(|c| c.value)
+    };
+    let has = |scope: Scope| {
+        config
+            .active
+            .iter()
+            .any(|s| s.kind == CounterKind::Cycles && s.scope == scope)
+    };
+    let scope = if has(Scope::All) || (has(Scope::User) && has(Scope::Kernel)) {
+        Scope::All
+    } else if has(Scope::User) {
+        Scope::User
+    } else if has(Scope::Kernel) {
+        Scope::Kernel
+    } else {
         return None;
-    }
+    };
     let basis = frequency::choose_basis(
-        config.scope == Scope::All,
-        config.active.contains(&CounterKind::TaskClock),
+        scope,
+        config
+            .active
+            .iter()
+            .any(|s| s.kind == CounterKind::TaskClock),
     )?;
-    let cycles = series_of(CounterKind::Cycles);
-    let task_clock = series_of(CounterKind::TaskClock);
     let seconds = |v: &[f64], i: usize| v.get(i).copied().unwrap_or(0.0);
-    let per_run: Vec<Option<frequency::RunFrequency>> = (0..run_count)
-        .map(|i| {
+    let per_run: Vec<Option<frequency::RunFrequency>> = runs
+        .iter()
+        .enumerate()
+        .map(|(i, run)| {
+            let cycles = if scope == Scope::All && !has(Scope::All) {
+                value(run, CounterKind::Cycles, Scope::User)
+                    .zip(value(run, CounterKind::Cycles, Scope::Kernel))
+                    .map(|(u, k)| u + k)
+            } else {
+                value(run, CounterKind::Cycles, scope)
+            };
             frequency::run_frequency(
                 basis,
-                cycles[i],
-                task_clock[i],
+                cycles,
+                value(run, CounterKind::TaskClock, Scope::All),
                 seconds(ctx.user_seconds, i),
                 seconds(ctx.system_seconds, i),
             )
@@ -734,42 +983,107 @@ fn frequency_export(
             stddev: stats.as_ref().and_then(|s| s.stddev),
             basis,
         },
+        scope,
         eligible,
     })
 }
 
-/// `instr 12.3M · cycles 9.8M (IPC 1.26) @3.42 GHz · cache-miss 41.2k · cpu-migr 0.4`
+/// One printed value: a single scope, or a user + kernel pair shown as a
+/// total with its breakdown.
+#[derive(Clone, Copy)]
+enum Slot {
+    Single(Scope),
+    Split,
+}
+
+/// `instr 12.3M · cycles 9.8M (IPC 1.26) · cache-miss 41.2k · branch-miss 18.0k`
+///
+/// Events counted in both scopes read `instr 1.70M [user 421k, kernel 1.28M]`;
+/// events at another scope than the default carry the `:u` / `:k` suffix.
+/// IPC is shown only where `instructions` and `cycles` share the slot.
 fn summary_line(
-    means: &[(CounterKind, f64)],
+    means: &[(CounterSpec, f64)],
+    default: Scope,
+    rate_scope: Option<Scope>,
     efficiency: Option<&Efficiency>,
-    frequency: Option<&str>,
+    frequency: Option<(Scope, &str)>,
     multiplexed_runs: usize,
 ) -> Option<String> {
     if means.is_empty() {
         return None;
     }
-    let both = means.iter().any(|m| m.0 == CounterKind::Instructions)
-        && means.iter().any(|m| m.0 == CounterKind::Cycles);
-    let parts: Vec<String> = means
+    let mean = |kind: CounterKind, scope: Scope| {
+        means
+            .iter()
+            .find(|(s, _)| s.kind == kind && s.scope == scope)
+            .map(|m| m.1)
+    };
+    // `All` is the total. Without it a user + kernel pair makes one.
+    let slot_value = |kind: CounterKind, slot: Slot| match slot {
+        Slot::Single(scope) => mean(kind, scope),
+        Slot::Split => Some(mean(kind, Scope::User)? + mean(kind, Scope::Kernel)?),
+    };
+    let mut slots: Vec<(CounterKind, Slot)> = Vec::new();
+    for (spec, _) in means {
+        let paired = spec.scope != Scope::All
+            && mean(spec.kind, Scope::All).is_none()
+            && mean(spec.kind, Scope::User).is_some()
+            && mean(spec.kind, Scope::Kernel).is_some();
+        let slot = if paired {
+            Slot::Split
+        } else {
+            Slot::Single(spec.scope)
+        };
+        let seen = slots
+            .iter()
+            .any(|(k, s)| *k == spec.kind && matches!((s, slot), (Slot::Split, Slot::Split)));
+        if !seen {
+            slots.push((spec.kind, slot));
+        }
+    }
+    let parts: Vec<String> = slots
         .iter()
-        .map(|&(kind, mean)| {
-            let mut s = match kind {
-                CounterKind::TaskClock => format!(
-                    "{} {}",
+        .map(|&(kind, slot)| {
+            let value = slot_value(kind, slot).unwrap_or_default();
+            let mut s = match slot {
+                Slot::Single(scope) => {
+                    let suffix = if scope == default { "" } else { scope.suffix() };
+                    let shown = match kind {
+                        CounterKind::TaskClock => {
+                            crate::output::format::format_duration(value / 1e9, None)
+                        }
+                        k if k.is_software() => format_event_count(value),
+                        _ => crate::benchmark::format_count(value),
+                    };
+                    format!("{}{suffix} {shown}", kind.short())
+                }
+                Slot::Split => format!(
+                    "{} {} [user {}, kernel {}]",
                     kind.short(),
-                    crate::output::format::format_duration(mean / 1e9, None)
+                    crate::benchmark::format_count(value),
+                    crate::benchmark::format_count(mean(kind, Scope::User).unwrap_or_default()),
+                    crate::benchmark::format_count(mean(kind, Scope::Kernel).unwrap_or_default()),
                 ),
-                k if k.is_software() => format!("{} {}", k.short(), format_event_count(mean)),
-                k => format!("{} {}", k.short(), crate::benchmark::format_count(mean)),
             };
             if kind == CounterKind::Cycles {
-                if both {
-                    if let Some(ipc) = efficiency.and_then(|e| e.ipc) {
+                if let Some(instr) = slot_value(CounterKind::Instructions, slot) {
+                    let ipc = match slot {
+                        // keep the mean of the per-run ratios where it exists
+                        Slot::Single(scope) if Some(scope) == rate_scope => {
+                            efficiency.and_then(|e| e.ipc)
+                        }
+                        _ => (value > 0.0).then(|| instr / value),
+                    };
+                    if let Some(ipc) = ipc {
                         s.push_str(&format!(" (IPC {ipc:.2})"));
                     }
                 }
-                if let Some(f) = frequency {
-                    s.push_str(&format!(" @{f}"));
+                if let Some((_, label)) = frequency.filter(|(fscope, _)| match slot {
+                    Slot::Single(scope) => scope == *fscope,
+                    Slot::Split => true,
+                }) {
+                    // after the IPC
+                    s.push_str(&format!(" @{label}"));
                 }
             }
             s
@@ -780,6 +1094,32 @@ fn summary_line(
         line.push_str(&format!(" [scaled in {multiplexed_runs} runs]"));
     }
     Some(line)
+}
+
+/// `perf_event_attr` bit-field flags of a scope (see `perf_event_open(2)`):
+/// `exclude_user` / `exclude_kernel` select the scope, `exclude_hv` and
+/// `exclude_guest` are always set so that hypervisor and KVM guest counts
+/// never leak in. `exclude_idle` is never set (the arm64 PMU driver rejects
+/// it). Runs additionally `inherit` and `enable_on_exec`.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn attr_flags(scope: Scope, for_run: bool) -> u64 {
+    const DISABLED: u64 = 1 << 0;
+    const INHERIT: u64 = 1 << 1;
+    const EXCLUDE_USER: u64 = 1 << 4;
+    const EXCLUDE_KERNEL: u64 = 1 << 5;
+    const EXCLUDE_HV: u64 = 1 << 6;
+    const ENABLE_ON_EXEC: u64 = 1 << 12;
+    const EXCLUDE_GUEST: u64 = 1 << 20;
+    let mut flags = DISABLED | EXCLUDE_HV | EXCLUDE_GUEST;
+    match scope {
+        Scope::All => {}
+        Scope::User => flags |= EXCLUDE_KERNEL,
+        Scope::Kernel => flags |= EXCLUDE_USER,
+    }
+    if for_run {
+        flags |= INHERIT | ENABLE_ON_EXEC;
+    }
+    flags
 }
 
 /// Opened events of one run. Dropping closes the file descriptors.
@@ -796,18 +1136,10 @@ pub fn open(config: &CounterConfig) -> Option<OpenCounters> {
     }
     #[cfg(target_os = "linux")]
     {
-        // Software events ignore the scope: `exclude_kernel` would hide them
         let events: Vec<(u32, u64, Scope)> = config
             .active
             .iter()
-            .map(|k| {
-                let scope = if k.is_software() {
-                    Scope::All
-                } else {
-                    config.scope
-                };
-                (k.perf_type(), k.hw_config(), scope)
-            })
+            .map(|s| (s.kind.perf_type(), s.kind.hw_config(), s.scope))
             .collect();
         Some(OpenCounters {
             inner: linux::open_events(&events),
@@ -848,16 +1180,7 @@ mod linux {
         attr[0] = u64::from(type_) | (u64::from(std::mem::size_of_val(&attr) as u32) << 32);
         attr[1] = config;
         attr[4] = READ_FORMAT;
-        let mut flags: u64 = 1; // disabled
-        flags |= 1 << 6; // exclude_hv
-        if scope == Scope::User {
-            flags |= 1 << 5; // exclude_kernel
-        }
-        if for_run {
-            flags |= 1 << 1; // inherit
-            flags |= 1 << 12; // enable_on_exec
-        }
-        attr[5] = flags;
+        attr[5] = super::attr_flags(scope, for_run);
         attr
     }
 
@@ -980,44 +1303,274 @@ mod tests {
         }))
     }
 
+    fn spec(kind: CounterKind, scope: Scope) -> CounterSpec {
+        CounterSpec { kind, scope }
+    }
+
+    fn all(kinds: &[CounterKind]) -> Vec<CounterSpec> {
+        kinds.iter().map(|&k| spec(k, Scope::All)).collect()
+    }
+
     #[test]
     fn parses_lists() {
-        let all = parse_list(DEFAULT_COUNTERS).unwrap();
-        assert_eq!(all, CounterKind::ALL.to_vec());
+        let specs = parse_list(DEFAULT_COUNTERS, ScopeMode::All).unwrap();
+        assert_eq!(specs, all(&CounterKind::ALL));
         assert_eq!(
-            parse_list("cycles,instructions,cycles").unwrap(),
-            vec![CounterKind::Cycles, CounterKind::Instructions]
+            parse_list("cycles,instructions,cycles", ScopeMode::All).unwrap(),
+            all(&[CounterKind::Cycles, CounterKind::Instructions])
         );
-        let err = parse_list("instructions,bogus").unwrap_err();
+        let err = parse_list("instructions,bogus", ScopeMode::All).unwrap_err();
         assert!(
             err.contains("'bogus'") && err.contains("branch-misses"),
             "{err}"
         );
-        assert!(parse_list("Cycles").is_err());
-        assert!(parse_list("").is_err());
+        assert!(parse_list("Cycles", ScopeMode::All).is_err());
+        assert!(parse_list("", ScopeMode::All).is_err());
+    }
+
+    #[test]
+    fn parses_modifiers() {
+        use CounterKind::*;
+        let p = |l, m| parse_list(l, m).unwrap();
+        assert_eq!(
+            p("instructions:u,instructions:k,cycles:uk", ScopeMode::All),
+            vec![
+                spec(Instructions, Scope::User),
+                spec(Instructions, Scope::Kernel),
+                spec(Cycles, Scope::All)
+            ]
+        );
+        // a modifier wins over --scope
+        assert_eq!(
+            p("cycles:k,instructions", ScopeMode::User),
+            vec![spec(Cycles, Scope::Kernel), spec(Instructions, Scope::User)]
+        );
+        assert_eq!(
+            p("cycles:u", ScopeMode::Kernel),
+            vec![spec(Cycles, Scope::User)]
+        );
+        // `:uk` is the default scope
+        assert_eq!(
+            p("cycles:uk", ScopeMode::Kernel),
+            vec![spec(Cycles, Scope::Kernel)]
+        );
+        // duplicates after expansion
+        assert_eq!(
+            p("instructions,instructions:uk", ScopeMode::All),
+            all(&[Instructions])
+        );
+        assert_eq!(
+            p("cycles:u,cycles", ScopeMode::User),
+            vec![spec(Cycles, Scope::User)]
+        );
+    }
+
+    #[test]
+    fn split_expands_unmodified_events() {
+        use CounterKind::*;
+        assert_eq!(
+            parse_list("instructions,cycles:k,cycles", ScopeMode::Split).unwrap(),
+            vec![
+                spec(Instructions, Scope::User),
+                spec(Instructions, Scope::Kernel),
+                spec(Cycles, Scope::Kernel),
+                spec(Cycles, Scope::User),
+            ]
+        );
+    }
+
+    #[test]
+    fn rejects_bad_modifiers() {
+        let h = parse_list("cycles:h", ScopeMode::All).unwrap_err();
+        assert!(h.contains("modifier ':h' is not supported"), "{h}");
+        assert!(parse_list("cycles:uh", ScopeMode::All).is_err());
+        let x = parse_list("cycles:x", ScopeMode::All).unwrap_err();
+        assert!(x.contains("unknown modifier ':x'"), "{x}");
+        assert!(parse_list("cycles:", ScopeMode::All).is_err());
+        assert!(parse_list("bogus:u", ScopeMode::All).is_err());
+    }
+
+    #[test]
+    fn scope_modes() {
+        assert_eq!(ScopeMode::parse("split"), Some(ScopeMode::Split));
+        assert_eq!(ScopeMode::parse("both"), None);
+        assert_eq!(ScopeMode::default(), ScopeMode::All);
+        assert_eq!(ScopeMode::Split.default_scope(), Scope::All);
+        assert_eq!(ScopeMode::Kernel.default_scope(), Scope::Kernel);
+    }
+
+    #[test]
+    fn attr_flags_follow_the_spec_table() {
+        const EXCLUDE_USER: u64 = 1 << 4;
+        const EXCLUDE_KERNEL: u64 = 1 << 5;
+        const EXCLUDE_HV: u64 = 1 << 6;
+        const EXCLUDE_IDLE: u64 = 1 << 7;
+        const EXCLUDE_GUEST: u64 = 1 << 20;
+        for (scope, user, kernel) in [
+            (Scope::User, false, true),
+            (Scope::Kernel, true, false),
+            (Scope::All, false, false),
+        ] {
+            let f = attr_flags(scope, false);
+            assert_eq!(f & EXCLUDE_USER != 0, user, "{scope:?}");
+            assert_eq!(f & EXCLUDE_KERNEL != 0, kernel, "{scope:?}");
+            assert!(f & EXCLUDE_HV != 0 && f & EXCLUDE_GUEST != 0);
+            assert_eq!(f & EXCLUDE_IDLE, 0);
+            assert_eq!(f & 1, 1, "disabled");
+            assert_eq!(f & ((1 << 1) | (1 << 12)), 0, "no inherit outside runs");
+            assert_eq!(
+                attr_flags(scope, true) & ((1 << 1) | (1 << 12)),
+                (1 << 1) | (1 << 12)
+            );
+        }
+    }
+
+    #[test]
+    fn key_naming() {
+        let u = spec(CounterKind::Instructions, Scope::User);
+        assert_eq!(u.key(Scope::All), "instructions:u");
+        assert_eq!(u.key(Scope::User), "instructions");
+        assert_eq!(
+            spec(CounterKind::Cycles, Scope::Kernel).key(Scope::All),
+            "cycles:k"
+        );
+        assert_eq!(
+            spec(CounterKind::Cycles, Scope::All).key(Scope::All),
+            "cycles"
+        );
+    }
+
+    fn plan_all(
+        kinds: &[CounterKind],
+        paranoid: Option<i32>,
+        probe: impl FnMut(CounterKind, Scope) -> Result<(), i32>,
+    ) -> (CounterConfig, Vec<String>) {
+        plan(all(kinds), vec![], Scope::All, paranoid, probe).unwrap()
     }
 
     #[test]
     fn plan_all_available() {
-        let (c, w) = plan(CounterKind::ALL.to_vec(), vec![], Some(1), |_, _| Ok(()));
+        let (c, w) = plan_all(&CounterKind::ALL, Some(1), |_, _| Ok(()));
         assert_eq!(c.availability, Availability::Measured);
-        assert_eq!(c.scope, Scope::All);
+        assert_eq!((c.scope, c.requested_scope), (Scope::All, Scope::All));
         assert_eq!(c.active.len(), 6);
         assert!(w.is_empty());
     }
 
     #[test]
     fn plan_falls_back_to_user_scope() {
-        let (c, w) = plan(vec![CounterKind::Cycles], vec![], Some(2), |_, s| match s {
-            Scope::All => Err(13),
+        let (c, w) = plan_all(&[CounterKind::Cycles], Some(2), |_, s| match s {
             Scope::User => Ok(()),
+            _ => Err(13),
         });
         assert_eq!(
-            (c.scope, c.availability),
-            (Scope::User, Availability::Measured)
+            (c.scope, c.requested_scope, c.availability),
+            (Scope::User, Scope::All, Availability::Measured)
         );
+        assert_eq!(c.active, vec![spec(CounterKind::Cycles, Scope::User)]);
         assert_eq!(w.len(), 1);
-        assert!(w[0].contains("perf_event_paranoid=2"), "{w:?}");
+        assert!(
+            w[0].contains("kernel counters need kernel.perf_event_paranoid <= 1 or CAP_PERFMON")
+                && w[0].contains("counting user space only")
+                && w[0].contains("sysctl kernel.perf_event_paranoid=1")
+                && w[0].contains("it is 2"),
+            "{w:?}"
+        );
+    }
+
+    #[test]
+    fn fallback_merges_the_events_that_become_equal() {
+        use CounterKind::*;
+        let requested = vec![
+            spec(Instructions, Scope::All),
+            spec(Instructions, Scope::User),
+            spec(Cycles, Scope::User),
+        ];
+        let (c, _) = plan(requested, vec![], Scope::All, Some(2), |_, s| match s {
+            Scope::User => Ok(()),
+            _ => Err(1),
+        })
+        .unwrap();
+        assert_eq!(
+            c.active,
+            vec![spec(Instructions, Scope::User), spec(Cycles, Scope::User)]
+        );
+        assert_eq!(c.key(0), "instructions");
+    }
+
+    #[test]
+    fn explicit_kernel_scope_denied_is_an_error() {
+        use CounterKind::*;
+        let denied = |_: CounterKind, s: Scope| match s {
+            Scope::User => Ok(()),
+            _ => Err(13),
+        };
+        // `--scope kernel`, `--scope split` and an explicit `:k`
+        for (specs, scope) in [
+            (vec![spec(Instructions, Scope::Kernel)], Scope::Kernel),
+            (
+                vec![
+                    spec(Instructions, Scope::User),
+                    spec(Instructions, Scope::Kernel),
+                ],
+                Scope::All,
+            ),
+            (
+                vec![spec(Cycles, Scope::All), spec(Instructions, Scope::Kernel)],
+                Scope::All,
+            ),
+        ] {
+            let err = plan(specs, vec![], scope, Some(2), denied).unwrap_err();
+            assert!(
+                err.contains("perf_event_paranoid <= 1 or CAP_PERFMON")
+                    && err.contains("CAP_PERFMON"),
+                "{err}"
+            );
+        }
+        // user-only is never an error
+        assert!(plan(
+            vec![spec(Cycles, Scope::User)],
+            vec![],
+            Scope::User,
+            Some(2),
+            denied
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn plan_probes_each_scope_in_use_once() {
+        use CounterKind::*;
+        let mut probed = Vec::new();
+        let specs = vec![
+            spec(Instructions, Scope::User),
+            spec(Cycles, Scope::Kernel),
+            spec(Branches, Scope::Kernel),
+        ];
+        let (c, w) = plan(specs, vec![], Scope::All, Some(1), |k, s| {
+            probed.push((k, s));
+            Ok(())
+        })
+        .unwrap();
+        assert!(w.is_empty() && c.availability == Availability::Measured);
+        // one preflight probe for the kernel scope, then one per event
+        assert_eq!(
+            probed.iter().filter(|p| p.1 == Scope::Kernel).count(),
+            1 + 2
+        );
+    }
+
+    #[test]
+    fn denied_kernel_counting_is_unavailable_not_zero() {
+        // paranoid 3 denies everything, user scope included
+        let (c, w) = plan_all(&[CounterKind::Instructions], Some(3), |_, _| Err(13));
+        assert_eq!(
+            c.availability,
+            Availability::Unavailable(UnavailableReason::PerfParanoid)
+        );
+        assert!(!c.is_active());
+        assert!(export(&c, &[Some(vec![])], &RunContext::default()).is_none());
+        assert!(w.iter().any(|w| w.contains("not available")));
     }
 
     #[test]
@@ -1029,9 +1582,7 @@ mod tests {
             (95, UnavailableReason::NoPmu),
             (22, UnavailableReason::Other),
         ] {
-            let (c, w) = plan(vec![CounterKind::Instructions], vec![], Some(3), |_, _| {
-                Err(errno)
-            });
+            let (c, w) = plan_all(&[CounterKind::Instructions], Some(3), |_, _| Err(errno));
             assert_eq!(c.availability, Availability::Unavailable(reason), "{errno}");
             assert!(!c.is_active());
             assert_eq!(w.iter().filter(|w| w.contains("not available")).count(), 1);
@@ -1040,9 +1591,8 @@ mod tests {
 
     #[test]
     fn plan_partial() {
-        let (c, w) = plan(
-            vec![CounterKind::Instructions, CounterKind::CacheMisses],
-            vec![],
+        let (c, w) = plan_all(
+            &[CounterKind::Instructions, CounterKind::CacheMisses],
             Some(1),
             |k, _| {
                 if k == CounterKind::CacheMisses {
@@ -1054,9 +1604,9 @@ mod tests {
         );
         assert_eq!(
             c.availability,
-            Availability::Partial(vec![CounterKind::CacheMisses])
+            Availability::Partial(vec![spec(CounterKind::CacheMisses, Scope::All)])
         );
-        assert_eq!(c.active, vec![CounterKind::Instructions]);
+        assert_eq!(c.active, all(&[CounterKind::Instructions]));
         assert_eq!(w.len(), 1);
         assert!(w[0].contains("cache-misses"));
     }
@@ -1078,11 +1628,12 @@ mod tests {
         assert_eq!(median_overhead(&[], 2), vec![0, 0]);
     }
 
-    fn config(kinds: &[CounterKind]) -> CounterConfig {
+    fn config(specs: &[CounterSpec]) -> CounterConfig {
         CounterConfig {
-            requested: kinds.to_vec(),
-            active: kinds.to_vec(),
+            requested: specs.to_vec(),
+            active: specs.to_vec(),
             scope: Scope::All,
+            requested_scope: Scope::All,
             availability: Availability::Measured,
             partial_reason: None,
             hidden: vec![],
@@ -1092,7 +1643,7 @@ mod tests {
 
     #[test]
     fn export_aligns_runs_and_derives_rates() {
-        let cfg = config(&[CounterKind::Instructions, CounterKind::Cycles]);
+        let cfg = config(&all(&[CounterKind::Instructions, CounterKind::Cycles]));
         let runs = vec![
             Some(vec![sc(2000, 10, 10), sc(1000, 10, 10)]),
             None,
@@ -1120,28 +1671,122 @@ mod tests {
 
     #[test]
     fn export_without_ipc_inputs_has_no_ipc() {
-        let cfg = config(&[CounterKind::CacheMisses]);
+        let cfg = config(&all(&[CounterKind::CacheMisses]));
         let e = export(&cfg, &[Some(vec![sc(5, 1, 1)])], &RunContext::default()).unwrap();
         assert_eq!(e.line.unwrap(), "cache-miss 5");
         assert!(export(&config(&[]), &[Some(vec![])], &RunContext::default()).is_none());
     }
 
     #[test]
-    fn parses_software_names_and_shorthands() {
+    fn export_suffixes_keys_and_filters_aligned_arrays() {
         use CounterKind::*;
+        // user, kernel and the default scope side by side; run 2 unreadable
+        let cfg = config(&[
+            spec(Instructions, Scope::User),
+            spec(Instructions, Scope::Kernel),
+            spec(Cycles, Scope::All),
+        ]);
+        let runs = vec![
+            Some(vec![sc(400, 1, 1), sc(1200, 1, 1), sc(1600, 1, 1)]),
+            None,
+            Some(vec![sc(440, 1, 1), sc(1300, 1, 1), sc(1800, 1, 1)]),
+        ];
+        let e = export(&cfg, &runs, &RunContext::default()).unwrap();
         assert_eq!(
-            parse_list("cpu-migrations,context-switches,page-faults,task-clock").unwrap(),
-            CounterKind::SOFTWARE.to_vec()
+            e.counters.keys().collect::<Vec<_>>(),
+            ["cycles", "instructions:k", "instructions:u"]
         );
         assert_eq!(
-            parse_list("sw").unwrap(),
-            vec![CpuMigrations, ContextSwitches]
+            e.counters["instructions:u"],
+            vec![Some(400), None, Some(440)]
+        );
+        assert_eq!(e.summary["instructions:k"].mean, 1250.0);
+        // `instructions` exists only in other scopes, so there is no IPC
+        assert!(e.efficiency.is_none());
+        assert_eq!(
+            e.line.unwrap(),
+            "instr 1.7k [user 420, kernel 1.2k] · cycles 1.7k"
+        );
+        // a lone scoped event keeps its suffix
+        let cfg = config(&[spec(Instructions, Scope::Kernel), spec(Cycles, Scope::All)]);
+        let e = export(
+            &cfg,
+            &[Some(vec![sc(1200, 1, 1), sc(1600, 1, 1)])],
+            &RunContext::default(),
+        )
+        .unwrap();
+        assert_eq!(e.line.unwrap(), "instr:k 1.2k · cycles 1.6k");
+    }
+
+    #[test]
+    fn split_line_shows_total_with_breakdown_and_per_slot_ipc() {
+        use CounterKind::*;
+        let mut cfg = config(&[
+            spec(Instructions, Scope::User),
+            spec(Instructions, Scope::Kernel),
+            spec(Cycles, Scope::User),
+            spec(Cycles, Scope::Kernel),
+        ]);
+        cfg.requested_scope = Scope::All;
+        let runs = vec![Some(vec![
+            sc(1000, 1, 1),
+            sc(3000, 1, 1),
+            sc(500, 1, 1),
+            sc(1500, 1, 1),
+        ])];
+        let e = export(&cfg, &runs, &RunContext::default()).unwrap();
+        assert_eq!(
+            e.line.unwrap(),
+            "instr 4.0k [user 1.0k, kernel 3.0k] · cycles 2.0k [user 500, kernel 1.5k] (IPC 2.00)"
+        );
+        // no unsuffixed scope in use and two scopes: no single IPC
+        assert!(e.efficiency.is_none());
+        assert_eq!(
+            e.counters.keys().cloned().collect::<Vec<_>>(),
+            ["cycles:k", "cycles:u", "instructions:k", "instructions:u"]
+        );
+    }
+
+    #[test]
+    fn user_only_run_uses_the_user_rates_and_plain_keys() {
+        use CounterKind::*;
+        let mut cfg = config(&[spec(Instructions, Scope::User), spec(Cycles, Scope::User)]);
+        cfg.scope = Scope::User; // after the fallback
+        let e = export(
+            &cfg,
+            &[Some(vec![sc(300, 1, 1), sc(100, 1, 1)])],
+            &RunContext::default(),
+        )
+        .unwrap();
+        assert!(e.counters.contains_key("instructions"));
+        assert!((e.efficiency.unwrap().ipc.unwrap() - 3.0).abs() < 1e-9);
+        assert!(e.line.unwrap().contains("(IPC 3.00)"));
+    }
+
+    #[test]
+    fn parses_software_names_and_shorthands() {
+        use CounterKind::*;
+        let mode = ScopeMode::All;
+        assert_eq!(
+            parse_list(
+                "cpu-migrations,context-switches,page-faults,task-clock",
+                mode
+            )
+            .unwrap(),
+            all(&CounterKind::SOFTWARE)
+        );
+        assert_eq!(
+            parse_list("sw", mode).unwrap(),
+            all(&[CpuMigrations, ContextSwitches])
         );
         let mut want = CounterKind::ALL.to_vec();
         want.extend([CpuMigrations, ContextSwitches]);
-        assert_eq!(parse_list("default,sw").unwrap(), want);
-        assert_eq!(parse_list("frequency,cycles").unwrap(), vec![Cycles]);
-        let err = parse_list("migrations").unwrap_err();
+        assert_eq!(parse_list("default,sw", mode).unwrap(), all(&want));
+        assert_eq!(
+            parse_list("frequency,cycles", mode).unwrap(),
+            all(&[Cycles])
+        );
+        let err = parse_list("migrations", mode).unwrap_err();
         assert!(
             err.contains("cpu-migrations") && err.contains("shorthands"),
             "{err}"
@@ -1155,16 +1800,46 @@ mod tests {
     }
 
     #[test]
+    fn software_events_cannot_be_scoped() {
+        use CounterKind::*;
+        for list in [
+            "cpu-migrations:u",
+            "context-switches:k",
+            "page-faults:uk",
+            "sw:u",
+        ] {
+            let err = parse_list(list, ScopeMode::All).unwrap_err();
+            assert!(
+                err.contains("cannot be scoped") || err.contains("cannot take a modifier"),
+                "{list}: {err}"
+            );
+        }
+        // `--scope` does not touch them either: one user + kernel event
+        for mode in [ScopeMode::User, ScopeMode::Kernel, ScopeMode::Split] {
+            let specs = parse_list("cpu-migrations,cycles", mode).unwrap();
+            assert_eq!(specs[0], spec(CpuMigrations, Scope::All), "{mode:?}");
+            assert_eq!(specs[0].key(mode.default_scope()), "cpu-migrations");
+        }
+        // hardware keeps the scope: `default:u` is refused, plain `default` expands
+        assert!(parse_list("default:u", ScopeMode::All).is_err());
+    }
+
+    #[test]
     fn cycles_pull_in_a_hidden_task_clock() {
-        let (r, hidden) = with_frequency_divisor(vec![CounterKind::Cycles]);
-        assert_eq!(r, vec![CounterKind::Cycles, CounterKind::TaskClock]);
-        assert_eq!(hidden, vec![CounterKind::TaskClock]);
+        use CounterKind::*;
+        let (r, hidden) = with_frequency_divisor(all(&[Cycles]));
+        assert_eq!(r, all(&[Cycles, TaskClock]));
+        assert_eq!(hidden, vec![TaskClock]);
+        // scoped or split cycles need only one divisor
+        let (r, _) =
+            with_frequency_divisor(vec![spec(Cycles, Scope::User), spec(Cycles, Scope::Kernel)]);
+        assert_eq!(r.iter().filter(|s| s.kind == TaskClock).count(), 1);
         // an explicit task-clock is a real counter
-        let (r, hidden) = with_frequency_divisor(vec![CounterKind::TaskClock, CounterKind::Cycles]);
+        let (r, hidden) = with_frequency_divisor(all(&[TaskClock, Cycles]));
         assert_eq!(r.len(), 2);
         assert!(hidden.is_empty());
-        let (r, hidden) = with_frequency_divisor(vec![CounterKind::CpuMigrations]);
-        assert_eq!(r, vec![CounterKind::CpuMigrations]);
+        let (r, hidden) = with_frequency_divisor(all(&[CpuMigrations]));
+        assert_eq!(r, all(&[CpuMigrations]));
         assert!(hidden.is_empty());
     }
 
@@ -1172,32 +1847,37 @@ mod tests {
     /// denied and reported as such, never as zeros.
     #[test]
     fn software_events_are_denied_at_paranoid_2() {
+        use CounterKind::*;
         let probe = |_: CounterKind, s: Scope| match s {
-            Scope::All => Err(13),
             Scope::User => Ok(()),
+            _ => Err(13),
         };
         let (c, w) = plan(
-            vec![CounterKind::Cycles, CounterKind::CpuMigrations],
+            all(&[Cycles, CpuMigrations]),
             vec![],
+            Scope::All,
             Some(2),
             probe,
-        );
-        assert_eq!(c.scope, Scope::User);
-        assert_eq!(c.active, vec![CounterKind::Cycles]);
+        )
+        .unwrap();
+        assert_eq!((c.scope, c.requested_scope), (Scope::User, Scope::All));
+        assert_eq!(c.active, vec![spec(Cycles, Scope::User)]);
         assert_eq!(
             c.availability,
-            Availability::Partial(vec![CounterKind::CpuMigrations])
+            Availability::Partial(vec![spec(CpuMigrations, Scope::All)])
         );
         assert_eq!(c.partial_reason, Some(UnavailableReason::KernelScopeDenied));
         assert!(w.iter().any(|m| m.contains("cpu-migrations")), "{w:?}");
 
         // only software events requested: unavailable with the specific reason
         let (c, w) = plan(
-            vec![CounterKind::CpuMigrations, CounterKind::ContextSwitches],
+            all(&[CpuMigrations, ContextSwitches]),
             vec![],
+            Scope::All,
             Some(2),
             probe,
-        );
+        )
+        .unwrap();
         assert_eq!(
             c.availability,
             Availability::Unavailable(UnavailableReason::KernelScopeDenied)
@@ -1211,42 +1891,56 @@ mod tests {
     }
 
     #[test]
-    fn software_events_are_probed_in_all_scope_only() {
+    fn software_events_do_not_trigger_the_scope_fallback() {
+        use CounterKind::*;
+        // software events fail in `All`, but no hardware event was asked for
         let mut seen = Vec::new();
         let (c, _) = plan(
-            vec![CounterKind::Cycles, CounterKind::PageFaults],
+            all(&[CpuMigrations]),
             vec![],
+            Scope::All,
             Some(1),
             |k, s| {
                 seen.push((k, s));
                 Ok(())
             },
+        )
+        .unwrap();
+        assert_eq!(seen, vec![(CpuMigrations, Scope::All)]);
+        assert_eq!(
+            (c.scope, c.availability),
+            (Scope::All, Availability::Measured)
         );
-        assert_eq!(c.availability, Availability::Measured);
-        assert!(seen.contains(&(CounterKind::PageFaults, Scope::All)));
-        // software only: no hardware event is probed for the scope
-        let mut seen = Vec::new();
-        plan(vec![CounterKind::CpuMigrations], vec![], Some(1), |k, s| {
-            seen.push((k, s));
-            Ok(())
-        });
-        assert_eq!(seen, vec![(CounterKind::CpuMigrations, Scope::All)]);
+        // with `--scope user` they still count user + kernel
+        let (c, _) = plan(
+            vec![spec(Cycles, Scope::User), spec(PageFaults, Scope::All)],
+            vec![],
+            Scope::User,
+            Some(1),
+            |_, _| Ok(()),
+        )
+        .unwrap();
+        assert_eq!(c.active.len(), 2);
+        assert_eq!(c.active[1].scope, Scope::All);
     }
 
     #[test]
     fn a_hidden_task_clock_failing_is_silent() {
+        use CounterKind::*;
         let (c, w) = plan(
-            vec![CounterKind::Cycles, CounterKind::TaskClock],
-            vec![CounterKind::TaskClock],
+            all(&[Cycles, TaskClock]),
+            vec![TaskClock],
+            Scope::All,
             Some(2),
             |k, s| match (k, s) {
-                (CounterKind::TaskClock, _) => Err(13),
-                (_, Scope::All) => Err(13),
-                _ => Ok(()),
+                (TaskClock, _) => Err(13),
+                (_, Scope::User) => Ok(()),
+                _ => Err(13),
             },
-        );
+        )
+        .unwrap();
         assert_eq!(c.availability, Availability::Measured);
-        assert_eq!(c.active, vec![CounterKind::Cycles]);
+        assert_eq!(c.active, vec![spec(Cycles, Scope::User)]);
         assert_eq!(w.len(), 1, "{w:?}"); // only the user-scope fallback note
     }
 
@@ -1310,8 +2004,13 @@ mod tests {
 
     #[test]
     fn jitter_warning_when_every_run_migrated() {
-        let all: Vec<usize> = (0..6).collect();
-        let w = jitter_warning(&migrations(6, &all, 1), &times(6, 1.0, &all, 1.0), false).unwrap();
+        let all_runs: Vec<usize> = (0..6).collect();
+        let w = jitter_warning(
+            &migrations(6, &all_runs, 1),
+            &times(6, 1.0, &all_runs, 1.0),
+            false,
+        )
+        .unwrap();
         assert!(
             w.starts_with("6 CPU migrations in all 6 runs.\nTip: "),
             "{w}"
@@ -1327,48 +2026,46 @@ mod tests {
     fn jitter_warning_skips_unreadable_runs() {
         let at = [3, 8, 12, 17, 21, 26];
         let mut m = migrations(30, &at, 2);
-        m[0] = None;
-        m[1] = None;
-        m[2] = None;
-        m[4] = None;
+        for i in [0, 1, 2, 4] {
+            m[i] = None;
+        }
         let w = jitter_warning(&m, &times(30, 1.0, &at, 1.2), false).unwrap();
         assert!(w.contains("of 26 runs"), "{w}");
         let none: Vec<Option<u64>> = vec![None; 30];
         assert!(jitter_warning(&none, &times(30, 1.0, &at, 1.2), false).is_none());
     }
 
-    fn kinds_config(kinds: &[CounterKind], hidden: &[CounterKind], scope: Scope) -> CounterConfig {
-        CounterConfig {
-            scope,
-            hidden: hidden.to_vec(),
-            ..config(kinds)
-        }
-    }
-
-    /// 20 runs with a flat 3.4 GHz, one value per kind in `active` order.
+    /// 20 identical runs, one value per spec of `cfg.active`.
     fn flat_runs(per_run: &[u64]) -> Vec<Option<HwReading>> {
         (0..20)
             .map(|_| Some(per_run.iter().map(|&v| sc(v, 1, 1)).collect()))
             .collect()
     }
 
+    fn hidden_task_clock(specs: Vec<CounterSpec>) -> CounterConfig {
+        CounterConfig {
+            hidden: vec![CounterKind::TaskClock],
+            ..config(&specs)
+        }
+    }
+
+    fn secs_ctx<'a>(real: &'a [f64], user: &'a [f64], system: &'a [f64]) -> RunContext<'a> {
+        RunContext {
+            real_seconds: real,
+            user_seconds: user,
+            system_seconds: system,
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn export_computes_frequency_from_cycles_and_task_clock() {
-        let cfg = kinds_config(
-            &[CounterKind::Cycles, CounterKind::TaskClock],
-            &[CounterKind::TaskClock],
-            Scope::All,
-        );
+        use CounterKind::*;
+        let cfg = hidden_task_clock(all(&[Cycles, TaskClock]));
         // 3.4e9 cycles over 1 s of task-clock
         let runs = flat_runs(&[3_400_000_000, 1_000_000_000]);
         let secs = vec![1.0; 20];
-        let ctx = RunContext {
-            real_seconds: &secs,
-            user_seconds: &secs,
-            system_seconds: &secs,
-            ..Default::default()
-        };
-        let e = export(&cfg, &runs, &ctx).unwrap();
+        let e = export(&cfg, &runs, &secs_ctx(&secs, &secs, &secs)).unwrap();
         let f = e.frequency.unwrap();
         assert_eq!(f.basis, Basis::TaskClock);
         assert_eq!(f.series.len(), 20);
@@ -1382,22 +2079,15 @@ mod tests {
 
     #[test]
     fn user_scope_uses_user_time_never_task_clock() {
-        let cfg = kinds_config(
-            &[CounterKind::Cycles, CounterKind::TaskClock],
-            &[CounterKind::TaskClock],
-            Scope::User,
-        );
+        use CounterKind::*;
+        let cfg = CounterConfig {
+            scope: Scope::User,
+            ..hidden_task_clock(vec![spec(Cycles, Scope::User), spec(TaskClock, Scope::All)])
+        };
         // task-clock says 2 s (includes kernel), user time is 1 s
         let runs = flat_runs(&[2_000_000_000, 2_000_000_000]);
-        let user = vec![1.0; 20];
-        let sys = vec![1.0; 20];
-        let ctx = RunContext {
-            real_seconds: &user,
-            user_seconds: &user,
-            system_seconds: &sys,
-            ..Default::default()
-        };
-        let e = export(&cfg, &runs, &ctx).unwrap();
+        let one = vec![1.0; 20];
+        let e = export(&cfg, &runs, &secs_ctx(&one, &one, &one)).unwrap();
         let f = e.frequency.unwrap();
         assert_eq!(f.basis, Basis::UserTime);
         assert_eq!(f.mean, Some(2.0e9)); // not 1 GHz
@@ -1405,8 +2095,44 @@ mod tests {
     }
 
     #[test]
+    fn kernel_scope_uses_system_time() {
+        use CounterKind::*;
+        let cfg = CounterConfig {
+            scope: Scope::Kernel,
+            ..hidden_task_clock(vec![
+                spec(Cycles, Scope::Kernel),
+                spec(TaskClock, Scope::All),
+            ])
+        };
+        let runs = flat_runs(&[1_000_000_000, 9_000_000_000]);
+        let user = vec![9.0; 20];
+        let sys = vec![0.5; 20];
+        let f = export(&cfg, &runs, &secs_ctx(&user, &user, &sys))
+            .unwrap()
+            .frequency
+            .unwrap();
+        assert_eq!((f.basis, f.mean), (Basis::SystemTime, Some(2.0e9)));
+    }
+
+    #[test]
+    fn split_cycles_are_summed_and_use_task_clock() {
+        use CounterKind::*;
+        let cfg = hidden_task_clock(vec![
+            spec(Cycles, Scope::User),
+            spec(Cycles, Scope::Kernel),
+            spec(TaskClock, Scope::All),
+        ]);
+        let runs = flat_runs(&[2_000_000_000, 1_400_000_000, 1_000_000_000]);
+        let secs = vec![1.0; 20];
+        let e = export(&cfg, &runs, &secs_ctx(&secs, &secs, &secs)).unwrap();
+        let f = e.frequency.unwrap();
+        assert_eq!((f.basis, f.mean), (Basis::TaskClock, Some(3.4e9)));
+        assert!(e.line.unwrap().contains("@3.40 GHz"));
+    }
+
+    #[test]
     fn all_scope_without_task_clock_has_no_frequency() {
-        let cfg = kinds_config(&[CounterKind::Cycles], &[], Scope::All);
+        let cfg = config(&all(&[CounterKind::Cycles]));
         let e = export(&cfg, &flat_runs(&[1_000_000]), &RunContext::default()).unwrap();
         assert!(e.frequency.is_none());
         assert_eq!(e.line.unwrap(), "cycles 1.0M");
@@ -1414,24 +2140,18 @@ mod tests {
 
     #[test]
     fn short_runs_stay_in_the_series_but_not_in_the_mean() {
-        let cfg = kinds_config(
-            &[CounterKind::Cycles, CounterKind::TaskClock],
-            &[CounterKind::TaskClock],
-            Scope::All,
-        );
+        use CounterKind::*;
+        let cfg = hidden_task_clock(all(&[Cycles, TaskClock]));
         let runs = vec![
             Some(vec![sc(1_000_000, 1, 1), sc(1_000_000, 1, 1)]), // 1 ms: 1 GHz, too short
             Some(vec![sc(40_000_000, 1, 1), sc(10_000_000, 1, 1)]), // 10 ms: 4 GHz
             None,
         ];
         let secs = vec![0.0; 3];
-        let ctx = RunContext {
-            real_seconds: &secs,
-            user_seconds: &secs,
-            system_seconds: &secs,
-            ..Default::default()
-        };
-        let f = export(&cfg, &runs, &ctx).unwrap().frequency.unwrap();
+        let f = export(&cfg, &runs, &secs_ctx(&secs, &secs, &secs))
+            .unwrap()
+            .frequency
+            .unwrap();
         assert_eq!(f.series, vec![Some(1e9), Some(4e9), None]);
         assert_eq!(f.mean, Some(4e9));
         assert_eq!(f.stddev, None);
@@ -1439,25 +2159,56 @@ mod tests {
 
     #[test]
     fn export_adds_software_counters_to_the_line() {
-        let cfg = config(&[CounterKind::CpuMigrations, CounterKind::ContextSwitches]);
+        use CounterKind::*;
+        let cfg = config(&all(&[CpuMigrations, ContextSwitches, TaskClock]));
         let runs = vec![
-            Some(vec![sc(0, 1, 1), sc(120, 1, 1)]),
-            Some(vec![sc(1, 1, 1), sc(124, 1, 1)]),
+            Some(vec![sc(0, 1, 1), sc(120, 1, 1), sc(2_000_000, 1, 1)]),
+            Some(vec![sc(1, 1, 1), sc(124, 1, 1), sc(4_000_000, 1, 1)]),
         ];
         let e = export(&cfg, &runs, &RunContext::default()).unwrap();
         assert_eq!(e.counters["cpu-migrations"], vec![Some(0), Some(1)]);
-        assert_eq!(e.line.unwrap(), "cpu-migr 0.5 · ctx-sw 122");
+        assert_eq!(
+            e.counters["task-clock"],
+            vec![Some(2_000_000), Some(4_000_000)]
+        );
+        assert_eq!(
+            e.line.unwrap(),
+            "cpu-migr 0.5 · ctx-sw 122 · task-clock 3.0 ms"
+        );
         assert!(e.frequency.is_none());
         assert_eq!(e.multiplexed_runs, 0);
     }
 
     #[test]
-    fn mock_values_follow_the_time() {
-        let mut cfg = config(&[CounterKind::Instructions, CounterKind::TaskClock]);
+    fn software_keys_carry_no_scope_suffix() {
+        use CounterKind::*;
+        // `--scope user`: hardware is unsuffixed, so is the always-All software event
+        let cfg = CounterConfig {
+            scope: Scope::User,
+            ..config(&[spec(Cycles, Scope::User), spec(PageFaults, Scope::All)])
+        };
+        let e = export(&cfg, &flat_runs(&[5, 7]), &RunContext::default()).unwrap();
+        assert_eq!(
+            e.counters.keys().collect::<Vec<_>>(),
+            ["cycles", "page-faults"]
+        );
+    }
+
+    #[test]
+    fn mock_values_follow_the_time_and_scope() {
+        use CounterKind::*;
+        let mut cfg = config(&[
+            spec(Instructions, Scope::All),
+            spec(Instructions, Scope::User),
+            spec(Instructions, Scope::Kernel),
+            spec(TaskClock, Scope::All),
+        ]);
         cfg.mock = true;
         let r = mock_reading(&cfg, 0.5);
-        assert_eq!(r[0].unwrap().value, 1_000_000_000);
-        assert_eq!(r[1].unwrap().value, 500_000_000);
+        let v: Vec<u64> = r.iter().map(|c| c.unwrap().value).collect();
+        assert_eq!(v[..3], [1_000_000_000, 250_000_000, 750_000_000]);
+        assert_eq!(v[1] + v[2], v[0]);
+        assert_eq!(v[3], 500_000_000); // task-clock in ns
         assert!(open(&cfg).is_none());
     }
 }

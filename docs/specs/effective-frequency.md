@@ -1,6 +1,6 @@
 # Spec: effective CPU frequency and throttling detection (#222)
 
-**Status:** Implemented on Linux (#222, schemaVersion 1.9). Not run on hardware: the
+**Status:** Implemented on Linux (#222, schemaVersion 1.10). Not run on hardware: the
 `PERFRATIO_TEST_PERF=1` checks against `perf stat` and fixed-frequency governors.
 
 ## Implementation notes (deviations from the proposal)
@@ -9,9 +9,11 @@
 - `task-clock` is added automatically whenever `cycles` is requested and is not exported or
   printed unless the user lists it (then it is a counter in nanoseconds). `--counters=frequency`
   collects `cycles` (and the hidden `task-clock`); `cycles` is still printed.
-- Basis: scope `all` with `task-clock` gives `task_clock`; scope `user` gives `user_time`
-  (marked `~`); `all` without `task-clock` gives no frequency. `system_time` is reserved for
-  `--scope kernel` (#218) and not produced yet.
+- Basis (with #218 scopes): `cycles` over user + kernel, or the sum of `cycles:u` and
+  `cycles:k` (`--scope split`), divided by `task-clock` gives `task_clock`; user-only `cycles`
+  gives `user_time` (marked `~`); kernel-only `cycles` (`--scope kernel`) gives `system_time`;
+  user + kernel `cycles` without `task-clock` gives no frequency. `task-clock` is always
+  counted in user + kernel and is never divided into `cycles:u`.
 - Runs under 5 ms on CPU keep their value in `effective_frequency_hz` (`null` only when `cycles`
   or the time is missing) but are left out of `mean_effective_frequency_hz`,
   `stddev_effective_frequency_hz`, the terminal value and the warnings. The mean and stddev are
