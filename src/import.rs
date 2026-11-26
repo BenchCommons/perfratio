@@ -306,3 +306,38 @@ mod tests {
         assert!(err.is_err());
     }
 }
+
+/// The `perfratio.environment` of an exported file. `None` when the file has
+/// none (exported before 1.19, or without metadata) or cannot be read.
+pub fn import_environment(path: &str) -> Option<crate::environment::Environment> {
+    let file = std::fs::File::open(path).ok()?;
+    let value: serde_json::Value = serde_json::from_reader(std::io::BufReader::new(file)).ok()?;
+    serde_json::from_value(value.get("perfratio")?.get("environment")?.clone()).ok()
+}
+
+#[cfg(test)]
+mod environment_tests {
+    use super::*;
+
+    #[test]
+    fn reads_the_environment_of_an_export() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.json");
+        std::fs::write(
+            &path,
+            r#"{"perfratio": {"environment": {"os_family": "linux", "arch": "x86_64", "smt": true}}, "results": []}"#,
+        )
+        .unwrap();
+        let env = import_environment(path.to_str().unwrap()).unwrap();
+        assert_eq!(env.os_family, "linux");
+        assert_eq!(env.smt, Some(true));
+
+        std::fs::write(
+            &path,
+            r#"{"perfratio": {"version": "1.0.0"}, "results": []}"#,
+        )
+        .unwrap();
+        assert!(import_environment(path.to_str().unwrap()).is_none());
+        assert!(import_environment("/nonexistent/x.json").is_none());
+    }
+}
