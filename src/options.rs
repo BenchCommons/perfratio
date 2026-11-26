@@ -385,6 +385,9 @@ pub struct Options {
     /// Hardware performance counters (--counters), resolved against the machine
     pub counters: Option<crate::perf_counters::CounterConfig>,
 
+    /// Top-down analysis (--topdown), resolved against the machine
+    pub topdown: Option<crate::topdown::TopdownConfig>,
+
     /// CPUs to pin every benchmarked process to (--affinity)
     pub affinity: Option<Vec<usize>>,
     /// Core type to prefer (--affinity p-cores|e-cores, macOS)
@@ -457,6 +460,7 @@ impl Default for Options {
             discard_outliers: None,
             show_resource_usage: false,
             counters: None,
+            topdown: None,
             affinity: None,
             core_class: None,
             priority: crate::util::priority::Priority::default(),
@@ -896,6 +900,21 @@ impl Options {
                     .map_err(|e| OptionsError::InvalidAffinity(format!("{e:#}")))?;
                 options.affinity = Some(cpus);
             }
+        }
+        if matches.get_flag("topdown") {
+            let debug_mode = matches.get_flag("debug-mode");
+            if !debug_mode && !crate::topdown::platform_supported() {
+                return Err(OptionsError::InvalidTopdown(
+                    "--topdown is only supported on Linux x86_64".to_string(),
+                ));
+            }
+            // On hybrid CPUs the events only count on one core type
+            let pinned = options.affinity.is_some() || options.core_class.is_some();
+            let (config, warnings) = crate::topdown::resolve(debug_mode, pinned);
+            for warning in warnings {
+                eprintln!("{} {warning}", crate::output::colors::yellow("Warning:"));
+            }
+            options.topdown = Some(config);
         }
         options.subtract_command = matches.get_one::<String>("subtract").cloned();
         if let Some(priority) = matches.get_one::<String>("priority") {
