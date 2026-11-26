@@ -100,9 +100,10 @@ impl<'a> Scheduler<'a> {
             }
             let mut executor: Box<dyn Executor> = match kind {
                 ExecutorKind::Raw => Box::new(RawExecutor::new(self.options)),
-                ExecutorKind::Mock(shell) => {
-                    Box::new(MockExecutor::new(shell.clone(), self.options.timeout))
-                }
+                ExecutorKind::Mock(shell) => Box::new(
+                    MockExecutor::new(shell.clone(), self.options.timeout)
+                        .with_concurrency(self.options.concurrency),
+                ),
                 ExecutorKind::Shell(shell) => Box::new(ShellExecutor::new(shell, self.options)),
             };
             executor.calibrate()?;
