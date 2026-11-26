@@ -84,6 +84,15 @@ Summary
   `--significance-level` sets the alpha of the tests and `--bootstrap-resamples` and `--seed` the
   resampling; the defaults reproduce the same numbers every time. The settings are in
   `perfratio.statistics` of the JSON export.
+- With many commands or a parameter scan, one test per command produces false positives (about
+  5 in 100 at `--significance-level 0.05`). `--correction holm` (or `bonferroni`) keeps the chance
+  of any false marker at that level; `--correction bh` keeps the share of false markers among the
+  reported differences at that level and finds more real ones in large scans. The markers then use
+  the adjusted p-value, shown as `adjusted p`, and a line under the summary title gives method,
+  family size and alpha. `--comparison-family all-pairs` corrects over every pair of commands
+  instead of only the comparisons with the reference. Without `--reference` the reference is the
+  fastest command, which makes its comparisons lean towards small p-values; name the reference
+  for a scan. The export has `statistics.correction` and `results[].p_value_adjusted`.
 
 ## What runs when: setup, prepare, conclude, cleanup
 

@@ -714,6 +714,28 @@ pub fn build_command() -> Command {
                 .help("Number of bootstrap resamples, at least 100 (default: 5000)."),
         )
         .arg(
+            Arg::new("correction")
+                .long("correction")
+                .action(ArgAction::Set)
+                .value_name("METHOD")
+                .value_parser(["none", "bonferroni", "holm", "bh"])
+                .help("Multiple-comparison correction of the p-values behind the significance \
+                       markers: 'none' (default), 'bonferroni' or 'holm' (control the chance of \
+                       any false positive) or 'bh' (Benjamini-Hochberg, controls the share of \
+                       false positives among the reported differences). Use it with many \
+                       commands or a parameter scan."),
+        )
+        .arg(
+            Arg::new("comparison-family")
+                .long("comparison-family")
+                .action(ArgAction::Set)
+                .value_name("FAMILY")
+                .value_parser(["reference", "all-pairs"])
+                .requires("correction")
+                .help("Comparisons that form the family for '--correction': 'reference' \
+                       (default; every command against the reference) or 'all-pairs'."),
+        )
+        .arg(
             Arg::new("metric")
                 .long("metric")
                 .action(ArgAction::Set)

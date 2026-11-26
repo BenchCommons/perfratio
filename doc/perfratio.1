@@ -146,6 +146,10 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR ALPHA ]
 .RB [ \-\-bootstrap\-resamples
 .IR N ]
+.RB [ \-\-correction
+.IR METHOD ]
+.RB [ \-\-comparison\-family
+.IR FAMILY ]
 .RB [ \-\-compare
 .IR FILE ]
 .RB [ \-\-fail\-if\-regressed
@@ -319,6 +323,14 @@ Level of hypothesis tests and significance markers, strictly between 0 and 1 (de
 \fB\-\-bootstrap\-resamples\fR \fIN\fP
 .IP
 Number of bootstrap resamples, at least 100 (default: 5000).
+.HP
+\fB\-\-correction\fR \fIMETHOD\fP
+.IP
+Multiple-comparison correction of the p\-values behind the significance markers: \fBnone\fR (default), \fBbonferroni\fR or \fBholm\fR (control the chance of any false positive) or \fBbh\fR (Benjamini\-Hochberg, controls the share of false positives among the reported differences). Use it with many commands or a parameter scan. The markers then use the adjusted p\-value.
+.HP
+\fB\-\-comparison\-family\fR \fIFAMILY\fP
+.IP
+With \fB\-\-correction\fR: the comparisons that form the family, \fBreference\fR (default; every command against the reference) or \fBall\-pairs\fR.
 .HP
 \fB\-\-compare\fR \fIFILE\fP
 .IP

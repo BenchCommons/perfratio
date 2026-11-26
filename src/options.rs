@@ -1472,6 +1472,12 @@ fn parse_stat_settings<'a>(
     if let Some(seed) = matches.get_one::<u64>("seed") {
         settings.seed = *seed;
     }
+    if let Some(value) = matches.get_one::<String>("correction") {
+        settings.correction = value.parse().map_err(OptionsError::InvalidStatistics)?;
+    }
+    if let Some(value) = matches.get_one::<String>("comparison-family") {
+        settings.family = value.parse().map_err(OptionsError::InvalidStatistics)?;
+    }
     settings
         .validate()
         .map_err(OptionsError::InvalidStatistics)?;
