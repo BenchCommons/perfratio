@@ -109,6 +109,9 @@ const FIRST_READ_WAIT: Duration = Duration::from_millis(200);
 struct BackgroundThermal {
     stop: Arc<AtomicBool>,
     latest: Arc<Mutex<Option<ThermalTrace>>>,
+    /// Wait in `finish` for a first reading: only for a fixture root (tests),
+    /// whose reads are instant; a real host never waits for its sensors.
+    wait_first_read: bool,
 }
 
 impl BackgroundThermal {
@@ -116,6 +119,7 @@ impl BackgroundThermal {
         let stop = Arc::new(AtomicBool::new(false));
         let latest = Arc::new(Mutex::new(None));
         let (thread_stop, thread_latest) = (Arc::clone(&stop), Arc::clone(&latest));
+        let root_is_fixture = root != Path::new("/");
         let root = root.to_path_buf();
         let spawned = std::thread::Builder::new()
             .name("perfratio-thermal".into())
@@ -142,7 +146,12 @@ impl BackgroundThermal {
         if spawned.is_err() {
             stop.store(true, Ordering::Relaxed);
         }
-        BackgroundThermal { stop, latest }
+        let wait_first_read = root_is_fixture;
+        BackgroundThermal {
+            stop,
+            latest,
+            wait_first_read,
+        }
     }
 
     /// The last trace the thread recorded; never waits for a sensor read.
@@ -150,7 +159,12 @@ impl BackgroundThermal {
     fn finish(self) -> Option<ThermalTrace> {
         // A benchmark shorter than the first read (e.g. `--debug-mode`) waits
         // briefly for it; this is after the last run, outside every timing.
-        let deadline = std::time::Instant::now() + FIRST_READ_WAIT;
+        let wait = if self.wait_first_read {
+            FIRST_READ_WAIT
+        } else {
+            Duration::ZERO
+        };
+        let deadline = std::time::Instant::now() + wait;
         let trace = loop {
             let trace = self.latest.lock().ok().and_then(|slot| *slot);
             if trace.is_some() || std::time::Instant::now() >= deadline {
