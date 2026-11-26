@@ -4,7 +4,7 @@ perfratio is a fork of [hyperfine](https://github.com/sharkdp/hyperfine) (via jo
 
 Migrating from hyperfine or joulex: see [docs/MIGRATION.md](docs/MIGRATION.md). Measuring one algorithm in several languages: see [docs/CROSS_LANGUAGE.md](docs/CROSS_LANGUAGE.md).
 
-## Unreleased / 1.0.0
+## 1.0.0 - 2026-11-26
 
 Generated from the merged pull requests (#1 to #284). Pull requests that bump dependencies or GitHub Actions are listed under Internal.
 
