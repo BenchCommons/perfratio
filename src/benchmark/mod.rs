@@ -1,5 +1,6 @@
 pub mod benchmark_result;
 pub mod executor;
+pub mod pool;
 pub mod relative_speed;
 pub mod scheduler;
 pub mod timing_result;
@@ -121,6 +122,8 @@ pub struct BenchmarkRunner<'a> {
     pub baseline: Option<benchmark_result::Baseline>,
     /// Whether this runner timed out (`--timeout <DURATION>`)
     pub timed_out: bool,
+    /// `--jobs`: the worker slots that executed at least one run
+    pub workers_seen: std::collections::BTreeSet<usize>,
     /// Extracted custom metrics per run
     pub custom_metrics: std::collections::BTreeMap<String, Vec<Option<f64>>>,
     /// Output validation of each run (`--expect-output-sha256`, `--validate`):
@@ -131,6 +134,40 @@ pub struct BenchmarkRunner<'a> {
     invalid_runs: u64,
     /// SHA-256 of the stdout of the first checked run
     first_output_sha256: Option<String>,
+}
+
+const PREPARATION_ERROR: &str = "The preparation command terminated with a non-zero exit code. \
+                                 Append ' || true' to the command if you are sure that this can be ignored.";
+const CONCLUSION_ERROR: &str = "The conclusion command terminated with a non-zero exit code. \
+                                Append ' || true' to the command if you are sure that this can be ignored.";
+
+/// Run a `--prepare`, `--conclude`, `--setup` or `--cleanup` command.
+fn run_intermediate(
+    executor: &dyn Executor,
+    output_policy: &CommandOutputPolicy,
+    options: &Options,
+    command: &Command<'_>,
+    iteration: executor::BenchmarkIteration,
+    kind: &'static str,
+    error_output: &'static str,
+) -> Result<TimingResult> {
+    let (result, _) = executor
+        .run_command_and_measure(
+            command,
+            iteration,
+            Some(CmdFailureAction::RaiseError),
+            output_policy,
+        )
+        .map_err(|_| anyhow!(error_output))?;
+
+    if result.timed_out {
+        let timeout_str = options
+            .timeout
+            .map(|t| format_duration(t.as_secs_f64(), options.time_unit).to_string())
+            .unwrap_or_default();
+        bail!("The {kind} command timed out (> {timeout_str}).");
+    }
+    Ok(result)
 }
 
 /// "1%", "0.5%"
@@ -241,6 +278,7 @@ impl<'a> BenchmarkRunner<'a> {
             cold_warmup_time: None,
             baseline: None,
             timed_out: false,
+            workers_seen: std::collections::BTreeSet::new(),
             custom_metrics: std::collections::BTreeMap::new(),
         }
     }
@@ -252,29 +290,20 @@ impl<'a> BenchmarkRunner<'a> {
         kind: &'static str,
         error_output: &'static str,
     ) -> Result<TimingResult> {
-        let (result, _) = self
-            .executor
-            .run_command_and_measure(
-                command,
-                iteration,
-                Some(CmdFailureAction::RaiseError),
-                self.output_policy,
-            )
-            .map_err(|_| anyhow!(error_output))?;
+        let result = run_intermediate(
+            self.executor,
+            self.output_policy,
+            self.options,
+            command,
+            iteration,
+            kind,
+            error_output,
+        )?;
         self.note_leftovers(&result);
-
-        if result.timed_out {
-            let timeout_str = self
-                .options
-                .timeout
-                .map(|t| format_duration(t.as_secs_f64(), self.options.time_unit).to_string())
-                .unwrap_or_default();
-            bail!("The {kind} command timed out (> {timeout_str}).");
-        }
         Ok(result)
     }
 
-    fn note_leftovers(&self, result: &TimingResult) {
+    pub(crate) fn note_leftovers(&self, result: &TimingResult) {
         if result.leftover_processes {
             self.leftover_processes.set(true);
         }
@@ -331,22 +360,20 @@ impl<'a> BenchmarkRunner<'a> {
     }
 
     pub fn run_preparation(&self, iteration: BenchmarkIteration) -> Result<Option<TimingResult>> {
-        let error_output = "The preparation command terminated with a non-zero exit code. \
-                            Append ' || true' to the command if you are sure that this can be ignored.";
-
         self.preparation_command
             .as_ref()
-            .map(|cmd| self.run_intermediate_command(cmd, iteration, "preparation", error_output))
+            .map(|cmd| {
+                self.run_intermediate_command(cmd, iteration, "preparation", PREPARATION_ERROR)
+            })
             .transpose()
     }
 
     pub fn run_conclusion(&self, iteration: BenchmarkIteration) -> Result<Option<TimingResult>> {
-        let error_output = "The conclusion command terminated with a non-zero exit code. \
-                            Append ' || true' to the command if you are sure that this can be ignored.";
-
         self.conclusion_command
             .as_ref()
-            .map(|cmd| self.run_intermediate_command(cmd, iteration, "conclusion", error_output))
+            .map(|cmd| {
+                self.run_intermediate_command(cmd, iteration, "conclusion", CONCLUSION_ERROR)
+            })
             .transpose()
     }
 
@@ -681,7 +708,7 @@ impl<'a> BenchmarkRunner<'a> {
             sampler.start();
         }
         let window_start = std::time::Instant::now();
-        let (mut res, status) = self.executor.run_command_and_measure(
+        let (res, status) = self.executor.run_command_and_measure(
             self.command,
             BenchmarkIteration::Benchmark(iteration),
             None,
@@ -689,7 +716,6 @@ impl<'a> BenchmarkRunner<'a> {
         )?;
         let window = window_start.elapsed().as_secs_f64();
         let energy = self.stop_energy(res.time_real, window);
-        let success = status.success();
         self.note_leftovers(&res);
 
         if res.timed_out {
@@ -697,6 +723,23 @@ impl<'a> BenchmarkRunner<'a> {
             return Ok(());
         }
 
+        self.record_run(res, status, energy, iteration, run.ids())?;
+
+        self.run_conclusion(BenchmarkIteration::Benchmark(iteration))?;
+
+        Ok(())
+    }
+
+    /// Store one measured (not timed out) benchmark run.
+    fn record_run(
+        &mut self,
+        mut res: TimingResult,
+        status: std::process::ExitStatus,
+        energy: Option<f64>,
+        iteration: u64,
+        ids: crate::run_id::RunIds,
+    ) -> Result<()> {
+        let success = status.success();
         let validity = self.validate_run(iteration, res.stdout.take(), success)?;
         let res = self.subtract_baseline(res);
         self.validity.push(validity);
@@ -709,7 +752,7 @@ impl<'a> BenchmarkRunner<'a> {
             .push(self.subtract_baseline_energy(energy));
         self.domain_measurements.push(self.pending_domains.take());
         self.exit_codes.push(extract_exit_code(status));
-        self.push_instances(&res, run.ids());
+        self.push_instances(&res, ids);
         self.resource_counters.push(res.counters);
         self.hw_counters.push(res.hw_counters);
         self.per_run_values.push(
@@ -718,9 +761,6 @@ impl<'a> BenchmarkRunner<'a> {
         );
         self.push_custom_metrics(&res.custom_metrics);
         self.all_succeeded = self.all_succeeded && success;
-
-        self.run_conclusion(BenchmarkIteration::Benchmark(iteration))?;
-
         Ok(())
     }
 
@@ -2007,6 +2047,8 @@ impl<'a> BenchmarkRunner<'a> {
             run_ids: Some(self.run_ids).filter(|ids| !ids.is_empty()),
             instance_run_ids: concurrency.map(|_| self.instance_run_ids),
             leftover_processes: self.leftover_processes.get(),
+            workers_used: (self.options.jobs > 1).then_some(self.workers_seen.len()),
+            contended: (self.options.jobs > 1).then_some(true),
             parameters: self
                 .command
                 .get_parameters()

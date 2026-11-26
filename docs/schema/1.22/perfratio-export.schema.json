@@ -242,6 +242,30 @@
         "measurements": {
           "$ref": "#/$defs/measurements"
         },
+        "execution": {
+          "type": "object",
+          "properties": {
+            "jobs": {
+              "type": "integer",
+              "minimum": 2,
+              "description": "Runs executing at the same time (--jobs N, N > 1)."
+            },
+            "schedule_policy": {
+              "type": "string",
+              "description": "Open enum: saturate, exclusive, fair."
+            },
+            "contended": {
+              "const": true,
+              "description": "The runs disturbed each other; always true."
+            }
+          },
+          "required": [
+            "jobs",
+            "schedule_policy",
+            "contended"
+          ],
+          "description": "Only with --jobs > 1 (new in 1.22, #306)."
+        },
         "metrics": {
           "type": "array",
           "description": "Descriptor of every metric of this export, generated from one registry (new in 1.20, #317). A metric that could not be measured keeps its descriptor with a `status` other than `available` and has no values in `results`; it is never written as 0. `status`, `reason`, `kind`, `scope` and `direction` are open enums.",
@@ -274,17 +298,6 @@
               "type": "integer",
               "minimum": 0,
               "description": "Unsigned 64-bit; may exceed 2^53, so read it as an integer, not a double."
-            },
-            "correction": {
-              "type": "object",
-              "description": "New in 1.22 (#321): the multiple-comparison correction behind p_value_adjusted and significance. Present only with --correction other than none.",
-              "properties": {
-                "method": { "type": "string", "enum": ["bonferroni", "holm", "bh"] },
-                "family": { "type": "string", "enum": ["reference", "all-pairs"] },
-                "family_size": { "type": "integer", "minimum": 0, "description": "Number of comparisons with a defined p-value in the family." },
-                "alpha": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 }
-              },
-              "required": ["method", "family", "family_size", "alpha"]
             }
           },
           "required": [
@@ -887,12 +900,6 @@
           "type": "number",
           "description": "p-value of the bootstrap Welch test against the reference."
         },
-        "p_value_adjusted": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1,
-          "description": "New in 1.22 (#321): p_value after statistics.correction; significance is decided on this value. Omitted without a correction."
-        },
         "percentiles": {
           "$ref": "#/$defs/percentiles"
         },
@@ -1217,6 +1224,15 @@
         "leftover_processes": {
           "type": "boolean",
           "description": "Only present when true (1.19): processes started by the command outlived it in at least one run and were killed."
+        },
+        "workers_used": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Workers that executed at least one timed run (--jobs N, N > 1; new in 1.22)."
+        },
+        "contended": {
+          "const": true,
+          "description": "Runs were executed in parallel (--jobs N, N > 1) and may have disturbed each other; do not compare with sequential samples (new in 1.22)."
         },
         "simd": {
           "type": "object",

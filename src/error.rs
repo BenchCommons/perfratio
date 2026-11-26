@@ -90,6 +90,10 @@ pub enum OptionsError<'a> {
     InvalidTimeout(String, String),
     #[error("Invalid '--concurrency' value '{0}': expected an integer >= 1")]
     InvalidConcurrency(String),
+    #[error("Invalid '--jobs' value '{0}': expected an integer >= 1 or 'auto'")]
+    InvalidJobs(String),
+    #[error("Invalid '--schedule': {0}")]
+    InvalidSchedule(String),
     #[error("Invalid duration '{0}' for '--energy-baseline': {1}")]
     InvalidEnergyBaseline(String, String),
     #[error("Invalid duration '{0}' for '--duration': {1}")]
