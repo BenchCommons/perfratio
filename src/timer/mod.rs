@@ -57,6 +57,8 @@ pub struct TimerResult {
     pub until_matched: Option<bool>,
     /// Extracted custom metrics
     pub custom_metrics: std::collections::BTreeMap<String, f64>,
+    /// Identifier of the region SDK that reported (`--region`)
+    pub region_sdk: Option<String>,
     /// Descendants of the command were still running when it exited (they
     /// were killed; see `docs/specs/process-tree.md`)
     pub leftover_processes: bool,
@@ -761,6 +763,7 @@ pub fn execute_and_measure(
         timed_out,
         until_matched,
         custom_metrics: std::collections::BTreeMap::new(),
+        region_sdk: None,
         leftover_processes,
         validation_stdout: None,
     })

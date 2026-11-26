@@ -118,6 +118,18 @@ const CASES: &[(&str, &[&str])] = &[
             "sleep 0.{n}",
         ],
     ),
+    ("region", &["--runs=3", "--region=work", "sleep 0.1"]),
+    (
+        "region metric and first run separate",
+        &[
+            "--runs=3",
+            "--first-run=separate",
+            "--region",
+            "--metric=region:work",
+            "sleep 0.1",
+            "sleep 0.2",
+        ],
+    ),
     ("energy", &["--runs=3", "--energy", "sleep 0.1"]),
     (
         "energy domains",
