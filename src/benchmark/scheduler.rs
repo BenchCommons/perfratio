@@ -347,6 +347,7 @@ impl<'a> Scheduler<'a> {
                     self.options.jobs,
                     adaptive,
                     budget,
+                    self.options.cpu_partition.as_ref(),
                     |runner| {
                         let Some(bar) = progress_bar.as_ref() else {
                             return;

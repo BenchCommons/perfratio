@@ -190,7 +190,14 @@ fn the_terminal_warns_that_parallel_sampling_perturbs_timing() {
 #[test]
 fn real_runs_overlap() {
     let start = std::time::Instant::now();
-    let json = export(&["-N", "--runs=8", "-j4", "--style=basic", "sleep 0.2"]);
+    let json = export(&[
+        "-N",
+        "--runs=8",
+        "-j4",
+        "--pin-workers=none",
+        "--style=basic",
+        "sleep 0.2",
+    ]);
     let elapsed = start.elapsed().as_secs_f64();
     // 8 sequential runs would take 1.6 s
     assert!(elapsed < 1.4, "took {elapsed} s");
@@ -212,6 +219,7 @@ fn exclusive_never_overlaps_a_command_with_itself() {
     let json = export(&[
         "--runs=6",
         "-j4",
+        "--pin-workers=none",
         "--schedule=exclusive",
         "--style=basic",
         &a,
@@ -238,7 +246,13 @@ fn commands_see_their_worker_slot() {
     let log = dir.path().join("slots");
     let command = format!("echo $PERFRATIO_WORKER >> {}; sleep 0.05", log.display());
     perfratio()
-        .args(["--runs=9", "-j3", "--style=basic", &command])
+        .args([
+            "--runs=9",
+            "-j3",
+            "--pin-workers=none",
+            "--style=basic",
+            &command,
+        ])
         .assert()
         .success();
     let text = std::fs::read_to_string(&log).unwrap();

@@ -1,7 +1,7 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Shipped except the `.product` link (schemaVersion 1.16; 1.16 adds `perfratio.execution` and `results[].workers_used` / `contended` for `--jobs` (#306, `worker-pool.md`); 1.15 adds `optimize.reevaluated` and fractional `optimize` values with `-D` (#98); 1.14 adds `--simd` fields from #211 (`simd-breakdown.md`); 1.13 adds the software events and the effective frequency fields of #220 and #222; 1.12 adds `--topdown` fields from #221 (`topdown-tma.md`); 1.11 adds `results[].energy_samples` (#240) and the JSON Schema file `docs/schema/perfratio-export.schema.json`, validated by `tests/json_schema_tests.rs`; 1.10 adds `results[].counters_coverage` (#219); 1.9 adds the `:u`/`:k` counter key suffixes, `counters_scope` values `kernel` and `perfratio.measurements.counters_requested_scope` from #218 (`counter-scope-modifiers.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
+Shipped except the `.product` link (schemaVersion 1.17; 1.17 adds `perfratio.execution.cpu_partition` (#307, `worker-cpu-partition.md`); 1.16 adds `perfratio.execution` and `results[].workers_used` / `contended` for `--jobs` (#306, `worker-pool.md`); 1.15 adds `optimize.reevaluated` and fractional `optimize` values with `-D` (#98); 1.14 adds `--simd` fields from #211 (`simd-breakdown.md`); 1.13 adds the software events and the effective frequency fields of #220 and #222; 1.12 adds `--topdown` fields from #221 (`topdown-tma.md`); 1.11 adds `results[].energy_samples` (#240) and the JSON Schema file `docs/schema/perfratio-export.schema.json`, validated by `tests/json_schema_tests.rs`; 1.10 adds `results[].counters_coverage` (#219); 1.9 adds the `:u`/`:k` counter key suffixes, `counters_scope` values `kernel` and `perfratio.measurements.counters_requested_scope` from #218 (`counter-scope-modifiers.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
@@ -105,7 +105,8 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
       "simd": "measured"                                      // new in 1.14, #211
     },
     "execution": { "jobs": 4, "schedule_policy": "saturate",   // only with --jobs > 1, new in 1.16, #306
-                   "contended": true }
+                   "contended": true,
+                   "cpu_partition": { "workers": [[0,1],[2,3]], "reserved": [15] } }   // pinned workers only, new in 1.17, #307
   },
   "interrupted": true,                                        // optional
   "optimize": { "var": "j", "best": 24, "...": "..." },       // optional, new in 1.6 (#98)
@@ -120,7 +121,7 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
   values is closed (a new built-in value is MAJOR); the `custom:` prefix is a pattern, so
   consumers must accept any `custom:<name>` and treat it as unitless.
 - `perfratio` (object, guaranteed): run metadata, as `ExportMetadata` today.
-- `perfratio.execution` (object, **new in 1.16**, #306): only with `--jobs` > 1. `jobs` (integer), `schedule_policy` (`saturate`, `exclusive` or `fair`; open enum) and `contended` (always `true`). Without `--jobs` the object is absent.
+- `perfratio.execution` (object, **new in 1.16**, #306): only with `--jobs` > 1. `jobs` (integer), `schedule_policy` (`saturate`, `exclusive` or `fair`; open enum) and `contended` (always `true`) and, when the workers were pinned (**new in 1.17**, #307), `cpu_partition` = { `workers`: CPUs of each worker, disjoint, `reserved`?: CPUs kept for perfratio (omitted when none), `shared_siblings`?: `true` when there are more workers than physical cores }. Without `--jobs` the object is absent; without pinning (`--pin-workers=none`, macOS) `cpu_partition` is absent.
 - `perfratio.measurements` (object, guaranteed, **new**): one status per measurement group,
   host-level and identical for every result:
   - `"measured"`: requested and the backend works;
