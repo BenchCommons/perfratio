@@ -493,6 +493,8 @@ pub const NON_METRIC_FIELDS: &[&str] = &[
     "instance_run_ids",
     "leftover_processes",
     "energy_per_instance_joules",
+    "workers_used",
+    "contended",
 ];
 
 /// Result keys whose names inside the object are metrics decided at run time.
