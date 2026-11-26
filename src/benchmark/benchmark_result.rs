@@ -296,6 +296,17 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub energy_per_instance_joules: Option<f64>,
 
+    /// `--jobs N` (only when N > 1): number of workers that executed at least
+    /// one timed run
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workers_used: Option<usize>,
+
+    /// `--jobs N` (only when N > 1, then `true`): runs executed in parallel and
+    /// may have disturbed each other, so the times are not comparable with
+    /// sequential samples
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contended: Option<bool>,
+
     /// Scope of the energy values (with `--energy`): `system` (the package
     /// counter covers every process of the machine) or `batch` (with
     /// `--concurrency`, the energy of the whole batch over the makespan)

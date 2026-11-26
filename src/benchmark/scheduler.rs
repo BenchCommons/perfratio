@@ -34,12 +34,12 @@ pub struct Scheduler<'a> {
     optimize_reports: Vec<OptimizeReport>,
 }
 
-/// `perfratio.execution` (new in 1.22, #324): the schedule, the seed of a
+/// `perfratio.schedule` (new in 1.23, #324): the schedule, the seed of a
 /// randomized order and, for interleaved schedules, the realized run order.
-fn execution_json(mode: ScheduleMode, seed: u64, order: Option<&[usize]>) -> serde_json::Value {
-    let mut value = serde_json::json!({ "schedule": mode.name() });
+fn schedule_json(mode: ScheduleMode, seed: u64, order: Option<&[usize]>) -> serde_json::Value {
+    let mut value = serde_json::json!({ "mode": mode.name() });
     if mode == ScheduleMode::Randomized {
-        value["order_seed"] = seed.into();
+        value["seed"] = seed.into();
     }
     if let Some(order) = order {
         value["order"] = serde_json::json!(order);
@@ -171,9 +171,9 @@ impl<'a> Scheduler<'a> {
         let mode = self.options.schedule;
         let order_seed = self.options.stat_settings.seed;
         self.export_manager
-            .set_execution(Some(execution_json(mode, order_seed, None)));
+            .set_schedule(Some(schedule_json(mode, order_seed, None)));
 
-        if mode.is_interleaved() && commands_to_run.len() > 1 {
+        if (mode.interleaves() && commands_to_run.len() > 1) || mode.pool_policy().is_some() {
             let mut runners: Vec<BenchmarkRunner> = commands_to_run
                 .iter()
                 .map(|&(number, cmd)| {
@@ -193,7 +193,8 @@ impl<'a> Scheduler<'a> {
             let order_of = |stream: Stream, round: u64| {
                 order::round_order(mode, order_seed, stream, round, runner_count)
             };
-            // Realized order of the measured runs: `results[]` index per run
+            // Realized order of the measured runs of an interleaved schedule:
+            // `results[]` index per run
             let mut realized: Vec<usize> = Vec::new();
 
             // 1. Setup phase for all commands
@@ -300,7 +301,9 @@ impl<'a> Scheduler<'a> {
                 if runner.timed_out {
                     continue;
                 }
-                realized.push(runner.display_number);
+                if mode.pool_policy().is_none() {
+                    realized.push(runner.display_number);
+                }
                 match runner.run_initial_measurement() {
                     Ok(()) => {
                         if let Some(bar) = progress_bar.as_ref() {
@@ -360,79 +363,124 @@ impl<'a> Scheduler<'a> {
                 None
             };
 
-            // 4. Interleaved timing iterations. With --target-precision, each
-            // command keeps running until its mean is precise enough; the
-            // commands share the wall-clock time, and so the time budget.
-            let adaptive =
-                self.options.target_precision.is_some() || self.options.duration.is_some();
-            let started = std::time::Instant::now();
-            let budget = self.options.max_benchmarking_time * runners.len() as f64;
-            let multiple_runners = runners.len() > 1;
-            let mut i = 1;
-            'timing: loop {
-                if adaptive {
-                    if !runners.iter().any(|r| r.needs_more_runs(started, budget)) {
-                        break;
-                    }
-                } else if i >= max_count {
-                    break;
-                }
-                for index in order_of(Stream::Measure, i) {
-                    let runner = &mut runners[index];
-                    if crate::util::interrupt::interrupted() {
-                        break 'timing;
-                    }
-                    let run = if adaptive {
-                        !runner.timed_out && runner.needs_more_runs(started, budget)
-                    } else {
-                        !runner.timed_out && i < runner.count
-                    };
-                    if run {
+            // 4. Timing iterations: on the worker pool with `--jobs`, otherwise
+            // interleaved
+            if let Some(policy) = self.options.schedule.pool_policy() {
+                let adaptive =
+                    self.options.target_precision.is_some() || self.options.duration.is_some();
+                let budget = self.options.max_benchmarking_time * runners.len() as f64;
+                let multiple_runners = runners.len() > 1;
+                let time_unit = self.options.time_unit;
+                let measure_energy = self.options.measure_energy;
+                let pooled = super::pool::run_pool(
+                    &mut runners,
+                    policy,
+                    self.options.jobs,
+                    adaptive,
+                    budget,
+                    |runner| {
+                        let Some(bar) = progress_bar.as_ref() else {
+                            return;
+                        };
+                        bar.inc(1);
                         let msg = format_progress_estimate(
                             &runner.times_real,
-                            self.options.time_unit,
-                            if self.options.measure_energy {
-                                Some(&runner.energy_measurements)
-                            } else {
-                                None
-                            },
+                            time_unit,
+                            measure_energy.then_some(&runner.energy_measurements),
                         );
-                        if let Some(bar) = progress_bar.as_ref() {
-                            if multiple_runners {
-                                bar.set_message(format!("{}: {}", runner.command.get_name(), msg));
-                            } else {
-                                bar.set_message(msg);
-                            }
+                        if multiple_runners {
+                            bar.set_message(format!("{}: {}", runner.command.get_name(), msg));
+                        } else {
+                            bar.set_message(msg);
                         }
-
-                        realized.push(runner.display_number);
-                        match runner.run_timed_iteration(i) {
-                            Ok(()) => {
-                                if let Some(bar) = progress_bar.as_ref() {
-                                    bar.inc(1);
+                    },
+                );
+                if let Err(e) = pooled {
+                    if let Some(bar) = progress_bar.as_ref() {
+                        bar.finish_and_clear();
+                    }
+                    return Err(e);
+                }
+            } else {
+                // 4. Interleaved timing iterations. With --target-precision, each
+                // command keeps running until its mean is precise enough; the
+                // commands share the wall-clock time, and so the time budget.
+                let adaptive =
+                    self.options.target_precision.is_some() || self.options.duration.is_some();
+                let started = std::time::Instant::now();
+                let budget = self.options.max_benchmarking_time * runners.len() as f64;
+                let multiple_runners = runners.len() > 1;
+                let mut i = 1;
+                'timing: loop {
+                    if adaptive {
+                        if !runners.iter().any(|r| r.needs_more_runs(started, budget)) {
+                            break;
+                        }
+                    } else if i >= max_count {
+                        break;
+                    }
+                    for index in order_of(Stream::Measure, i) {
+                        let runner = &mut runners[index];
+                        if crate::util::interrupt::interrupted() {
+                            break 'timing;
+                        }
+                        let run = if adaptive {
+                            !runner.timed_out && runner.needs_more_runs(started, budget)
+                        } else {
+                            !runner.timed_out && i < runner.count
+                        };
+                        if run {
+                            let msg = format_progress_estimate(
+                                &runner.times_real,
+                                self.options.time_unit,
+                                if self.options.measure_energy {
+                                    Some(&runner.energy_measurements)
+                                } else {
+                                    None
+                                },
+                            );
+                            if let Some(bar) = progress_bar.as_ref() {
+                                if multiple_runners {
+                                    bar.set_message(format!(
+                                        "{}: {}",
+                                        runner.command.get_name(),
+                                        msg
+                                    ));
+                                } else {
+                                    bar.set_message(msg);
                                 }
                             }
-                            Err(e) if e.is::<crate::error::Interrupted>() => break 'timing,
-                            Err(e) => {
-                                if let Some(bar) = progress_bar.as_ref() {
-                                    bar.finish_and_clear();
+
+                            realized.push(runner.display_number);
+                            match runner.run_timed_iteration(i) {
+                                Ok(()) => {
+                                    if let Some(bar) = progress_bar.as_ref() {
+                                        bar.inc(1);
+                                    }
                                 }
-                                return Err(e);
+                                Err(e) if e.is::<crate::error::Interrupted>() => break 'timing,
+                                Err(e) => {
+                                    if let Some(bar) = progress_bar.as_ref() {
+                                        bar.finish_and_clear();
+                                    }
+                                    return Err(e);
+                                }
                             }
                         }
                     }
+                    i += 1;
                 }
-                i += 1;
             }
 
             if let Some(bar) = progress_bar.as_ref() {
                 bar.finish_and_clear();
             }
 
-            self.export_manager.set_execution(Some(execution_json(
+            // The pool has no round structure: its order is not recorded
+            self.export_manager.set_schedule(Some(schedule_json(
                 mode,
                 order_seed,
-                Some(&realized),
+                mode.pool_policy().is_none().then_some(&realized[..]),
             )));
 
             // 5. Cleanup phase
@@ -1091,6 +1139,7 @@ fn generate_results(args: &[&'static str]) -> Result<Vec<BenchmarkResult>> {
         options.metric,
         options.counters.as_ref(),
         options.topdown.as_ref(),
+        options.execution_info(),
     )?;
 
     options.validate_against_command_list(&commands)?;

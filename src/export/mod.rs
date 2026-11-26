@@ -81,8 +81,8 @@ trait Exporter {
 
     /// The `optimize` object (`--optimize`); only the JSON export has a place for it
     fn set_optimize(&self, _value: Option<&serde_json::Value>) {}
-    /// The `perfratio.execution` object (schedule and run order); only the JSON export has it
-    fn set_execution(&self, _value: Option<&serde_json::Value>) {}
+    /// The `perfratio.schedule` object (schedule and run order); only the JSON export has it
+    fn set_schedule(&self, _value: Option<&serde_json::Value>) {}
 
     /// The Pareto analysis (`--pareto`) of the results about to be serialized
     fn set_pareto(&self, _analysis: Option<(&ParetoConfig, &Analysis)>) {}
@@ -127,6 +127,7 @@ impl ExportManager {
         metric: Metric,
         counters: Option<&crate::perf_counters::CounterConfig>,
         topdown: Option<&crate::topdown::TopdownConfig>,
+        execution: Option<metadata::Execution>,
     ) -> Result<Self> {
         let labels = parse_labels(
             matches
@@ -160,6 +161,7 @@ impl ExportManager {
                 .with_topdown(topdown),
         );
         metadata.energy_backend = energy.and_then(Result::ok).map(|b| b.as_str());
+        metadata.execution = execution;
         let mut export_manager = Self {
             exporters: vec![],
             time_unit,
@@ -274,10 +276,10 @@ impl ExportManager {
         }
     }
 
-    /// Hand `perfratio.execution` (schedule, seed, realized order) to the exporters that include it.
-    pub fn set_execution(&self, value: Option<serde_json::Value>) {
+    /// Hand `perfratio.schedule` (mode, seed, realized order) to the exporters that include it.
+    pub fn set_schedule(&self, value: Option<serde_json::Value>) {
         for e in &self.exporters {
-            e.exporter.set_execution(value.as_ref());
+            e.exporter.set_schedule(value.as_ref());
         }
     }
 

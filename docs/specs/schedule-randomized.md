@@ -1,6 +1,6 @@
 # Specification: Seeded randomized and balanced benchmark order
 
-**Issue:** #324. **Status:** shipped in 1.1 (`schemaVersion` 1.22). Builds on `round-robin-schedule.md`.
+**Issue:** #324. **Status:** shipped in 1.1 (`schemaVersion` 1.23). Builds on `round-robin-schedule.md`.
 
 ## Problem / Motivation
 `--schedule round-robin` removes the drift between commands, but its order is fixed
@@ -29,19 +29,26 @@ the fixed order.
   version of 1.x. Only `--seed` is needed to replay it.
 - `balanced`: over any N consecutive rounds every command takes every position exactly once; over
   any number of rounds the position counts of two commands differ by at most one.
+- With `--jobs` > 1 only the worker-pool policies apply (`saturate`, `exclusive`, `fair`; `worker-pool.md`):
+  `randomized` and `balanced` are rejected there, so the dispatch order of the pool is not randomized
+  and no `order` is exported for it.
+- With a single command nothing is interleaved: `schedule` is exported, `order` is not.
 - With `--target-precision` or `--duration`, a command that has enough runs drops out of its
   rounds; the others keep the order of the policy.
 
-## Contract (JSON, additive, `schemaVersion` 1.21 to 1.22)
-`perfratio.execution`:
-- `schedule`: `grouped`, `round-robin`, `randomized` or `balanced` (open enum).
-- `order_seed`: unsigned 64-bit integer, only with `randomized`.
+## Contract (JSON, additive, `schemaVersion` 1.22 to 1.23)
+`perfratio.schedule`, written by every export. It is not part of `perfratio.execution`
+(`worker-pool.md`): the 1.22 schema requires `jobs`, `schedule_policy` and `contended` there, so
+a file with only the schedule would break consumers of 1.22 (checked by
+`tests/json_schema_compat_tests.rs`).
+- `mode`: `grouped`, `round-robin`, `randomized` or `balanced` (open enum).
+- `seed`: unsigned 64-bit integer, only with `randomized`.
 - `order`: only for the interleaved schedules. The `results[]` index of every measured run in
   execution order, so that an analysis can test for position and neighbour effects. Warmup runs are
   not listed. `results[]` includes imported results first, so the index is not the command-line
   position when `--import-json` is used.
 
-`docs/schema/perfratio-export.schema.json` and the archived `docs/schema/1.22/` describe it.
+`docs/schema/perfratio-export.schema.json` and the archived `docs/schema/1.23/` describe it.
 
 ## Tests
 - `src/benchmark/order.rs`: pure unit tests for determinism, seed sensitivity, permutation, uniform

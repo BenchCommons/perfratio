@@ -40,7 +40,7 @@ impl SplitMix64 {
 
 /// The order of the `n` commands (indices `0..n`) in `round`.
 ///
-/// - `Grouped` and `RoundRobin`: `0, 1, ..., n-1` every round.
+/// - `Grouped`, `RoundRobin` and the pool policies: `0, 1, ..., n-1` every round.
 /// - `Randomized`: an independent uniform shuffle per round, derived from
 ///   `seed`, the stream and the round number only.
 /// - `Balanced`: a cyclic Latin square. Round `r` starts at command `r mod n`,
@@ -55,7 +55,12 @@ pub fn round_order(
     n: usize,
 ) -> Vec<usize> {
     match mode {
-        ScheduleMode::Grouped | ScheduleMode::RoundRobin => (0..n).collect(),
+        // the worker pool picks its own order (`pool.rs`)
+        ScheduleMode::Grouped
+        | ScheduleMode::RoundRobin
+        | ScheduleMode::Saturate
+        | ScheduleMode::Exclusive
+        | ScheduleMode::Fair => (0..n).collect(),
         ScheduleMode::Balanced => {
             let start = (round % n.max(1) as u64) as usize;
             (0..n).map(|k| (start + k) % n).collect()
