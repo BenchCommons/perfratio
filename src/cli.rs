@@ -1019,9 +1019,23 @@ pub fn build_command() -> Command {
                 .help("Collect hardware performance counters per run (Linux). LIST is \
                        comma-separated: instructions, cycles, cache-references, cache-misses, \
                        branches, branch-misses (default: all). Use '--counters=cycles' to \
-                       give a list. Counts user and kernel space, or user space only when \
-                       perf_event_paranoid > 1. Unavailable counters give one warning, never \
-                       an error. Not available on macOS and Windows."),
+                       give a list. An event takes a ':u' (user) or ':k' (kernel) modifier, \
+                       e.g. 'instructions:u,instructions:k' (see '--scope'). Counts user and \
+                       kernel space by default, or user space only when perf_event_paranoid > 1. \
+                       Unavailable counters give one warning, never an error. Not available on \
+                       macOS and Windows."),
+        )
+        .arg(
+            Arg::new("scope")
+                .long("scope")
+                .value_name("SCOPE")
+                .value_parser(["user", "kernel", "all", "split"])
+                .requires("counters")
+                .help("Privilege levels that '--counters' counts: user, kernel, all (default, \
+                       like 'perf stat') or split (every event as ':u' plus ':k'). Counting \
+                       kernel space needs perf_event_paranoid <= 1 or CAP_PERFMON: with the \
+                       default it falls back to user space with a warning ('counters_scope' \
+                       in JSON), with 'kernel', 'split' or a ':k' modifier it is an error."),
         )
         .arg(
             Arg::new("first-run")

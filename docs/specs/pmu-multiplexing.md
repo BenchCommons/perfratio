@@ -28,7 +28,7 @@ was on the PMU and silently undercounts. `perf stat` avoids this by reading
   `counters_multiplexed_runs` when any of its counters was scaled; a counter that was
   never scheduled on the PMU (`time_running == 0`) is `null` in that run, matching the
   failed-counter rule there. `CounterScaling` (`time_enabled`, `time_running`, `scaled`,
-  `coverage`) is internal. schemaVersion 1.9 exports the lowest coverage per affected
+  `coverage`) is internal. schemaVersion 1.10 exports the lowest coverage per affected
   counter as `results[].counters_coverage` (`{ "cycles": 0.742 }`, absent when nothing
   was multiplexed). Per-run `time_enabled`/`time_running` stay internal: the scaled
   value per run is already in `counters`.

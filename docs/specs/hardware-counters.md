@@ -25,7 +25,7 @@
 - `--metric instructions|cycles` ranks by the counter (`Metric::Instructions`/`Cycles`). It adds the
   counter to `--counters` (or enables just that one) and fails if any run has no reading, like
   `--metric energy`. Markdown/AsciiDoc/Org tables get IPC/CPI/miss-rate columns (#213) and the
-  delta table notes multiplexed counters (#219). schemaVersion 1.9 adds `counters_coverage`.
+  delta table notes multiplexed counters (#219). schemaVersion 1.10 adds `counters_coverage`.
 - Not run on real hardware: the PMU test (`PERFRATIO_TEST_PERF=1`). A software-event
   (`task-clock`) test checks the open/inherit mechanism wherever `perf_event_open` is allowed.
 

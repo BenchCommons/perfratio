@@ -785,12 +785,11 @@ impl<'a> BenchmarkRunner<'a> {
     /// Position of the counter behind `--metric instructions|cycles` in each reading.
     fn counter_index(&self, metric: crate::metric::Metric) -> Option<usize> {
         let kind = metric.counter_kind()?;
-        self.options
-            .counters
-            .as_ref()?
+        let counters = self.options.counters.as_ref()?;
+        counters
             .active
             .iter()
-            .position(|&k| k == kind)
+            .position(|spec| spec.kind == kind && spec.scope == counters.scope)
     }
 
     fn metric_samples(&self) -> Vec<f64> {
