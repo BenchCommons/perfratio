@@ -845,11 +845,19 @@ impl Options {
         }
         options.omit_failed_runs = matches.get_flag("omit-failed-runs");
         options.show_resource_usage = matches.get_flag("resource-usage");
-        if let Some(list) = matches.get_one::<String>("counters") {
-            let requested =
-                crate::perf_counters::parse_list(list).map_err(OptionsError::InvalidCounters)?;
-            let (config, warnings) =
-                crate::perf_counters::resolve(requested, matches.get_flag("debug-mode"));
+        let simd = matches.get_flag("simd");
+        if matches.contains_id("counters") || simd {
+            let requested = match matches.get_one::<String>("counters") {
+                Some(list) => {
+                    crate::perf_counters::parse_list(list).map_err(OptionsError::InvalidCounters)?
+                }
+                None => Vec::new(),
+            };
+            let (config, warnings) = crate::perf_counters::resolve_with_simd(
+                requested,
+                simd,
+                matches.get_flag("debug-mode"),
+            );
             for warning in warnings {
                 eprintln!("{} {warning}", crate::output::colors::yellow("Warning:"));
             }

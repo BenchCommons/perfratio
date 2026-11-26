@@ -1022,6 +1022,18 @@ pub fn build_command() -> Command {
                        an error. Not available on macOS and Windows."),
         )
         .arg(
+            Arg::new("simd")
+                .long("simd")
+                .action(ArgAction::SetTrue)
+                .help("Collect a floating-point scalar/vector breakdown per run (Linux, \
+                       x86_64): retired scalar, 128-, 256- and 512-bit packed floating-point \
+                       arithmetic and the vectorization ratio. Intel counts instructions, \
+                       AMD Zen 4/5 counts uops, so compare ratios only within one vendor. \
+                       Integer SIMD is not counted. Works with or without '--counters'. \
+                       Unsupported CPUs, hybrid Intel CPUs, VMs without PMU and denied \
+                       permissions give one warning, never an error."),
+        )
+        .arg(
             Arg::new("first-run")
                 .long("first-run")
                 .action(ArgAction::Set)

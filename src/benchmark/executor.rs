@@ -669,7 +669,7 @@ impl Executor for RawExecutor<'_> {
             samples.extend(r.hw_counters);
         }
         self.counter_overhead =
-            crate::perf_counters::median_overhead(&samples, config.active.len());
+            crate::perf_counters::median_overhead(&samples, config.event_count());
         Ok(())
     }
 
@@ -855,7 +855,7 @@ impl Executor for ShellExecutor<'_> {
 
         if let Some(config) = self.options.counters.as_ref().filter(|c| !c.mock) {
             self.counter_overhead =
-                crate::perf_counters::median_overhead(&hw_samples, config.active.len());
+                crate::perf_counters::median_overhead(&hw_samples, config.event_count());
         }
 
         self.shell_spawning_time = Some(TimingResult {

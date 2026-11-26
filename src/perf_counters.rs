@@ -21,6 +21,7 @@
 use crate::counters::{CounterSample, Efficiency};
 use crate::pmu::{self, PmuStatus};
 use crate::pmu_scaling::{multiplex_warning, ScaledCounter};
+use crate::simd::{self, SimdState};
 use std::collections::BTreeMap;
 
 /// Names accepted by `--counters`, in the order of the default list.
@@ -132,6 +133,10 @@ pub enum UnavailableReason {
     UnsupportedPlatform,
     PerfParanoid,
     NoPmu,
+    /// `--simd`: no verified event set for this CPU model
+    UnsupportedCpu,
+    /// `--simd`: Intel hybrid CPU, the events exist on the P-core PMU only
+    HybridCpuUnpinned,
     Other,
 }
 
@@ -141,6 +146,8 @@ impl UnavailableReason {
             UnavailableReason::UnsupportedPlatform => "unsupported_platform",
             UnavailableReason::PerfParanoid => "perf_paranoid",
             UnavailableReason::NoPmu => "no_pmu",
+            UnavailableReason::UnsupportedCpu => "unsupported_cpu",
+            UnavailableReason::HybridCpuUnpinned => "hybrid_cpu_unpinned",
             UnavailableReason::Other => "other",
         }
     }
@@ -164,11 +171,19 @@ pub struct CounterConfig {
     pub availability: Availability,
     /// `--debug-mode`: synthetic values, nothing is opened
     pub mock: bool,
+    /// `--simd` (#211). Its raw events are opened after `active`, so a
+    /// reading holds the `active` counters first, then the SIMD buckets.
+    pub simd: Option<SimdState>,
 }
 
 impl CounterConfig {
     pub fn is_active(&self) -> bool {
-        !self.active.is_empty()
+        self.event_count() > 0
+    }
+
+    /// Events opened per run: the basic counters plus the SIMD buckets.
+    pub fn event_count(&self) -> usize {
+        self.active.len() + self.simd.as_ref().map_or(0, |s| s.events.len())
     }
 }
 
@@ -242,6 +257,7 @@ pub fn plan(
             scope,
             availability,
             mock: false,
+            simd: None,
         },
         warnings,
     )
@@ -250,6 +266,16 @@ pub fn plan(
 /// Resolves a `--counters` request against the machine. Returns the config and
 /// the warnings to print (once, before the first benchmark).
 pub fn resolve(requested: Vec<CounterKind>, debug_mode: bool) -> (CounterConfig, Vec<String>) {
+    resolve_with_simd(requested, false, debug_mode)
+}
+
+/// Like [`resolve`], with the `--simd` events when `simd` is set. `requested`
+/// may be empty (`--simd` without `--counters`).
+pub fn resolve_with_simd(
+    requested: Vec<CounterKind>,
+    simd: bool,
+    debug_mode: bool,
+) -> (CounterConfig, Vec<String>) {
     if debug_mode {
         return (
             CounterConfig {
@@ -258,65 +284,103 @@ pub fn resolve(requested: Vec<CounterKind>, debug_mode: bool) -> (CounterConfig,
                 scope: Scope::All,
                 availability: Availability::Measured,
                 mock: true,
+                simd: simd.then(SimdState::mock),
             },
             vec![],
         );
     }
-    resolve_native(requested)
+    resolve_native(requested, simd)
 }
 
 #[cfg(target_os = "linux")]
-fn resolve_native(requested: Vec<CounterKind>) -> (CounterConfig, Vec<String>) {
+fn resolve_native(requested: Vec<CounterKind>, want_simd: bool) -> (CounterConfig, Vec<String>) {
     let paranoid = std::fs::read_to_string("/proc/sys/kernel/perf_event_paranoid")
         .ok()
         .and_then(|c| pmu::parse_paranoid(&c));
-    plan(requested, paranoid, linux::probe)
+    let has_basic = !requested.is_empty();
+    let (mut config, mut warnings) = plan(requested, paranoid, linux::probe);
+    if want_simd {
+        // `--counters` may already have fallen back to user space (one warning)
+        let forced = has_basic.then_some(config.scope);
+        let (state, scope, w) = simd::plan(&crate::cpu_id::detect(), paranoid, forced, |c, s| {
+            linux::probe_raw(c, s)
+        });
+        if scope == Scope::User {
+            config.scope = Scope::User;
+        }
+        config.simd = Some(state);
+        warnings.extend(w);
+    }
+    (config, warnings)
 }
 
 #[cfg(not(target_os = "linux"))]
-fn resolve_native(requested: Vec<CounterKind>) -> (CounterConfig, Vec<String>) {
+fn resolve_native(requested: Vec<CounterKind>, want_simd: bool) -> (CounterConfig, Vec<String>) {
     let why = if cfg!(target_os = "macos") {
         "on macOS the kperf framework needs root and cannot follow child processes"
     } else {
         "no supported counter API on this platform"
     };
+    let mut warnings = Vec::new();
+    let availability = if requested.is_empty() {
+        Availability::Measured
+    } else {
+        warnings.push(format!(
+            "'--counters' is only supported on Linux ({why}); continuing without hardware counters."
+        ));
+        Availability::Unavailable(UnavailableReason::UnsupportedPlatform)
+    };
+    if want_simd {
+        warnings.push(format!(
+            "'--simd' is only supported on Linux ({why}); continuing without the SIMD breakdown."
+        ));
+    }
     (
         CounterConfig {
             requested,
             active: vec![],
             scope: Scope::All,
-            availability: Availability::Unavailable(UnavailableReason::UnsupportedPlatform),
+            availability,
             mock: false,
+            simd: want_simd.then(|| SimdState::unavailable(UnavailableReason::UnsupportedPlatform)),
         },
-        vec![format!(
-            "'--counters' is only supported on Linux ({why}); continuing without hardware counters."
-        )],
+        warnings,
     )
 }
 
 /// Deterministic values for `--debug-mode`, derived from the simulated time.
 pub fn mock_reading(config: &CounterConfig, time_real: f64) -> HwReading {
-    config
-        .active
+    let basic = config.active.iter().map(|&kind| {
+        let per_second = match kind {
+            CounterKind::Instructions => 2_000_000_000.0,
+            CounterKind::Cycles => 1_000_000_000.0,
+            CounterKind::CacheReferences => 10_000_000.0,
+            CounterKind::CacheMisses => 1_000_000.0,
+            CounterKind::Branches => 400_000_000.0,
+            CounterKind::BranchMisses => 4_000_000.0,
+        };
+        let value = (per_second * time_real) as u64;
+        Some(ScaledCounter {
+            value,
+            raw: value,
+            time_enabled: 1,
+            time_running: 1,
+        })
+    });
+    let simd = config
+        .simd
         .iter()
-        .map(|&kind| {
-            let per_second = match kind {
-                CounterKind::Instructions => 2_000_000_000.0,
-                CounterKind::Cycles => 1_000_000_000.0,
-                CounterKind::CacheReferences => 10_000_000.0,
-                CounterKind::CacheMisses => 1_000_000.0,
-                CounterKind::Branches => 400_000_000.0,
-                CounterKind::BranchMisses => 4_000_000.0,
-            };
-            let value = (per_second * time_real) as u64;
+        .flat_map(|s| s.events.iter())
+        .map(|&(bucket, _)| {
+            let value = (simd::mock_per_second(bucket) * time_real) as u64;
             Some(ScaledCounter {
                 value,
                 raw: value,
                 time_enabled: 1,
                 time_running: 1,
             })
-        })
-        .collect()
+        });
+    basic.chain(simd).collect()
 }
 
 /// Median per event of the readings of calibration runs.
@@ -356,7 +420,7 @@ pub struct CounterExport {
 /// Builds the export of all runs. `runs` has one entry per run (aligned with
 /// `times`); `None` is a run whose counters could not be read.
 pub fn export(config: &CounterConfig, runs: &[Option<HwReading>]) -> Option<CounterExport> {
-    if !config.is_active() || runs.is_empty() {
+    if config.active.is_empty() || runs.is_empty() {
         return None;
     }
     let cell =
@@ -458,7 +522,18 @@ pub fn open(config: &CounterConfig) -> Option<OpenCounters> {
     }
     #[cfg(target_os = "linux")]
     {
-        let events: Vec<(u32, u64)> = config.active.iter().map(|k| (0, k.hw_config())).collect();
+        let events: Vec<(u32, u64)> = config
+            .active
+            .iter()
+            .map(|k| (0, k.hw_config()))
+            .chain(
+                config
+                    .simd
+                    .iter()
+                    .flat_map(|s| s.events.iter())
+                    .map(|&(_, raw)| (simd::PERF_TYPE_RAW, raw)),
+            )
+            .collect();
         Some(OpenCounters {
             inner: linux::open_events(&events, config.scope),
         })
@@ -534,6 +609,11 @@ mod linux {
     /// Tries to open one event and closes it again.
     pub fn probe(kind: CounterKind, scope: Scope) -> Result<(), i32> {
         open_fd(&attr(0, kind.hw_config(), scope, true)).map(drop)
+    }
+
+    /// Same for a raw event (`PERF_TYPE_RAW`).
+    pub fn probe_raw(config: u64, scope: Scope) -> Result<(), i32> {
+        open_fd(&attr(crate::simd::PERF_TYPE_RAW, config, scope, true)).map(drop)
     }
 
     pub struct Open {
@@ -732,6 +812,7 @@ mod tests {
             scope: Scope::All,
             availability: Availability::Measured,
             mock: false,
+            simd: None,
         }
     }
 

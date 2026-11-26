@@ -916,6 +916,11 @@ impl<'a> BenchmarkRunner<'a> {
             .as_ref()
             .and_then(|config| crate::perf_counters::export(config, &self.hw_counters));
 
+        let simd_export = self.options.counters.as_ref().and_then(|config| {
+            let simd = config.simd.as_ref()?;
+            crate::simd::export(simd, config.active.len(), &self.hw_counters)
+        });
+
         let t_num = self.times_real.len();
         let (t_mean, t_stddev, t_median, t_min, t_max, user_mean, system_mean) =
             if self.timed_out && self.times_real.is_empty() {
@@ -1341,6 +1346,12 @@ impl<'a> BenchmarkRunner<'a> {
                     crate::outln!("  Counters (mean):    {}", line.dimmed());
                 }
 
+                if let Some(e) = &simd_export {
+                    for line in &e.block {
+                        crate::outln!("{}", line.dimmed());
+                    }
+                }
+
                 if self.options.show_resource_usage {
                     match self.resource_summary() {
                         Some(line) => crate::outln!("  Resources (mean):   {}", line.dimmed()),
@@ -1632,6 +1643,9 @@ impl<'a> BenchmarkRunner<'a> {
             if let Some(warning) = hw_export.as_ref().and_then(|e| e.warning.as_ref()) {
                 eprintln!("  {}", colors::yellow(warning));
             }
+            if let Some(warning) = simd_export.as_ref().and_then(|e| e.warning.as_ref()) {
+                eprintln!("  {}", colors::yellow(warning));
+            }
         }
 
         if report.is_some() && !warnings.is_empty() {
@@ -1754,6 +1768,16 @@ impl<'a> BenchmarkRunner<'a> {
                 .as_ref()
                 .map(|e| e.multiplexed_runs)
                 .filter(|&n| n > 0),
+            simd: simd_export.as_ref().map(|e| e.series.clone()),
+            simd_summary: simd_export.as_ref().map(|e| e.summary.clone()),
+            simd_scaling: simd_export
+                .as_ref()
+                .map(|e| e.scaling.clone())
+                .filter(|s| !s.is_empty()),
+            simd_scope: simd_export
+                .as_ref()
+                .and(self.options.counters.as_ref())
+                .map(|c| c.scope.as_str().to_string()),
             counters_scope: hw_export
                 .as_ref()
                 .and(self.options.counters.as_ref())

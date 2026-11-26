@@ -26,10 +26,12 @@ pub enum Dimension {
     Cycles,
     CacheMisses,
     BranchMisses,
+    /// `--simd` vectorization ratio (#211). Neither direction is better.
+    VectorizationRatio,
 }
 
 impl Dimension {
-    pub const ALL: [Dimension; 10] = [
+    pub const ALL: [Dimension; 11] = [
         Dimension::WallTime,
         Dimension::PeakMemory,
         Dimension::Energy,
@@ -40,6 +42,7 @@ impl Dimension {
         Dimension::Cycles,
         Dimension::CacheMisses,
         Dimension::BranchMisses,
+        Dimension::VectorizationRatio,
     ];
 
     /// Name of the counter in `BenchmarkResult::counters`
@@ -65,6 +68,7 @@ impl Dimension {
             Dimension::Cycles => "CPU cycles",
             Dimension::CacheMisses => "Cache misses",
             Dimension::BranchMisses => "Branch misses",
+            Dimension::VectorizationRatio => "Vectorization ratio",
         }
     }
 
@@ -76,6 +80,7 @@ impl Dimension {
             Dimension::PeakMemory => format_bytes(value.max(0.0).round() as u64),
             Dimension::Energy => format!("{value:.3} J"),
             Dimension::Power => format!("{value:.2} W"),
+            Dimension::VectorizationRatio => format!("{:.1}%", value * 100.0),
             Dimension::Instructions
             | Dimension::Cycles
             | Dimension::CacheMisses
@@ -95,6 +100,11 @@ impl Dimension {
                 .map(|v| v.iter().map(|&b| b as f64).collect()),
             Dimension::Energy => r.energy_joules.clone(),
             Dimension::Power => None,
+            // Runs without floating-point arithmetic have no ratio and are left out
+            Dimension::VectorizationRatio => r
+                .simd
+                .as_ref()
+                .map(|s| s.vectorization_ratio.iter().flatten().copied().collect()),
             Dimension::Instructions
             | Dimension::Cycles
             | Dimension::CacheMisses
@@ -119,6 +129,11 @@ impl Dimension {
             Dimension::Energy => r.mean_energy_joules,
             Dimension::Power => r.mean_watts,
             Dimension::PeakMemory => None,
+            Dimension::VectorizationRatio => r
+                .simd_summary
+                .as_ref()
+                .and_then(|s| s.get("vectorization_ratio"))
+                .map(|s| s.mean),
             Dimension::Instructions
             | Dimension::Cycles
             | Dimension::CacheMisses
@@ -292,7 +307,7 @@ fn welch(a: &[f64], b: &[f64]) -> Option<(f64, f64)> {
 }
 
 /// One row per dimension measured for both commands. Lower is better in every
-/// dimension.
+/// dimension except the vectorization ratio, which has no verdict.
 pub fn compute_rows(reference: &BenchmarkResult, target: &BenchmarkResult) -> Vec<DeltaRow> {
     Dimension::ALL
         .into_iter()
@@ -309,6 +324,8 @@ pub fn compute_rows(reference: &BenchmarkResult, target: &BenchmarkResult) -> Ve
                 _ => (None, None),
             };
             let verdict = match (p_value, relative) {
+                // More vectorization is neither better nor worse
+                _ if dimension == Dimension::VectorizationRatio => Verdict::Unknown,
                 (Some(p), Some(rel)) if p < ALPHA && rel < 0.0 => Verdict::Improvement,
                 (Some(p), Some(rel)) if p < ALPHA && rel > 0.0 => Verdict::Regression,
                 (Some(_), _) => Verdict::Noise,
@@ -723,6 +740,31 @@ Benchmark comparison (Reference: 'cmd_a')
         assert!((row.relative.unwrap() - 1.0).abs() < 0.01);
         assert_eq!(row.verdict, Verdict::Regression);
         assert_eq!(Dimension::Instructions.label(), "Instructions");
+    }
+
+    #[test]
+    fn vectorization_row_has_no_verdict() {
+        let series = |ratios: &[f64]| crate::simd::SimdSeries {
+            unit: "instructions".into(),
+            arch: "x86_64".into(),
+            vectorization_ratio: ratios.iter().map(|r| Some(*r)).collect(),
+            ..Default::default()
+        };
+        let mut a = full("a", 1.0);
+        let mut b = full("b", 1.0);
+        a.simd = Some(series(&[0.01, 0.02, 0.01, 0.015]));
+        assert!(compute_rows(&a, &b)
+            .iter()
+            .all(|r| r.dimension != Dimension::VectorizationRatio));
+        b.simd = Some(series(&[0.96, 0.97, 0.96, 0.965]));
+        let rows = compute_rows(&a, &b);
+        let row = rows
+            .iter()
+            .find(|r| r.dimension == Dimension::VectorizationRatio)
+            .expect("ratio row");
+        assert!(row.p_value.is_some_and(|p| p < 0.05));
+        assert_eq!(row.verdict, Verdict::Unknown);
+        assert_eq!(Dimension::VectorizationRatio.format(0.964), "96.4%");
     }
 
     #[test]

@@ -545,6 +545,10 @@ Show the mean voluntary/involuntary context switches, minor/major page faults an
 .IP
 Collect hardware performance counters per run (Linux): instructions, cycles, cache\-references, cache\-misses, branches, branch\-misses (default: all; give a list with \fB\-\-counters\fR=cycles,instructions). Counts user and kernel space, or user space only when perf_event_paranoid > 1 ('counters_scope' in JSON). Adds counts, a summary, IPC/CPI and miss rates, and one terminal line. Unavailable counters (no PMU, permissions, macOS, Windows) give one warning and status 'unavailable' in perfratio.measurements.counters.
 .HP
+\fB\-\-simd\fR
+.IP
+Collect a floating\-point scalar/vector breakdown per run (Linux, x86_64): retired scalar, 128\-, 256\- and 512\-bit packed floating\-point arithmetic and the vectorization ratio ('simd' and 'simd_summary' in JSON, one terminal block). Intel counts instructions, AMD Zen 4/5 counts uops, so compare ratios only within one vendor. Integer SIMD is not counted. Works with or without \fB\-\-counters\fR. Unsupported CPUs (including AArch64), hybrid Intel CPUs, VMs without a PMU, permissions and other platforms give one warning and status 'unavailable' in perfratio.measurements.simd.
+.HP
 \fB\-\-first\-run\fR \fIMODE\fP
 .IP
 How to treat the first (cold) timing run of each command: include (default) keeps it in the statistics, separate shows it on its own line ("Cold (1st run)"), exports it as 'first_run' in the JSON and excludes it from all statistics, discard excludes it silently, like an extra warmup run. With separate and discard, one extra run is performed so that the requested number of runs is still measured. If \fB\-\-warmup\fR is used with separate, the first warmup run is the cold one: it is reported (wall-clock time only) and no timing run is excluded.

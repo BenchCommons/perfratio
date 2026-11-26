@@ -150,6 +150,24 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub counters_scope: Option<String>,
 
+    /// Per-run floating-point breakdown (`--simd`), aligned with `times`; see
+    /// `docs/specs/simd-breakdown.md`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub simd: Option<crate::simd::SimdSeries>,
+
+    /// Mean, deviation, median and range of every SIMD bucket and of the
+    /// vectorization ratio
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub simd_summary: Option<BTreeMap<String, MetricSummary>>,
+
+    /// Privilege levels counted for `simd`: `all` or `user`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub simd_scope: Option<String>,
+
+    /// Buckets that were scaled for multiplexing: runs and lowest coverage
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub simd_scaling: Option<BTreeMap<String, crate::simd::SimdScaling>>,
+
     /// Number of planned runs if the benchmark was interrupted
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runs_planned: Option<u64>,
