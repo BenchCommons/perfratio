@@ -24,7 +24,7 @@ pub struct PrimaryMetricStats {
 }
 
 /// Version of the JSON output contract (`docs/specs/output-schema-contract.md`).
-pub const SCHEMA_VERSION: &str = "1.25";
+pub const SCHEMA_VERSION: &str = "1.26";
 
 #[derive(Serialize, Debug)]
 struct PerfratioSummary<'a> {
@@ -71,14 +71,18 @@ struct ResultEntry<'a> {
     /// p-value of the bootstrap Welch test against the reference
     #[serde(skip_serializing_if = "Option::is_none")]
     p_value: Option<f64>,
-    /// `p_value` after `--correction` (new in 1.25, #321); `significance`
+    /// `p_value` after `--correction` (new in 1.26, #321); `significance`
     /// is decided on this value. Omitted without a correction.
     #[serde(skip_serializing_if = "Option::is_none")]
     p_value_adjusted: Option<f64>,
 }
 
 /// The `perfratio` object: the run metadata plus the descriptor of every metric (#317).
-fn with_metrics(metadata: &ExportMetadata, results: &[BenchmarkResult]) -> serde_json::Value {
+fn with_metrics(
+    metadata: &ExportMetadata,
+    results: &[BenchmarkResult],
+    schedule: Option<serde_json::Value>,
+) -> serde_json::Value {
     let mut value = serde_json::to_value(metadata).unwrap_or(serde_json::Value::Null);
     if let (Some(object), Ok(metrics)) = (
         value.as_object_mut(),
@@ -86,10 +90,13 @@ fn with_metrics(metadata: &ExportMetadata, results: &[BenchmarkResult]) -> serde
     ) {
         object.insert("metrics".into(), metrics);
     }
+    if let (Some(object), Some(schedule)) = (value.as_object_mut(), schedule) {
+        object.insert("schedule".into(), schedule);
+    }
     value
 }
 
-/// `perfratio.statistics.correction` (new in 1.25, #321), only with `--correction`.
+/// `perfratio.statistics.correction` (new in 1.26, #321), only with `--correction`.
 fn add_correction(
     perfratio: &mut serde_json::Value,
     settings: &crate::stats::settings::StatSettings,
@@ -121,6 +128,8 @@ pub struct JsonExporter {
     pub optimize: std::sync::Mutex<Option<serde_json::Value>>,
     /// Pareto analysis of the results being serialized
     pub pareto: std::sync::Mutex<Option<Analysis>>,
+    /// `perfratio.schedule` (new in 1.23, #324)
+    pub schedule: std::sync::Mutex<Option<serde_json::Value>>,
 }
 
 impl Exporter for JsonExporter {
@@ -150,7 +159,15 @@ impl Exporter for JsonExporter {
             let all: Vec<&BenchmarkResult> = results.iter().collect();
             significance::assess_family(reference, &all, &settings)
         });
-        let mut perfratio = self.metadata.as_ref().map(|m| with_metrics(m, results));
+        let schedule = self
+            .schedule
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        let mut perfratio = self
+            .metadata
+            .as_ref()
+            .map(|m| with_metrics(m, results, schedule));
         if let (Some(value), Some(assessments)) = (perfratio.as_mut(), assessments.as_ref()) {
             add_correction(value, &settings, assessments);
         }
@@ -216,6 +233,10 @@ impl Exporter for JsonExporter {
 
     fn set_optimize(&self, value: Option<&serde_json::Value>) {
         *self.optimize.lock().unwrap_or_else(|e| e.into_inner()) = value.cloned();
+    }
+
+    fn set_schedule(&self, value: Option<&serde_json::Value>) {
+        *self.schedule.lock().unwrap_or_else(|e| e.into_inner()) = value.cloned();
     }
 
     fn set_pareto(&self, analysis: Option<(&ParetoConfig, &Analysis)>) {

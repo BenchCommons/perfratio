@@ -1501,8 +1501,8 @@ pub fn build_command() -> Command {
             Arg::new("schedule")
                 .long("schedule")
                 .value_name("MODE")
-                .value_parser(["grouped", "round-robin", "interleaved", "saturate", "exclusive", "fair"])
-                .help("Set benchmark execution schedule: 'grouped' (run all iterations per command; default) or 'round-robin' / 'interleaved' (interleave iterations across commands to mitigate temporal bias). With '--jobs' > 1: 'saturate' (keep every worker busy; default), 'exclusive' (a command never runs concurrently with itself) or 'fair' (every command keeps the same number of runs).")
+                .value_parser(["grouped", "round-robin", "interleaved", "saturate", "exclusive", "fair", "randomized", "balanced"])
+                .help("Set benchmark execution schedule: 'grouped' (run all iterations per command; default) or 'round-robin' / 'interleaved' (interleave iterations across commands to mitigate temporal bias), 'randomized' (interleaved, with a seeded shuffle of the command order in every round; '--seed' sets the seed) or 'balanced' (interleaved, order rotated every round so each command takes each position equally often). With '--jobs' > 1: 'saturate' (keep every worker busy; default), 'exclusive' (a command never runs concurrently with itself) or 'fair' (every command keeps the same number of runs).")
         )
         .arg(
             Arg::new("round-robin")
