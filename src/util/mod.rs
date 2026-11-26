@@ -1,4 +1,5 @@
 pub mod affinity;
+pub mod cpu_partition;
 pub mod exit_code;
 pub mod interrupt;
 pub mod min_max;

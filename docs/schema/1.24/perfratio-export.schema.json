@@ -266,6 +266,39 @@
             "contended": {
               "const": true,
               "description": "The runs disturbed each other; always true."
+            },
+            "cpu_partition": {
+              "type": "object",
+              "properties": {
+                "workers": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "minItems": 1
+                  },
+                  "description": "CPUs of worker i; disjoint."
+                },
+                "reserved": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "description": "CPUs kept for perfratio's own threads; no worker uses them. Omitted when none."
+                },
+                "shared_siblings": {
+                  "const": true,
+                  "description": "More workers than physical cores: some workers share a core with another worker. Omitted when false."
+                }
+              },
+              "required": [
+                "workers"
+              ],
+              "description": "Only when the workers were pinned (--pin-workers=auto, the default with --jobs > 1 on Linux and Windows). New in 1.24, #307."
             }
           },
           "required": [
@@ -317,32 +350,6 @@
             "bootstrap_seed"
           ],
           "description": "New in 1.21 (#320): how the ranking, ratios, intervals and significance were computed. Always written by 1.21 and later; not required here, so that a MINOR addition is not a breaking change for consumers of older exports."
-        },
-        "schedule": {
-          "type": "object",
-          "properties": {
-            "mode": {
-              "type": "string",
-              "description": "grouped, round-robin, randomized, balanced, or with --jobs saturate, exclusive, fair. Open enum."
-            },
-            "seed": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Unsigned 64-bit seed of the shuffled order; only with mode randomized (the --seed value)."
-            },
-            "order": {
-              "type": "array",
-              "items": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "description": "Realized order of the measured runs of an interleaved schedule: the results[] index of each run, in execution order. Omitted for grouped, with --jobs and with a single command."
-            }
-          },
-          "required": [
-            "mode"
-          ],
-          "description": "New in 1.24 (#324): how the runs of several commands were ordered. Always written by 1.24 and later; not required here, so that a MINOR addition is not a breaking change for consumers of older exports."
         }
       },
       "required": [
