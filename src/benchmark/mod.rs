@@ -682,7 +682,7 @@ impl<'a> BenchmarkRunner<'a> {
             sampler.start();
         }
         let window_start = std::time::Instant::now();
-        let (mut res, status) = self.executor.run_command_and_measure(
+        let (res, status) = self.executor.run_command_and_measure(
             self.command,
             BenchmarkIteration::Benchmark(iteration),
             None,
