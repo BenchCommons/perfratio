@@ -1428,6 +1428,7 @@ fn parse_validation<'a>(
     }))
 }
 
+#[cfg(feature = "cli")]
 /// The statistical settings of `--estimator`, `--confidence-level`,
 /// `--significance-level`, `--bootstrap-resamples` and `--seed`.
 fn parse_stat_settings<'a>(
