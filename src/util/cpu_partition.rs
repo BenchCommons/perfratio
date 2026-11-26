@@ -199,7 +199,7 @@ fn process_cpus() -> Vec<usize> {
         let ok = unsafe { GetProcessAffinityMask(GetCurrentProcess(), &mut process, &mut system) };
         if ok != 0 && process != 0 {
             return (0..usize::BITS as usize)
-                .filter(|cpu| process >> cpu & 1 == 1)
+                .filter(|&cpu| (process >> cpu) & 1 == 1)
                 .collect();
         }
     }

@@ -1162,6 +1162,10 @@ impl Options {
         if !explicit && matches.get_flag("debug-mode") {
             return Ok(None);
         }
+        let reserve = reserve
+            .map(|value| cpus::Reserve::parse(value))
+            .transpose()
+            .map_err(|e| invalid(format!("{e:#}")))?;
         if !cpus::supported() {
             if explicit {
                 eprintln!(
@@ -1173,10 +1177,6 @@ impl Options {
             }
             return Ok(None);
         }
-        let reserve = reserve
-            .map(|value| cpus::Reserve::parse(value))
-            .transpose()
-            .map_err(|e| invalid(format!("{e:#}")))?;
         let topology = cpus::discover(self.affinity.as_deref());
         cpus::partition(&topology, reserve.as_ref(), self.jobs)
             .map(Some)
