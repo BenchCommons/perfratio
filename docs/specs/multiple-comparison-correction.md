@@ -1,6 +1,6 @@
 # Spec: Multiple-comparison correction (#321)
 
-**Status:** Implemented. JSON `schemaVersion` 1.23.
+**Status:** Implemented. JSON `schemaVersion` 1.24.
 
 ## Problem / Motivation
 References: #321, #215, #240; Holm (1979); Benjamini and Hochberg (1995); benchstat.
@@ -36,7 +36,7 @@ p-values of the family so that the markers keep their meaning.
   tested on, so the comparisons are biased towards small p-values even for equal commands;
   fix the reference for a clean false-positive rate.
 
-### JSON (additive, `schemaVersion` 1.22 -> 1.23)
+### JSON (additive, `schemaVersion` 1.23 -> 1.24)
 - `perfratio.statistics.correction = {method, family, family_size, alpha}`, only with
   `--correction` other than `none`.
 - `results[].p_value_adjusted`, only with a correction; `significance` is decided on it.
