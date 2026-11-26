@@ -190,7 +190,14 @@ fn the_terminal_warns_that_parallel_sampling_perturbs_timing() {
 #[test]
 fn real_runs_overlap() {
     let start = std::time::Instant::now();
-    let json = export(&["-N", "--runs=8", "-j4", "--style=basic", "sleep 0.2"]);
+    let json = export(&[
+        "-N",
+        "--calibrate=off",
+        "--runs=8",
+        "-j4",
+        "--style=basic",
+        "sleep 0.2",
+    ]);
     let elapsed = start.elapsed().as_secs_f64();
     // 8 sequential runs would take 1.6 s
     assert!(elapsed < 1.4, "took {elapsed} s");
@@ -268,6 +275,7 @@ fn ctrl_c_keeps_equal_run_counts_with_fair() {
     let path = dir.path().join("interrupted.json");
     let child = Command::new(assert_cmd::cargo_bin!("perfratio"))
         .args([
+            "--calibrate=off",
             "--runs=400",
             "-N",
             "-j3",
