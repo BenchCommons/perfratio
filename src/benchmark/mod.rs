@@ -979,7 +979,11 @@ impl<'a> BenchmarkRunner<'a> {
             .as_ref()
             .and_then(|config| config.plan.as_ref())
             .and_then(|plan| {
-                let skip = self.options.counters.as_ref().map_or(0, |c| c.active.len());
+                let skip = self
+                    .options
+                    .counters
+                    .as_ref()
+                    .map_or(0, |c| c.event_count());
                 let runs: Vec<_> = self
                     .hw_counters
                     .iter()
@@ -991,6 +995,10 @@ impl<'a> BenchmarkRunner<'a> {
                 let mean_time = crate::stats::basic::mean(&self.times_real);
                 crate::topdown::export(plan, &runs, mean_time)
             });
+        let simd_export = self.options.counters.as_ref().and_then(|config| {
+            let simd = config.simd.as_ref()?;
+            crate::simd::export(simd, config.active.len(), &self.hw_counters)
+        });
 
         let t_num = self.times_real.len();
         let (t_mean, t_stddev, t_median, t_min, t_max, user_mean, system_mean) =
@@ -1430,6 +1438,12 @@ impl<'a> BenchmarkRunner<'a> {
                     }
                 }
 
+                if let Some(e) = &simd_export {
+                    for line in &e.block {
+                        crate::outln!("{}", line.dimmed());
+                    }
+                }
+
                 if self.options.show_resource_usage {
                     match self.resource_summary() {
                         Some(line) => crate::outln!("  Resources (mean):   {}", line.dimmed()),
@@ -1719,6 +1733,9 @@ impl<'a> BenchmarkRunner<'a> {
             if let Some(warning) = hw_export.as_ref().and_then(|e| e.warning.as_ref()) {
                 eprintln!("  {}", colors::yellow(warning));
             }
+            if let Some(warning) = simd_export.as_ref().and_then(|e| e.warning.as_ref()) {
+                eprintln!("  {}", colors::yellow(warning));
+            }
             if !self.options.suppress_outlier_warnings {
                 for advisory in hw_export.iter().flat_map(|e| &e.advisories) {
                     // The tip line of a warning is not a warning of its own
@@ -1870,6 +1887,17 @@ impl<'a> BenchmarkRunner<'a> {
                 .as_ref()
                 .and_then(|e| e.frequency.as_ref())
                 .map(|f| f.basis.as_str().to_string()),
+            simd: simd_export.as_ref().map(|e| e.series.clone()),
+            simd_summary: simd_export.as_ref().map(|e| e.summary.clone()),
+            simd_scaling: simd_export
+                .as_ref()
+                .map(|e| e.scaling.clone())
+                .filter(|s| !s.is_empty()),
+            simd_scope: simd_export
+                .as_ref()
+                .and(self.options.counters.as_ref())
+                .and_then(|c| c.simd.as_ref())
+                .map(|s| s.scope.as_str().to_string()),
             counters_coverage: hw_export
                 .as_ref()
                 .map(|e| e.coverage.clone())
