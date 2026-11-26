@@ -380,6 +380,8 @@ pub struct Options {
 
     /// CPUs to pin every benchmarked process to (--affinity)
     pub affinity: Option<Vec<usize>>,
+    /// Core type to prefer (--affinity p-cores|e-cores, macOS)
+    pub core_class: Option<crate::util::affinity::CoreClass>,
 
     /// `--subtract`: a baseline command whose mean is subtracted from every run
     pub subtract_command: Option<String>,
@@ -448,6 +450,7 @@ impl Default for Options {
             discard_outliers: None,
             show_resource_usage: false,
             affinity: None,
+            core_class: None,
             priority: crate::util::priority::Priority::default(),
             subtract_command: None,
             allow_setup_with_round_robin: false,
@@ -833,15 +836,21 @@ impl Options {
         }
         options.omit_failed_runs = matches.get_flag("omit-failed-runs");
         options.show_resource_usage = matches.get_flag("resource-usage");
-        options.affinity = matches
-            .get_one::<String>("affinity")
-            .map(|list| -> Result<Vec<usize>, OptionsError> {
-                let cpus = crate::util::affinity::parse_cpu_list(list)
+        if let Some(value) = matches.get_one::<String>("affinity") {
+            if let Some(class) = crate::util::affinity::CoreClass::parse(value) {
+                crate::util::affinity::validate_core_class(
+                    class,
+                    crate::util::affinity::perf_levels(),
+                )
+                .map_err(|e| OptionsError::InvalidAffinity(format!("{e:#}")))?;
+                options.core_class = Some(class);
+            } else {
+                let cpus = crate::util::affinity::parse_cpu_list(value)
                     .and_then(|cpus| crate::util::affinity::validate(&cpus).map(|_| cpus))
                     .map_err(|e| OptionsError::InvalidAffinity(format!("{e:#}")))?;
-                Ok(cpus)
-            })
-            .transpose()?;
+                options.affinity = Some(cpus);
+            }
+        }
         options.subtract_command = matches.get_one::<String>("subtract").cloned();
         if let Some(priority) = matches.get_one::<String>("priority") {
             options.priority = crate::util::priority::Priority::parse(priority)
