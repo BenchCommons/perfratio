@@ -958,6 +958,26 @@ impl<'a> BenchmarkRunner<'a> {
             .as_ref()
             .and_then(|config| crate::perf_counters::export(config, &self.hw_counters));
 
+        // Topdown readings follow the counters in each run's reading
+        let topdown_export = self
+            .options
+            .topdown
+            .as_ref()
+            .and_then(|config| config.plan.as_ref())
+            .and_then(|plan| {
+                let skip = self.options.counters.as_ref().map_or(0, |c| c.active.len());
+                let runs: Vec<_> = self
+                    .hw_counters
+                    .iter()
+                    .map(|r| {
+                        r.as_ref()
+                            .map(|r| crate::topdown::split_reading(r, skip).1.to_vec())
+                    })
+                    .collect();
+                let mean_time = crate::stats::basic::mean(&self.times_real);
+                crate::topdown::export(plan, &runs, mean_time)
+            });
+
         let t_num = self.times_real.len();
         let (t_mean, t_stddev, t_median, t_min, t_max, user_mean, system_mean) =
             if self.timed_out && self.times_real.is_empty() {
@@ -1386,6 +1406,16 @@ impl<'a> BenchmarkRunner<'a> {
                     crate::outln!("  Counters (mean):    {}", line.dimmed());
                 }
 
+                if let Some(export) = topdown_export.as_ref() {
+                    for (i, line) in export.lines.iter().enumerate() {
+                        if i == 0 {
+                            crate::outln!("  {}", line.bold());
+                        } else {
+                            crate::outln!("  {line}");
+                        }
+                    }
+                }
+
                 if self.options.show_resource_usage {
                     match self.resource_summary() {
                         Some(line) => crate::outln!("  Resources (mean):   {}", line.dimmed()),
@@ -1807,6 +1837,8 @@ impl<'a> BenchmarkRunner<'a> {
                 .as_ref()
                 .and(self.options.counters.as_ref())
                 .map(|c| c.scope.as_str().to_string()),
+            topdown: topdown_export.as_ref().map(|e| e.series.clone()),
+            topdown_summary: topdown_export.as_ref().map(|e| e.summary.clone()),
             shell: self
                 .options
                 .has_per_command_shells()
