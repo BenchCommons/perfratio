@@ -208,6 +208,7 @@ reads them.
 - [doc/understanding-output.md](doc/understanding-output.md#the-json-export) explains every field,
   the units and the `perfratio.measurements` status block.
 - `energy_samples` (per result) says how many runs produced an energy sample.
+- `perfratio.metrics[]` describes every metric of the export (unit, direction, scope, source, kind, status; [spec](docs/specs/metric-descriptors.md)). An unavailable metric is listed with its reason and never written as `0`.
 
 ## Recommended flags for cross-language runs
 

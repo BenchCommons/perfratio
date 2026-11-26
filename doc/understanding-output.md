@@ -204,6 +204,12 @@ check-jsonschema --schemafile docs/schema/perfratio-export.schema.json result.js
 `kernel`; no host or user name is exported) and `energy_backend` (`sysfs_powercap`, `perf_pmu`,
 `ioreport` or `windows_emi`, only when energy works).
 
+`metrics` (new in 1.20) lists a descriptor per metric of the export: `id`, `unit`, `direction`
+(`lower_is_better`, `higher_is_better`, `neutral`), `scope`, `source`, `kind` (`measured`, `derived`, ...),
+`status` (`available`, `partial`, `unsupported`, `permission_denied`, ...), `reason` and the `fields` of
+`results[]` that hold the values. A metric that could not be measured is listed with its reason and
+has no values, never `0`. See `docs/specs/metric-descriptors.md`.
+
 `measurements` tells a consumer, per group, whether the numbers can be trusted. It is a property of
 the host and run, identical for every result:
 

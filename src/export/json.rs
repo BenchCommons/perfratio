@@ -25,7 +25,7 @@ pub struct PrimaryMetricStats {
 }
 
 /// Version of the JSON output contract (`docs/specs/output-schema-contract.md`).
-pub const SCHEMA_VERSION: &str = "1.20";
+pub const SCHEMA_VERSION: &str = "1.21";
 
 #[derive(Serialize, Debug)]
 struct PerfratioSummary<'a> {
@@ -36,7 +36,7 @@ struct PerfratioSummary<'a> {
     metric: Metric,
     /// Information about the perfratio run (version, command line, date, labels, system)
     #[serde(skip_serializing_if = "Option::is_none")]
-    perfratio: Option<MetadataEntry<'a>>,
+    perfratio: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     interrupted: bool,
     /// Result of `--optimize` (object, or array with one entry per search)
@@ -46,16 +46,6 @@ struct PerfratioSummary<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pareto: Option<Analysis>,
     results: Vec<ResultEntry<'a>>,
-}
-
-/// The run metadata plus what is only known after the benchmarks started
-#[derive(Serialize, Debug)]
-struct MetadataEntry<'a> {
-    #[serde(flatten)]
-    metadata: &'a ExportMetadata,
-    /// Runner floor of `--calibrate` (new in 1.19, #313)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    calibration: Option<Floor>,
 }
 
 #[derive(Serialize, Debug)]
@@ -77,6 +67,18 @@ struct ResultEntry<'a> {
     /// p-value of the bootstrap Welch test against the reference
     #[serde(skip_serializing_if = "Option::is_none")]
     p_value: Option<f64>,
+}
+
+/// The `perfratio` object: the run metadata plus the descriptor of every metric (#317).
+fn with_metrics(metadata: &ExportMetadata, results: &[BenchmarkResult]) -> serde_json::Value {
+    let mut value = serde_json::to_value(metadata).unwrap_or(serde_json::Value::Null);
+    if let (Some(object), Ok(metrics)) = (
+        value.as_object_mut(),
+        serde_json::to_value(crate::metric_registry::descriptors(results, metadata)),
+    ) {
+        object.insert("metrics".into(), metrics);
+    }
+    value
 }
 
 #[derive(Default)]
@@ -112,6 +114,16 @@ impl Exporter for JsonExporter {
         };
         let reference_result = reference
             .or_else(|| (!results.is_empty()).then(|| relative_speed::fastest_of(results)));
+        let mut perfratio = self.metadata.as_ref().map(|m| with_metrics(m, results));
+        // Runner floor of `--calibrate` (new in 1.21, #313)
+        if let (Some(serde_json::Value::Object(object)), Some(floor)) = (
+            perfratio.as_mut(),
+            *self.calibration.lock().unwrap_or_else(|e| e.into_inner()),
+        ) {
+            if let Ok(floor) = serde_json::to_value(floor) {
+                object.insert("calibration".into(), floor);
+            }
+        }
         let results = results
             .iter()
             .enumerate()
@@ -148,10 +160,7 @@ impl Exporter for JsonExporter {
         let mut output = to_vec_pretty(&PerfratioSummary {
             schema_version: SCHEMA_VERSION,
             metric,
-            perfratio: self.metadata.as_ref().map(|metadata| MetadataEntry {
-                metadata,
-                calibration: *self.calibration.lock().unwrap_or_else(|e| e.into_inner()),
-            }),
+            perfratio,
             interrupted: crate::util::interrupt::interrupted(),
             optimize: self
                 .optimize
