@@ -288,3 +288,11 @@ fn ctrl_c_keeps_equal_run_counts_with_fair() {
         "{counts:?}"
     );
 }
+
+#[test]
+fn a_huge_job_count_does_not_start_that_many_workers() {
+    let json = export(&["--debug-mode", "--runs=3", "--jobs=100000", "sleep 0.1"]);
+    assert_eq!(run_counts(&json), [3]);
+    let workers = json["results"][0]["workers_used"].as_u64().unwrap();
+    assert!(workers <= 2, "{workers}");
+}
