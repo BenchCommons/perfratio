@@ -1,6 +1,6 @@
 # Spec: `--counters` hardware performance counters on Linux (#49)
 
-**Status:** Implemented on Linux (#49, schemaVersion 1.8). macOS and Windows report `unavailable`.
+**Status:** Implemented on Linux (#49, schemaVersion 1.8; software events and the frequency are in `software-events-migrations.md` and `effective-frequency.md`). macOS and Windows report `unavailable`.
 
 ## Implementation notes (deviations from the proposal)
 - Code: `src/perf_counters.rs`, wired into `run_command_and_measure_common`

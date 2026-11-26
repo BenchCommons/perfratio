@@ -1017,12 +1017,19 @@ pub fn build_command() -> Command {
                 .num_args(0..=1)
                 .require_equals(true)
                 .default_missing_value("instructions,cycles,cache-references,cache-misses,branches,branch-misses")
-                .help("Collect hardware performance counters per run (Linux). LIST is \
+                .help("Collect performance counters per run (Linux). LIST is \
                        comma-separated: instructions, cycles, cache-references, cache-misses, \
-                       branches, branch-misses (default: all). Use '--counters=cycles' to \
-                       give a list. An event takes a ':u' (user) or ':k' (kernel) modifier, \
-                       e.g. 'instructions:u,instructions:k' (see '--scope'). Counts user and \
-                       kernel space by default, or user space only when perf_event_paranoid > 1. \
+                       branches, branch-misses (default: all), plus the software events \
+                       cpu-migrations, context-switches, page-faults and task-clock. Use \
+                       '--counters=cycles' to give a list. Shorthands: 'default' (hardware \
+                       list), 'sw' (cpu-migrations, context-switches), 'frequency' (cycles). \
+                       An event takes a ':u' (user) or ':k' (kernel) modifier, e.g. \
+                       'instructions:u,instructions:k' (see '--scope'); software events cannot \
+                       be scoped. With cycles, the effective CPU frequency (cycles / \
+                       task-clock) is shown and a warning is printed when it varies or drops. \
+                       Counts user and kernel space by default, or user space only when \
+                       perf_event_paranoid > 1; the scheduler events need kernel scope \
+                       (perf_event_paranoid <= 1) and are otherwise reported as unavailable. \
                        Unavailable counters give one warning, never an error. Not available on \
                        macOS and Windows."),
         )

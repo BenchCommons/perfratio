@@ -94,6 +94,36 @@ pub fn run_checks() -> Vec<Check> {
     }
 }
 
+/// Scheduler events of `--counters` (#220): informational when the kernel
+/// scope they need is denied. `None` when they were not requested or work.
+pub fn scheduler_check(config: Option<&crate::perf_counters::CounterConfig>) -> Option<Check> {
+    use crate::perf_counters::{Availability, CounterKind, UnavailableReason};
+    let config = config?;
+    if !config
+        .requested
+        .iter()
+        .any(|s| s.kind == CounterKind::CpuMigrations)
+    {
+        return None;
+    }
+    let denied = match &config.availability {
+        Availability::Unavailable(UnavailableReason::KernelScopeDenied) => true,
+        Availability::Partial(events) => {
+            events.iter().any(|s| s.kind == CounterKind::CpuMigrations)
+                && config.partial_reason == Some(UnavailableReason::KernelScopeDenied)
+        }
+        _ => false,
+    };
+    denied.then(|| {
+        Check::new(
+            "Scheduler migrations",
+            Status::Info,
+            "not measurable (kernel scope denied)",
+        )
+        .with_hint("sudo sysctl kernel.perf_event_paranoid=1")
+    })
+}
+
 /// The report shown before benchmarking.
 pub fn report(checks: &[Check]) -> String {
     let mut out = String::from("System check:\n");
@@ -924,5 +954,64 @@ mod tests {
         let high = cpu_load_check_windows(75.3);
         assert_eq!(high.status, Status::Warn);
         assert_eq!(high.detail, "75.3% busy");
+    }
+
+    #[test]
+    fn scheduler_check_reports_a_denied_kernel_scope() {
+        use crate::perf_counters::{
+            Availability, CounterConfig, CounterKind, CounterSpec, Scope, UnavailableReason,
+        };
+        let config = |requested: &[CounterKind], availability, partial_reason| CounterConfig {
+            requested: requested
+                .iter()
+                .map(|&kind| CounterSpec {
+                    kind,
+                    scope: Scope::All,
+                })
+                .collect(),
+            active: vec![],
+            scope: Scope::All,
+            requested_scope: Scope::All,
+            availability,
+            partial_reason,
+            hidden: vec![],
+            mock: false,
+        };
+        let migrations = [CounterKind::CpuMigrations];
+        let denied = config(
+            &migrations,
+            Availability::Unavailable(UnavailableReason::KernelScopeDenied),
+            None,
+        );
+        let check = scheduler_check(Some(&denied)).unwrap();
+        assert_eq!(check.status, Status::Info);
+        assert_eq!(check.name, "Scheduler migrations");
+        assert!(check.hint.unwrap().contains("perf_event_paranoid=1"));
+        let partial = config(
+            &[CounterKind::Cycles, CounterKind::CpuMigrations],
+            Availability::Partial(vec![CounterSpec {
+                kind: CounterKind::CpuMigrations,
+                scope: Scope::All,
+            }]),
+            Some(UnavailableReason::KernelScopeDenied),
+        );
+        assert!(scheduler_check(Some(&partial)).is_some());
+        // measured, not requested, or denied for another reason: nothing to say
+        assert!(
+            scheduler_check(Some(&config(&migrations, Availability::Measured, None))).is_none()
+        );
+        let other = config(
+            &migrations,
+            Availability::Unavailable(UnavailableReason::NoPmu),
+            None,
+        );
+        assert!(scheduler_check(Some(&other)).is_none());
+        let page_faults = config(
+            &[CounterKind::PageFaults],
+            Availability::Unavailable(UnavailableReason::KernelScopeDenied),
+            None,
+        );
+        assert!(scheduler_check(Some(&page_faults)).is_none());
+        assert!(scheduler_check(None).is_none());
     }
 }

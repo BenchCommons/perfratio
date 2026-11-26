@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.12 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.13 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.12",
+      "const": "1.13",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -138,7 +138,7 @@
         },
         "counters_unavailable_reason": {
           "type": "string",
-          "description": "Open enum: unsupported_platform, perf_paranoid, no_pmu, other."
+          "description": "Open enum: unsupported_platform, perf_paranoid, no_pmu, kernel_scope_denied, other."
         },
         "counters_unavailable_events": {
           "type": "array",
@@ -828,7 +828,7 @@
               "minimum": 0
             }
           },
-          "description": "Raw hardware counts per run aligned with `times`; null = not readable. Keys are event names, optionally suffixed :u or :k."
+          "description": "Raw counts per run aligned with `times`; null = not readable. Keys are event names (hardware events, and the software events cpu-migrations, context-switches, page-faults, task-clock in ns), optionally suffixed :u or :k."
         },
         "counters_summary": {
           "type": "object",
@@ -852,6 +852,30 @@
         "counters_scope": {
           "type": "string",
           "description": "Effective scope of unsuffixed counter keys: all, user or kernel."
+        },
+        "effective_frequency_hz": {
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          },
+          "description": "Effective CPU frequency of each run in Hz (cycles / time on CPU), aligned with `times`; null where it could not be computed."
+        },
+        "mean_effective_frequency_hz": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Mean of `effective_frequency_hz` over the runs with at least 5 ms on CPU."
+        },
+        "stddev_effective_frequency_hz": {
+          "type": "number",
+          "minimum": 0
+        },
+        "effective_frequency_basis": {
+          "type": "string",
+          "description": "Time that divides `cycles`. Open enum: task_clock, user_time, system_time."
         },
         "topdown": {
           "type": "object",

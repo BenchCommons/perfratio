@@ -17,7 +17,7 @@ one row per measured dimension, comparing each command with the reference.
 - Columns: `Measurement | <reference> (mean ± σ) | <command> (mean ± σ) | Delta (%) | p-val`, then a marker.
 - Dimensions (module `src/delta_table.rs`): wall time, peak RSS, energy, average power,
   CPU time (user), CPU time (system). Lower is better in all of them.
-  Hardware counters (instructions, cycles, …) are not collected yet, so they have no row.
+  Counter rows (instructions, cycles, cache and branch misses, context switches, CPU migrations, page faults) and the effective CPU frequency (#222, no verdict) appear when both commands were run with `--counters`.
 - **Missing dimensions:** a row appears only if both commands have the value. No `--energy`,
   no RAPL, or an imported result without memory gives no row, never an error or a zero.
   Mean-only values (average power, energy without per-run samples, CPU time of imported

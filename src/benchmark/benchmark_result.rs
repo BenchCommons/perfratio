@@ -160,6 +160,23 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub counters_scope: Option<String>,
 
+    /// Effective CPU frequency of each run in Hz (`cycles` / time on CPU),
+    /// aligned with `times`; `null` where it could not be computed.
+    /// See `docs/specs/effective-frequency.md`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_frequency_hz: Option<Vec<Option<f64>>>,
+
+    /// Mean of `effective_frequency_hz` over runs with at least 5 ms on CPU
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mean_effective_frequency_hz: Option<f64>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stddev_effective_frequency_hz: Option<f64>,
+
+    /// Time that divides `cycles`: `task_clock`, `user_time` or `system_time`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_frequency_basis: Option<String>,
+
     /// Top-down analysis level 1 (`--topdown`): per-run fractions of the issue
     /// slots, aligned with `times`. See `docs/specs/topdown-tma.md`
     #[serde(default, skip_serializing_if = "Option::is_none")]
