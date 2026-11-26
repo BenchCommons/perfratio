@@ -1712,6 +1712,7 @@ impl<'a> BenchmarkRunner<'a> {
         let mean_net_energy = self.net_energy_mean();
         let energy_domains = domains_series(&self.domain_measurements, total_runs);
         let valid_energy: Vec<f64> = self.energy_measurements.into_iter().flatten().collect();
+        let energy_samples = self.energy_sampler.is_some().then_some(valid_energy.len());
         let (mean_energy, mean_watts, energy_all) = if !valid_energy.is_empty() {
             let m_j = mean(&valid_energy);
             let m_w = if t_mean > 0.0 { m_j / t_mean } else { 0.0 };
@@ -1772,6 +1773,7 @@ impl<'a> BenchmarkRunner<'a> {
             mean_energy_joules: mean_energy,
             mean_watts,
             energy_joules: energy_all,
+            energy_samples,
             idle_watts: self.idle_watts,
             mean_net_energy_joules: mean_net_energy,
             energy_domains_joules: energy_domains,
