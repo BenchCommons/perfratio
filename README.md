@@ -21,6 +21,7 @@ borrow from [`Gabriella439/bench`](https://github.com/Gabriella439/bench). perfr
 - A regression gate against an earlier export (`--compare`, `--fail-if-regressed`).
 - Cross-language helpers: `--warmup auto`, `--first-run`, `--output-metric`, `--target-precision`.
 - Time-budgeted sampling (`--duration 5s`), a primary metric (`--metric`), a multi-dimensional `--delta-table`, and significance indicators on speedups and regressions.
+- Scripting helpers: `-P n 10 1000000 --parameter-step-n 5 --parameter-step-log` (geometric scans), `perfratio -` (one command per line from stdin), `--raw-ratios` (only the ratios on stdout) and `--command-name=` (automatic names).
 - `--pareto wall,energy,memory` marks the commands on the Pareto frontier; `--constraint 'memory <= 256MiB'` and `--objective minimize:energy` pick the best candidate under limits.
 - A versioned JSON export for tools that consume the results (`schemaVersion`).
 
@@ -183,6 +184,8 @@ The exit code is 3. A benchmark counts as regressed only if it is slower than th
 alone does not fail the gate. When the command did not get slower, the same gate prints
 `-2.3%  p = 0.401  ~` and exits 0. `--export-diff-markdown <FILE>` writes the table for a pull
 request comment. A GitHub Actions example is in [doc/ci.md](doc/ci.md).
+
+Every benchmark also gets a measurement quality report (`results[].quality` in the JSON, a summary in the terminal when a check warns or fails): sample sufficiency, CI precision, outliers, trend, clusters, counter and energy coverage, workload validation. `--fail-on-quality with_caveats` exits with code 5 if a measurement is `unreliable`, next to `--fail-if-regressed` ([spec](docs/specs/measurement-quality.md)).
 
 ## JSON export and the `schemaVersion` contract
 

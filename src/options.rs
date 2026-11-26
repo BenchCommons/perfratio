@@ -345,6 +345,8 @@ pub struct Options {
     /// `--optimize`: search a parameter for the best value of the primary metric
     pub optimize: Option<crate::optimize::OptimizeSpec>,
 
+    /// `--raw-ratios`: print only the relative values of the primary metric
+    pub raw_ratios: bool,
     /// `--pareto`, `--constraint`, `--objective`
     pub pareto: Option<crate::pareto::ParetoConfig>,
 
@@ -381,6 +383,12 @@ pub struct Options {
 
     /// `--expect-output-sha256` / `--validate`: check the result of each run
     pub validation: Option<crate::validation::ValidationConfig>,
+
+    /// `--quality`: what the terminal shows of the measurement quality report
+    pub quality_mode: crate::quality::QualityMode,
+
+    /// `--fail-on-quality`: exit non-zero when a benchmark's grade is worse
+    pub fail_on_quality: Option<crate::quality::Grade>,
 
     /// Modified Z-score above which runs are discarded (--discard-outliers)
     pub discard_outliers: Option<f64>,
@@ -459,6 +467,7 @@ impl Default for Options {
             command_input_policy: CommandInputPolicy::Null,
             metric: crate::metric::Metric::Wall,
             optimize: None,
+            raw_ratios: false,
             pareto: None,
             measure_energy: false,
             energy_baseline: None,
@@ -472,6 +481,8 @@ impl Default for Options {
             schedule: ScheduleMode::Grouped,
             omit_failed_runs: false,
             validation: None,
+            quality_mode: Default::default(),
+            fail_on_quality: None,
             discard_outliers: None,
             show_resource_usage: false,
             counters: None,
@@ -635,6 +646,19 @@ impl Options {
                 }
             }
         };
+
+        if matches.get_flag("raw-ratios") {
+            if options
+                .command_output_policies
+                .contains(&CommandOutputPolicy::Inherit)
+            {
+                return Err(OptionsError::InvalidRawRatios(
+                    "it cannot be combined with '--output=inherit'",
+                ));
+            }
+            options.output_style = OutputStyleOption::Disabled;
+            options.raw_ratios = true;
+        }
 
         match options.output_style {
             OutputStyleOption::Basic | OutputStyleOption::NoColor => {
@@ -908,6 +932,13 @@ impl Options {
         }
         options.omit_failed_runs = matches.get_flag("omit-failed-runs");
         options.validation = parse_validation(matches)?;
+        options.quality_mode = matches
+            .get_one::<String>("quality")
+            .and_then(|value| crate::quality::QualityMode::parse(value))
+            .unwrap_or_default();
+        options.fail_on_quality = matches
+            .get_one::<String>("fail-on-quality")
+            .and_then(|value| crate::quality::Grade::parse(value));
         options.show_resource_usage = matches.get_flag("resource-usage");
         let simd = matches.get_flag("simd");
         // `--metric instructions|cycles` collects its own counter

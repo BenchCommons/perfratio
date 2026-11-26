@@ -17,6 +17,8 @@ pub enum ParameterScanError {
     ZeroStep,
     #[error("A step size is required when the range bounds are floating point numbers. The step size can be specified with the '-D/--parameter-step-size <DELTA>' parameter")]
     StepRequired,
+    #[error("{0}")]
+    InvalidSpacing(String),
     #[error("'--command-name' has been specified {0} times. It has to appear exactly once, or exactly {1} times (number of benchmarks)")]
     UnexpectedCommandNameCount(usize, usize),
 }
@@ -98,6 +100,8 @@ pub enum OptionsError<'a> {
     InvalidOutputMetric(String),
     #[error("{0}")]
     InvalidOptimize(String),
+    #[error("Invalid '--raw-ratios': {0}")]
+    InvalidRawRatios(&'static str),
     #[error("Invalid Pareto option: {0}")]
     InvalidPareto(String),
     #[error("Invalid '--region': {0}")]
@@ -112,6 +116,11 @@ pub struct Interrupted;
 #[derive(Debug, Error)]
 #[error("{0} benchmark(s) regressed compared with the baseline ('--fail-if-regressed')")]
 pub struct RegressionDetected(pub usize);
+
+/// `--fail-on-quality` found a benchmark with a worse grade (exit code 5)
+#[derive(Debug, Error)]
+#[error("{0} benchmark(s) have a measurement quality worse than '{1}' ('--fail-on-quality')")]
+pub struct QualityGateFailed(pub usize, pub &'static str);
 
 /// `--check-system=strict` found a problem (exit code 4)
 #[derive(Debug, Error)]
