@@ -24,7 +24,7 @@ consumed in it (host-level, not per process); mean watts = joules / wall time.
 `unsupported_platform`. `PERFRATIO_ENERGY_BACKEND` accepts the same values.
 
 New `measurements.energy_unavailable_reason` values (open enum, MINOR bump to
-`schemaVersion` 1.3; `energy_backend` gains the two values above):
+`schemaVersion` 1.4; `energy_backend` gains the two values above):
 
 | Reason | Meaning |
 |---|---|
