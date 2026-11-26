@@ -1,6 +1,6 @@
 # Spec: `--optimize <VAR> <MIN> <MAX>` parameter search (#98)
 
-**Status:** Shipped (#98), `schemaVersion` 1.4. `--metric` (#48) has landed, so `--optimize` works
+**Status:** Shipped (#98), `schemaVersion` 1.5. `--metric` (#48) has landed, so `--optimize` works
 with every metric (`wall`, `cpu`, `energy`, `memory`, `custom:<name>`). Deviations from the
 proposal below: when the range fits into the budget (`MAX - MIN + 1 <= budget`) all values are
 evaluated and `algorithm` is `"exhaustive"`; the JSON `optimize` object also has `best_value`
