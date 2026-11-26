@@ -490,6 +490,8 @@ pub struct Options {
 
     /// `--jobs`: independent runs executed at the same time (1: sequential)
     pub jobs: usize,
+    /// `--artifact-dir`: parent of the per-run directories (`PERFRATIO_RUN_DIR`)
+    pub artifact_dir: Option<PathBuf>,
 
     /// `--until`: stop timer upon readiness output pattern
     pub until: Option<UntilSettings>,
@@ -558,6 +560,7 @@ impl Default for Options {
             concurrency: 1,
             concurrency_template: None,
             jobs: 1,
+            artifact_dir: None,
             until: None,
             output_metrics: Vec::new(),
             output_metrics_stderr: false,
@@ -857,6 +860,7 @@ impl Options {
                     .ok_or_else(|| OptionsError::InvalidJobs(val.clone()))?
             };
         }
+        options.artifact_dir = matches.get_one::<String>("artifact-dir").map(PathBuf::from);
         if let Some(val) = matches.get_one::<String>("energy-baseline") {
             options.energy_baseline = parse_energy_baseline(val)
                 .map_err(|e| OptionsError::InvalidEnergyBaseline(val.clone(), e))?;

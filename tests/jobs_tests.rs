@@ -236,7 +236,10 @@ fn exclusive_never_overlaps_a_command_with_itself() {
 fn commands_see_their_worker_slot() {
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("slots");
-    let command = format!("echo $PERFRATIO_WORKER >> {}; sleep 0.05", log.display());
+    let command = format!(
+        "echo $PERFRATIO_WORKER_ID:$PERFRATIO_RUN_ID >> {}; sleep 0.05",
+        log.display()
+    );
     perfratio()
         .args(["--runs=9", "-j3", "--style=basic", &command])
         .assert()
@@ -244,11 +247,16 @@ fn commands_see_their_worker_slot() {
     let text = std::fs::read_to_string(&log).unwrap();
     let lines: Vec<&str> = text.lines().collect();
     assert_eq!(lines.len(), 9, "{text}");
+    let (slots, ids): (Vec<&str>, Vec<&str>) =
+        lines.iter().map(|l| l.split_once(':').unwrap()).unzip();
     // run 0 is the sequential initial measurement, the other 8 ran on workers
-    assert_eq!(lines.iter().filter(|l| l.is_empty()).count(), 1, "{text}");
-    for slot in lines.iter().filter(|l| !l.is_empty()) {
+    assert_eq!(slots.iter().filter(|s| s.is_empty()).count(), 1, "{text}");
+    for slot in slots.iter().filter(|s| !s.is_empty()) {
         assert!(["0", "1", "2"].contains(slot), "{text}");
     }
+    // every run has its own id
+    let unique: std::collections::BTreeSet<&&str> = ids.iter().collect();
+    assert_eq!(unique.len(), 9, "{text}");
 }
 
 #[cfg(unix)]

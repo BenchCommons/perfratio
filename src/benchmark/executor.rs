@@ -84,6 +84,8 @@ struct ProcessSettings<'a> {
     counters: Option<&'a crate::perf_counters::CounterConfig>,
     /// --topdown
     topdown: Option<&'a crate::topdown::TopdownConfig>,
+    /// --artifact-dir
+    artifact_dir: Option<&'a std::path::Path>,
     /// --expect-output-sha256, --validate
     validation: Option<&'a crate::validation::ValidationConfig>,
 }
@@ -100,6 +102,7 @@ impl<'a> ProcessSettings<'a> {
             output_metrics_stderr: options.output_metrics_stderr,
             counters: options.counters.as_ref(),
             topdown: options.topdown.as_ref(),
+            artifact_dir: options.artifact_dir.as_deref(),
             validation: options.validation.as_ref(),
         }
     }
@@ -124,6 +127,7 @@ fn run_command_and_measure_common(
         output_metrics_stderr,
         counters,
         topdown,
+        artifact_dir,
         validation,
     } = process;
     let validate_stdout = validation.is_some_and(|v| v.applies_to(iteration));
@@ -160,13 +164,26 @@ fn run_command_and_measure_common(
         "PERFRATIO_RANDOMIZED_ENVIRONMENT_OFFSET",
         randomized_environment_offset::value(),
     );
-    // `--jobs`: the worker slot, so that commands can keep per-worker state
-    if let Some(worker) = super::pool::current_worker() {
-        command.env("PERFRATIO_WORKER", worker.to_string());
-    }
 
     if let Some(value) = iteration.to_env_var_value() {
         command.env("PERFRATIO_ITERATION", value);
+    }
+
+    // Unique run identity (docs/specs/run-identity.md): the prepare, the
+    // command and the conclude of one run see the same id
+    let identity = crate::run_id::identity();
+    command.env("PERFRATIO_RUN_ID", identity.run_id.to_string());
+    // `--jobs`: the worker slot of the pool (`docs/specs/worker-pool.md`)
+    match identity.worker_id.or_else(super::pool::current_worker) {
+        Some(worker) => command.env("PERFRATIO_WORKER_ID", worker.to_string()),
+        // not inherited from an outer perfratio
+        None => command.env_remove("PERFRATIO_WORKER_ID"),
+    };
+    if let Some(dir) = artifact_dir {
+        let run_dir = dir.join(format!("run-{}", identity.run_id));
+        std::fs::create_dir_all(&run_dir)
+            .with_context(|| format!("Could not create the run directory {run_dir:?}"))?;
+        command.env("PERFRATIO_RUN_DIR", run_dir);
     }
 
     #[cfg(target_os = "linux")]
@@ -461,13 +478,17 @@ fn run_batch(
     run_one: impl Fn() -> Result<TimerResult> + Sync,
 ) -> Result<Vec<BatchInstance>> {
     let barrier = std::sync::Barrier::new(n);
+    // Every instance is a run of its own: its own id and worker id
+    let ids = crate::run_id::batch_ids(n);
     let registry = crate::timer::batch::BatchRegistry::default();
     let base = std::time::Instant::now();
     let outcomes: Vec<Result<BatchInstance>> = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..n)
-            .map(|_| {
-                scope.spawn(|| {
-                    let _installed = crate::timer::batch::install(&registry);
+            .map(|worker| {
+                let (registry, barrier, run_one) = (&registry, &barrier, &run_one);
+                scope.spawn(move || {
+                    let _installed = crate::timer::batch::install(registry);
+                    let _identity = crate::run_id::enter_worker(ids, worker);
                     barrier.wait();
                     let offset = base.elapsed().as_secs_f64();
                     run_one().map(|result| BatchInstance { offset, result })
@@ -574,6 +595,7 @@ pub fn aggregate_batch(instances: Vec<BatchInstance>) -> (TimerResult, Vec<Insta
         timed_out: instances.iter().any(|i| i.result.timed_out),
         until_matched: None,
         custom_metrics: std::collections::BTreeMap::new(),
+        leftover_processes: instances.iter().any(|i| i.result.leftover_processes),
         validation_stdout: None,
     };
     (aggregate, timings)
@@ -675,6 +697,7 @@ impl Executor for RawExecutor<'_> {
                 custom_metrics: result.custom_metrics,
                 stdout: result.validation_stdout,
                 instances,
+                leftover_processes: result.leftover_processes,
             },
             status,
         ))
@@ -683,6 +706,7 @@ impl Executor for RawExecutor<'_> {
     /// Without a shell only the fork/exec work between enabling the counters
     /// and the `exec` of the command remains: measure it with `true`.
     fn calibrate(&mut self) -> Result<()> {
+        let _calibration = crate::run_id::enter_calibration();
         if !crate::perf_counters::needs_calibration(
             self.options.counters.as_ref(),
             self.options.topdown.as_ref(),
@@ -829,6 +853,7 @@ impl Executor for ShellExecutor<'_> {
                 custom_metrics: result.custom_metrics,
                 stdout: result.validation_stdout,
                 instances,
+                leftover_processes: result.leftover_processes,
             },
             status,
         ))
@@ -836,6 +861,7 @@ impl Executor for ShellExecutor<'_> {
 
     /// Measure the average shell spawning time
     fn calibrate(&mut self) -> Result<()> {
+        let _calibration = crate::run_id::enter_calibration();
         const COUNT: u64 = 50;
         let progress_bar = if self.options.output_style != OutputStyleOption::Disabled {
             Some(get_progress_bar(
@@ -914,6 +940,7 @@ impl Executor for ShellExecutor<'_> {
             timed_out: false,
             custom_metrics: std::collections::BTreeMap::new(),
             instances: Vec::new(),
+            leftover_processes: false,
             stdout: None,
         });
 
@@ -1127,6 +1154,7 @@ impl Executor for MockExecutor {
                 timed_out,
                 custom_metrics: std::collections::BTreeMap::new(),
                 instances,
+                leftover_processes: false,
                 stdout: self
                     .validation
                     .as_ref()
@@ -1238,6 +1266,7 @@ mod batch_tests {
                 timed_out: false,
                 until_matched: None,
                 custom_metrics: Default::default(),
+                leftover_processes: false,
                 validation_stdout: None,
             },
         }

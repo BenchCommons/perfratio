@@ -24,7 +24,7 @@ thread_local! {
 }
 
 /// Worker slot (0-based) of the calling thread, if it belongs to a pool.
-/// Exported to the benchmarked commands as `PERFRATIO_WORKER`.
+/// Exported to the benchmarked commands as `PERFRATIO_WORKER_ID`.
 pub fn current_worker() -> Option<usize> {
     WORKER.with(Cell::get)
 }
@@ -124,8 +124,8 @@ struct RunContext<'a> {
 }
 
 enum Outcome {
-    TimedOut,
-    Run(Box<TimingResult>, ExitStatus),
+    TimedOut { leftovers: bool },
+    Run(Box<TimingResult>, ExitStatus, crate::run_id::RunIds),
 }
 
 struct Finished {
@@ -138,8 +138,11 @@ struct Finished {
 /// One run on a worker: `--prepare`, the command, `--conclude`.
 fn execute(ctx: &RunContext<'_>, iteration: u64) -> Result<Outcome> {
     let it = BenchmarkIteration::Benchmark(iteration);
+    // Prepare, command and conclude of the run share one run id
+    let run = crate::run_id::enter(1);
+    let mut leftovers = false;
     if let Some(prepare) = &ctx.preparation {
-        run_intermediate(
+        leftovers |= run_intermediate(
             ctx.executor,
             ctx.output_policy,
             ctx.options,
@@ -147,16 +150,19 @@ fn execute(ctx: &RunContext<'_>, iteration: u64) -> Result<Outcome> {
             it,
             "preparation",
             PREPARATION_ERROR,
-        )?;
+        )?
+        .leftover_processes;
     }
-    let (res, status) =
+    let (mut res, status) =
         ctx.executor
             .run_command_and_measure(ctx.command, it, None, ctx.output_policy)?;
     if res.timed_out {
-        return Ok(Outcome::TimedOut);
+        return Ok(Outcome::TimedOut {
+            leftovers: leftovers || res.leftover_processes,
+        });
     }
     if let Some(conclude) = &ctx.conclusion {
-        run_intermediate(
+        leftovers |= run_intermediate(
             ctx.executor,
             ctx.output_policy,
             ctx.options,
@@ -164,9 +170,11 @@ fn execute(ctx: &RunContext<'_>, iteration: u64) -> Result<Outcome> {
             it,
             "conclusion",
             CONCLUSION_ERROR,
-        )?;
+        )?
+        .leftover_processes;
     }
-    Ok(Outcome::Run(Box::new(res), status))
+    res.leftover_processes |= leftovers;
+    Ok(Outcome::Run(Box::new(res), status, run.ids()))
 }
 
 /// Execute the remaining timed runs of `runners` on `jobs` workers.
@@ -274,16 +282,25 @@ pub fn run_pool(
             dispatcher.finished(done.command);
             let runner = &mut runners[done.command];
             match done.outcome {
-                Ok(Outcome::Run(res, status)) => {
+                Ok(Outcome::Run(res, status, ids)) => {
                     runner.workers_seen.insert(done.slot);
-                    match runner.record_run(*res, status, None, done.iteration) {
+                    runner.note_leftovers(&res);
+                    match runner.record_run(*res, status, None, done.iteration, ids) {
                         Ok(()) => on_run(runner),
                         Err(e) => {
                             first_error.get_or_insert(e);
                         }
                     }
                 }
-                Ok(Outcome::TimedOut) => runner.timed_out = true,
+                Ok(Outcome::TimedOut { leftovers }) => {
+                    if leftovers {
+                        runner.note_leftovers(&TimingResult {
+                            leftover_processes: true,
+                            ..Default::default()
+                        });
+                    }
+                    runner.timed_out = true;
+                }
                 Err(e) if e.is::<crate::error::Interrupted>() => {}
                 Err(e) => {
                     first_error.get_or_insert(e);

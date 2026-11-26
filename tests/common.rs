@@ -6,6 +6,7 @@ pub fn perfratio_raw_command() -> Command {
     cmd
 }
 
+#[allow(dead_code)]
 pub fn perfratio() -> assert_cmd::Command {
     assert_cmd::Command::from_std(perfratio_raw_command())
 }

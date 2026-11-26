@@ -6,9 +6,14 @@ static PRESSES: AtomicU8 = AtomicU8::new(0);
 pub fn install() -> anyhow::Result<()> {
     match ctrlc::set_handler(|| {
         if PRESSES.fetch_add(1, Ordering::SeqCst) >= 1 {
-            // Second Ctrl-C: give up immediately
+            // Second Ctrl-C: kill the runs in flight and give up immediately
+            crate::timer::tree::kill_all();
             std::process::exit(130);
         }
+        // The measured commands run in process groups (Job Objects on
+        // Windows) of their own, which the terminal does not signal: stop the
+        // whole tree of every run in flight.
+        crate::timer::tree::interrupt();
     }) {
         Ok(()) => Ok(()),
         Err(ctrlc::Error::MultipleHandlers) => Ok(()),

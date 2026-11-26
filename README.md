@@ -242,6 +242,13 @@ perfratio also printed a warning saying so. Other useful flags: `--affinity <CPU
 `--priority <POLICY>`, `--discard-outliers`, `--timeout <DURATION>`,
 `--concurrency <N>` (N simultaneous instances per run, `{param}` allowed for a scaling curve, see [docs/specs/concurrency.md](docs/specs/concurrency.md)), `--jobs <N|auto>` (N independent runs at the same time to collect samples faster, results marked as contended, see [docs/specs/worker-pool.md](docs/specs/worker-pool.md)).
 
+Every run has a unique `PERFRATIO_RUN_ID` (and `PERFRATIO_WORKER_ID` with `--concurrency`), also
+visible to `--prepare`/`--conclude`, so parallel runs can use `in.$PERFRATIO_RUN_ID.txt` without
+colliding; `--artifact-dir DIR` gives each run a directory (`PERFRATIO_RUN_DIR`), see
+[docs/specs/run-identity.md](docs/specs/run-identity.md). Ctrl-C and `--timeout` kill the whole
+process tree, and descendants that outlive the command are killed and flagged
+(`leftover_processes`), see [docs/specs/process-tree.md](docs/specs/process-tree.md).
+
 ## Platform support
 
 The CI builds and tests these targets and attaches them to releases. Features differ by platform.

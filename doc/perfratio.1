@@ -195,6 +195,8 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR N ]
 .RB [ \-j | \-\-jobs
 .IR N|auto ]
+.RB [ \-\-artifact\-dir
+.IR DIR ]
 .RB [ \-\-until
 .IR TEXT ]
 .RB [ \-\-until\-stderr ]
@@ -498,7 +500,11 @@ Start N instances of the command simultaneously for every run. The reported time
 .HP
 \fB\-j\fR, \fB\-\-jobs\fR \fIN|auto\fP
 .IP
-Run up to N independent invocations at the same time to collect samples faster. Every run is still timed on its own, unlike with \fB\-\-concurrency\fR. Parallel runs compete for caches, memory bandwidth and CPUs, so the results are marked \fBcontended\fR in the JSON export and are not equivalent to sequential samples; a warning says so. auto uses the number of logical CPUs. Each worker exports its slot to the commands as PERFRATIO_WORKER. Conflicts with \fB\-\-concurrency\fR, \fB\-\-energy\fR, \fB\-\-optimize\fR and \fB\-\-subtract\fR. Default: 1.
+Run up to N independent invocations at the same time to collect samples faster. Every run is still timed on its own, unlike with \fB\-\-concurrency\fR. Parallel runs compete for caches, memory bandwidth and CPUs, so the results are marked \fBcontended\fR in the JSON export and are not equivalent to sequential samples; a warning says so. auto uses the number of logical CPUs. Each worker exports its 0-based slot to the commands and to \fB\-\-prepare\fR/\fB\-\-conclude\fR as \fBPERFRATIO_WORKER_ID\fR. Conflicts with \fB\-\-concurrency\fR, \fB\-\-energy\fR, \fB\-\-optimize\fR and \fB\-\-subtract\fR. Default: 1.
+.HP
+\fB\-\-artifact\-dir\fR \fIDIR\fP
+.IP
+Create \fIDIR\fR/run\-<id> for every run and export its path as \fBPERFRATIO_RUN_DIR\fR to \fB\-\-prepare\fR, the command and \fB\-\-conclude\fR of that run (and to \fB\-\-setup\fR and \fB\-\-cleanup\fR), so that parallel runs never share artifact files. The directories are kept.
 .HP
 \fB\-\-until\fR \fITEXT\fP
 .IP
@@ -686,6 +692,22 @@ Print help (see a summary with \fB\-h\fR).
 \fB\-V\fR, \fB\-\-version\fR
 .IP
 Print version.
+.SH ENVIRONMENT
+Commands, \fB\-\-prepare\fR, \fB\-\-conclude\fR, \fB\-\-setup\fR and \fB\-\-cleanup\fR run with these variables. A command line expands them only when it runs through a shell (not with \fB\-N\fR).
+.TP
+\fBPERFRATIO_RUN_ID\fR
+Unique number of the run, starting at 0 and counting warmup and timed runs of all commands. The \fB\-\-prepare\fR, the command and the \fB\-\-conclude\fR of one run see the same id. With \fB\-\-concurrency\fR N every instance has its own id (N consecutive ids per run; \fB\-\-prepare\fR and \fB\-\-conclude\fR see the id of instance 0), so \fBtmp.$PERFRATIO_RUN_ID\fR never collides.
+.TP
+\fBPERFRATIO_WORKER_ID\fR
+With \fB\-\-concurrency\fR N (N > 1): the position of the instance in its batch, from 0.
+.TP
+\fBPERFRATIO_RUN_DIR\fR
+With \fB\-\-artifact\-dir\fR: the directory of the run.
+.TP
+\fBPERFRATIO_ITERATION\fR
+Index of the timed run (\fB0\fR, \fB1\fR, ...) or \fBwarmup\-N\fR. Not unique across commands or instances.
+.SH PROCESS TREES
+Every command runs in a process group (Job Object on Windows) of its own. \fB\-\-timeout\fR and Ctrl\-C kill the whole tree of every run in flight, and an interrupted run never enters the statistics. Processes that outlive the command (background or daemonized children) are killed after the run, reported with a warning and flagged by \fBleftover_processes\fR in the JSON export. On Linux this includes children that left the process group, found through a subreaper. With \fB\-\-energy\fR the package energy is shared by all concurrent instances: it is reported for the whole batch (\fBenergy_scope\fR is \fBbatch\fR), never per instance.
 .SH EXAMPLES
 .LP
 Basic benchmark of two commands:

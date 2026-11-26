@@ -95,6 +95,15 @@ pub struct BenchmarkRunner<'a> {
     pub instance_times: Vec<Vec<Second>>,
     /// `--concurrency N` (N > 1): instance exit codes of every run
     pub instance_exit_codes: Vec<Vec<Option<i32>>>,
+    /// `PERFRATIO_RUN_ID` of every timed run, aligned with the times (with
+    /// `--concurrency`: the id of instance 0, which `--prepare` and
+    /// `--conclude` also see)
+    pub run_ids: Vec<u64>,
+    /// `--concurrency N` (N > 1): `PERFRATIO_RUN_ID` of every instance of every
+    /// run; the position in the row is its `PERFRATIO_WORKER_ID`
+    pub instance_run_ids: Vec<Vec<u64>>,
+    /// A command, its `--prepare` or `--conclude` left processes behind
+    leftover_processes: std::cell::Cell<bool>,
     /// OS resource counters per run (`None` where unavailable, e.g. Windows)
     pub resource_counters: Vec<Option<timing_result::ResourceCounters>>,
     /// Hardware counter totals per run (`--counters`), aligned with the times
@@ -252,6 +261,9 @@ impl<'a> BenchmarkRunner<'a> {
             exit_codes: vec![],
             instance_times: vec![],
             instance_exit_codes: vec![],
+            run_ids: vec![],
+            instance_run_ids: vec![],
+            leftover_processes: std::cell::Cell::new(false),
             resource_counters: vec![],
             hw_counters: vec![],
             per_run_values: vec![],
@@ -278,7 +290,7 @@ impl<'a> BenchmarkRunner<'a> {
         kind: &'static str,
         error_output: &'static str,
     ) -> Result<TimingResult> {
-        run_intermediate(
+        let result = run_intermediate(
             self.executor,
             self.output_policy,
             self.options,
@@ -286,7 +298,15 @@ impl<'a> BenchmarkRunner<'a> {
             iteration,
             kind,
             error_output,
-        )
+        )?;
+        self.note_leftovers(&result);
+        Ok(result)
+    }
+
+    pub(crate) fn note_leftovers(&self, result: &TimingResult) {
+        if result.leftover_processes {
+            self.leftover_processes.set(true);
+        }
     }
 
     pub fn run_setup(&self) -> Result<TimingResult> {
@@ -359,6 +379,8 @@ impl<'a> BenchmarkRunner<'a> {
 
     /// Perform one warmup run and return its wall-clock time.
     pub fn run_warmup_iteration(&mut self, iteration: u64) -> Result<Second> {
+        // Prepare, command and conclude of the run share one run id
+        let _run = crate::run_id::enter(self.concurrency());
         let _ = self.run_preparation(BenchmarkIteration::Warmup(iteration))?;
         let (result, _) = self.executor.run_command_and_measure(
             self.command,
@@ -366,6 +388,7 @@ impl<'a> BenchmarkRunner<'a> {
             None,
             self.output_policy,
         )?;
+        self.note_leftovers(&result);
         if result.timed_out {
             self.timed_out = true;
             return Ok(result.time_real);
@@ -594,6 +617,7 @@ impl<'a> BenchmarkRunner<'a> {
     }
 
     pub fn run_initial_measurement(&mut self) -> Result<()> {
+        let run = crate::run_id::enter(self.concurrency());
         let preparation_result = self.run_preparation(BenchmarkIteration::Benchmark(0))?;
         let preparation_overhead =
             preparation_result.map_or(0.0, |res| res.time_total + self.executor.time_overhead());
@@ -611,6 +635,7 @@ impl<'a> BenchmarkRunner<'a> {
         let window = window_start.elapsed().as_secs_f64();
         let energy_initial = self.stop_energy(res.time_real, window);
         let success = status.success();
+        self.note_leftovers(&res);
 
         if res.timed_out {
             self.timed_out = true;
@@ -662,7 +687,7 @@ impl<'a> BenchmarkRunner<'a> {
             .push(self.subtract_baseline_energy(energy_initial));
         self.domain_measurements.push(self.pending_domains.take());
         self.exit_codes.push(extract_exit_code(status));
-        self.push_instances(&res);
+        self.push_instances(&res, run.ids());
         self.resource_counters.push(res.counters);
         self.hw_counters.push(res.hw_counters);
         self.per_run_values.push(
@@ -676,6 +701,7 @@ impl<'a> BenchmarkRunner<'a> {
     }
 
     pub fn run_timed_iteration(&mut self, iteration: u64) -> Result<()> {
+        let run = crate::run_id::enter(self.concurrency());
         self.run_preparation(BenchmarkIteration::Benchmark(iteration))?;
 
         if let Some(sampler) = self.energy_sampler.as_mut() {
@@ -690,13 +716,14 @@ impl<'a> BenchmarkRunner<'a> {
         )?;
         let window = window_start.elapsed().as_secs_f64();
         let energy = self.stop_energy(res.time_real, window);
+        self.note_leftovers(&res);
 
         if res.timed_out {
             self.timed_out = true;
             return Ok(());
         }
 
-        self.record_run(res, status, energy, iteration)?;
+        self.record_run(res, status, energy, iteration, run.ids())?;
 
         self.run_conclusion(BenchmarkIteration::Benchmark(iteration))?;
 
@@ -710,6 +737,7 @@ impl<'a> BenchmarkRunner<'a> {
         status: std::process::ExitStatus,
         energy: Option<f64>,
         iteration: u64,
+        ids: crate::run_id::RunIds,
     ) -> Result<()> {
         let success = status.success();
         let validity = self.validate_run(iteration, res.stdout.take(), success)?;
@@ -724,7 +752,7 @@ impl<'a> BenchmarkRunner<'a> {
             .push(self.subtract_baseline_energy(energy));
         self.domain_measurements.push(self.pending_domains.take());
         self.exit_codes.push(extract_exit_code(status));
-        self.push_instances(&res);
+        self.push_instances(&res, ids);
         self.resource_counters.push(res.counters);
         self.hw_counters.push(res.hw_counters);
         self.per_run_values.push(
@@ -781,8 +809,10 @@ impl<'a> BenchmarkRunner<'a> {
     }
 
     /// `--concurrency`: remember the instances of the run just measured.
-    fn push_instances(&mut self, res: &TimingResult) {
+    fn push_instances(&mut self, res: &TimingResult, ids: crate::run_id::RunIds) {
+        self.run_ids.push(ids.first);
         if self.concurrency() > 1 {
+            self.instance_run_ids.push(ids.all());
             self.instance_times
                 .push(res.instances.iter().map(|i| i.time_real).collect());
             self.instance_exit_codes
@@ -850,6 +880,15 @@ impl<'a> BenchmarkRunner<'a> {
                 .collect();
         }
         self.exit_codes = select(&self.exit_codes, keep);
+        if self.run_ids.len() == run_count {
+            self.run_ids = select(&self.run_ids, keep);
+        }
+        if self.instance_run_ids.len() == run_count {
+            self.instance_run_ids = keep
+                .iter()
+                .map(|&index| self.instance_run_ids[index].clone())
+                .collect();
+        }
         if self.validity.len() == run_count {
             self.validity = select(&self.validity, keep);
         }
@@ -1700,6 +1739,10 @@ impl<'a> BenchmarkRunner<'a> {
         // Warnings
         let mut warnings = vec![];
 
+        if self.leftover_processes.get() {
+            warnings.push(Warnings::LeftoverProcesses);
+        }
+
         let diagnostics = if !self.timed_out && !self.times_real.is_empty() {
             // Check execution time
             if self.executor.uses_shell() && self.times_real.iter().any(|&t| t < MIN_EXECUTION_TIME)
@@ -1995,7 +2038,13 @@ impl<'a> BenchmarkRunner<'a> {
             instance_times: concurrency.map(|_| self.instance_times),
             throughput,
             instance_percentiles,
-            energy_per_instance_joules: concurrency.and_then(|n| mean_energy.map(|e| e / n as f64)),
+            // Package energy is shared by all instances: never divided per instance
+            energy_per_instance_joules: None,
+            energy_scope: mean_energy
+                .map(|_| benchmark_result::energy_scope(concurrency).to_string()),
+            run_ids: Some(self.run_ids).filter(|ids| !ids.is_empty()),
+            instance_run_ids: concurrency.map(|_| self.instance_run_ids),
+            leftover_processes: self.leftover_processes.get(),
             workers_used: (self.options.jobs > 1).then_some(self.workers_seen.len()),
             contended: (self.options.jobs > 1).then_some(true),
             parameters: self
