@@ -3,37 +3,64 @@ use std::collections::BTreeMap;
 
 use crate::util::units::Second;
 
-/// OS resource counters of a single run (from `rusage`, Unix only).
+/// OS resource counters of a single run. A counter the platform cannot report is
+/// `None` (unavailable), never 0. See `docs/specs/windows-resource-usage.md`.
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq)]
 pub struct ResourceCounters {
     /// Voluntary context switches: the process blocked (I/O, locks, sleep)
-    pub voluntary_ctx_switches: u64,
+    pub voluntary_ctx_switches: Option<u64>,
     /// Involuntary context switches: the process was preempted
-    pub involuntary_ctx_switches: u64,
-    /// Page faults served without I/O
-    pub minor_faults: u64,
+    pub involuntary_ctx_switches: Option<u64>,
+    /// Page faults served without I/O (Windows: all page faults, soft and hard)
+    pub minor_faults: Option<u64>,
     /// Page faults that required I/O
-    pub major_faults: u64,
-    /// Block input operations (real disk reads)
-    pub block_input_ops: u64,
-    /// Block output operations (real disk writes)
-    pub block_output_ops: u64,
+    pub major_faults: Option<u64>,
+    /// Block input operations (Windows: read operations issued)
+    pub block_input_ops: Option<u64>,
+    /// Block output operations (Windows: write operations issued)
+    pub block_output_ops: Option<u64>,
+}
+
+impl ResourceCounters {
+    /// Counters as Windows reports them: job object accounting gives the total
+    /// page fault count and the read/write operation counts of the whole process
+    /// tree. Windows has no context switch counters per process and does not
+    /// split page faults into minor and major, so those stay unavailable.
+    pub fn from_windows(page_faults: u64, read_ops: u64, write_ops: u64) -> Self {
+        ResourceCounters {
+            voluntary_ctx_switches: None,
+            involuntary_ctx_switches: None,
+            minor_faults: Some(page_faults),
+            major_faults: None,
+            block_input_ops: Some(read_ops),
+            block_output_ops: Some(write_ops),
+        }
+    }
 }
 
 /// Per-run resource counters of a benchmark, exported with `--resource-usage`.
+/// A column is `None` (omitted from the JSON) when the platform cannot report it.
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ResourceSeries {
-    pub voluntary_ctx_switches: Vec<u64>,
-    pub involuntary_ctx_switches: Vec<u64>,
-    pub minor_faults: Vec<u64>,
-    pub major_faults: Vec<u64>,
-    pub block_input_ops: Vec<u64>,
-    pub block_output_ops: Vec<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voluntary_ctx_switches: Option<Vec<u64>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub involuntary_ctx_switches: Option<Vec<u64>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub minor_faults: Option<Vec<u64>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub major_faults: Option<Vec<u64>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_input_ops: Option<Vec<u64>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_output_ops: Option<Vec<u64>>,
 }
 
 impl ResourceSeries {
     pub fn from_counters(counters: &[ResourceCounters]) -> Self {
-        let column = |f: fn(&ResourceCounters) -> u64| counters.iter().map(f).collect();
+        let column = |f: fn(&ResourceCounters) -> Option<u64>| -> Option<Vec<u64>> {
+            counters.iter().map(f).collect()
+        };
         ResourceSeries {
             voluntary_ctx_switches: column(|c| c.voluntary_ctx_switches),
             involuntary_ctx_switches: column(|c| c.involuntary_ctx_switches),
@@ -75,7 +102,7 @@ pub struct TimingResult {
     /// Energy consumed during execution in Joules (if measured)
     pub energy_joules: Option<f64>,
 
-    /// OS resource counters (None on Windows and for mocked runs)
+    /// OS resource counters (None for mocked runs)
     pub counters: Option<ResourceCounters>,
 
     /// Whether this run timed out
@@ -94,19 +121,34 @@ pub struct TimingResult {
 fn test_resource_series_from_counters() {
     let counters = [
         ResourceCounters {
-            voluntary_ctx_switches: 1,
-            minor_faults: 10,
+            voluntary_ctx_switches: Some(1),
+            minor_faults: Some(10),
             ..Default::default()
         },
         ResourceCounters {
-            voluntary_ctx_switches: 2,
-            block_output_ops: 7,
+            voluntary_ctx_switches: Some(2),
+            minor_faults: Some(0),
             ..Default::default()
         },
     ];
     let series = ResourceSeries::from_counters(&counters);
-    assert_eq!(series.voluntary_ctx_switches, vec![1, 2]);
-    assert_eq!(series.minor_faults, vec![10, 0]);
-    assert_eq!(series.block_output_ops, vec![0, 7]);
-    assert_eq!(series.major_faults, vec![0, 0]);
+    assert_eq!(series.voluntary_ctx_switches, Some(vec![1, 2]));
+    assert_eq!(series.minor_faults, Some(vec![10, 0]));
+    // never reported: unavailable, not zero
+    assert_eq!(series.major_faults, None);
+}
+
+#[test]
+fn test_windows_counters_leave_unsupported_fields_unavailable() {
+    let c = ResourceCounters::from_windows(120, 7, 3);
+    assert_eq!(c.voluntary_ctx_switches, None);
+    assert_eq!(c.involuntary_ctx_switches, None);
+    assert_eq!(c.major_faults, None);
+    assert_eq!(c.minor_faults, Some(120));
+    let series = ResourceSeries::from_counters(&[c, c]);
+    let json = serde_json::to_value(&series).unwrap();
+    assert_eq!(json["minor_faults"], serde_json::json!([120, 120]));
+    assert_eq!(json["block_input_ops"], serde_json::json!([7, 7]));
+    assert!(json.get("voluntary_ctx_switches").is_none());
+    assert!(json.get("major_faults").is_none());
 }

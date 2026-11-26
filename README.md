@@ -94,7 +94,8 @@ how to reduce noise. The manual page is [doc/perfratio.1](doc/perfratio.1).
 ## Energy and memory
 
 **Memory.** Peak memory (RSS) of each run is always measured and shown as `Peak Memory`.
-`--resource-usage` (Unix only) adds context switches, page faults and block I/O per run.
+`--resource-usage` adds context switches, page faults and block I/O per run. Windows reports
+page faults and I/O operation counts only; the other counters show as `n/a` ([spec](docs/specs/windows-resource-usage.md)).
 
 **Energy.** `-E, --energy` measures energy in joules and average power in watts. It reads RAPL
 counters through Linux powercap sysfs, so it needs **bare-metal Linux with a readable
@@ -162,7 +163,7 @@ request comment. A GitHub Actions example is in [doc/ci.md](doc/ci.md).
 
 `--export-json <FILE>` (or `-e results.json`) writes the summary statistics and every run's
 timings. perfratio owns this output, and consumers such as `tools-benchmark` read it.
-The current version is `"1.3"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested. The legacy top-level `joulex` key was removed in `schemaVersion` 1.0: read `perfratio` instead ([docs/MIGRATION.md](docs/MIGRATION.md)).
+The current version is `"1.4"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested. The legacy top-level `joulex` key was removed in `schemaVersion` 1.0: read `perfratio` instead ([docs/MIGRATION.md](docs/MIGRATION.md)).
 
 The contract is a top-level `"schemaVersion": "MAJOR.MINOR"` string. Consumers must ignore
 unknown keys and accept any MINOR version of the MAJOR version they support. A removed or
@@ -214,10 +215,10 @@ The CI builds and tests these targets and attaches them to releases. Features di
 |---|---|---|---|
 | Time, CPU time, peak memory | yes | yes | yes |
 | Energy (`--energy`, RAPL) | bare metal, via sysfs `energy_uj` or the perf power PMU | no | no |
-| `--resource-usage` | yes | yes | no (Unix only) |
+| `--resource-usage` | yes | yes | partial (page faults, I/O operations; no context switches) |
 | `--affinity` | yes | no | yes |
 | `--priority realtime` | yes (`SCHED_FIFO`) | no | yes |
-| `--check-system` | yes | yes (fewer checks) | no |
+| `--check-system` | yes | yes (fewer checks) | yes (power source, power plan, CPU load, frequency limit) |
 
 Release targets: `x86_64`, `aarch64`, `i686` and `arm` Linux (gnu and musl), `x86_64` and
 `aarch64` macOS, and `x86_64`, `i686` and `aarch64` Windows (MSVC).

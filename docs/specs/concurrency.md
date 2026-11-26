@@ -1,6 +1,6 @@
 # Spec: `--concurrency <N>` concurrent load mode (#53)
 
-**Status:** Shipped in 1.x (first iteration, schemaVersion 1.3). See "As shipped" at the end for the differences from this proposal.
+**Status:** Shipped in 1.x (first iteration, schemaVersion 1.4). See "As shipped" at the end for the differences from this proposal.
 
 ## Problem / Motivation
 References: #53, `sharkdp/hyperfine#58`, `megafine`, #46 (per-run rusage), #240 (JSON contract).

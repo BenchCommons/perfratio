@@ -483,16 +483,18 @@ pub fn aggregate_batch(instances: Vec<BatchInstance>) -> (TimerResult, Vec<Insta
         })
         .collect();
 
+    // A column is only known if every instance reports it
+    let add = |a: Option<u64>, b: Option<u64>| a.zip(b).map(|(a, b)| a + b);
     let counters = instances
         .iter()
         .filter_map(|i| i.result.counters)
         .reduce(|a, b| ResourceCounters {
-            voluntary_ctx_switches: a.voluntary_ctx_switches + b.voluntary_ctx_switches,
-            involuntary_ctx_switches: a.involuntary_ctx_switches + b.involuntary_ctx_switches,
-            minor_faults: a.minor_faults + b.minor_faults,
-            major_faults: a.major_faults + b.major_faults,
-            block_input_ops: a.block_input_ops + b.block_input_ops,
-            block_output_ops: a.block_output_ops + b.block_output_ops,
+            voluntary_ctx_switches: add(a.voluntary_ctx_switches, b.voluntary_ctx_switches),
+            involuntary_ctx_switches: add(a.involuntary_ctx_switches, b.involuntary_ctx_switches),
+            minor_faults: add(a.minor_faults, b.minor_faults),
+            major_faults: add(a.major_faults, b.major_faults),
+            block_input_ops: add(a.block_input_ops, b.block_input_ops),
+            block_output_ops: add(a.block_output_ops, b.block_output_ops),
         });
 
     let status = instances

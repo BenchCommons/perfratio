@@ -28,11 +28,12 @@ anything that is not ✔.
 | Load average / CPU load | 1-min load < max(1, 0.1 × CPUs) (`/proc/loadavg`) | 1-min load < max(1, 0.5 × CPUs) (`getloadavg`) | `GetSystemTimes` delta < 10% busy |
 | Power source | a `Mains` supply online (skipped without one, e.g. servers) | `pmset -g batt` | `GetSystemPowerStatus` (AC vs battery, battery saver) |
 | Low Power Mode / Power plan | — | `pmset -g` `lowpowermode 0` | `PowerGetActiveScheme` (High/Ultimate performance) |
+| CPU frequency limit | — | — | `CallNtPowerInformation` `MhzLimit` < `MaxMhz` on any CPU (#291) |
 | Thermal | max `thermal_zone*/temp` < 85 °C | `pmset -g therm` `CPU_Speed_Limit` = 100 | — |
 
 ## Environment metadata (always, not only with `--check-system`)
 `joulex.system` in the JSON gains `cpu_model` (Linux `/proc/cpuinfo`, macOS
-`sysctlbyname("machdep.cpu.brand_string")`, Windows `PROCESSOR_IDENTIFIER`) and
+`sysctlbyname("machdep.cpu.brand_string")`, Windows registry `ProcessorNameString`, else `PROCESSOR_IDENTIFIER`) and
 `kernel` (`uname` release on Unix). Both are omitted when unknown. There is still
 no hostname or user name.
 
