@@ -1,6 +1,6 @@
 # Spec: `--concurrency <N>` concurrent load mode (#53)
 
-**Status:** Proposed. Scheduled for 1.x, not 1.0.
+**Status:** Shipped in 1.x (first iteration, schemaVersion 1.3). See "As shipped" at the end for the differences from this proposal.
 
 ## Problem / Motivation
 References: #53, `sharkdp/hyperfine#58`, `megafine`, #46 (per-run rusage), #240 (JSON contract).
@@ -133,3 +133,31 @@ Per result, only when `N > 1`:
 - Makespan statistics, per-instance percentiles and throughput.
 - Works with grouped and round-robin schedules.
 - Documented with caveats (CPU count, I/O contention, shared resources).
+
+## As shipped (first iteration, #53)
+- **Reaping.** Each instance runs on its own thread (one `execute_and_measure` per instance, released
+  together by a barrier), so every instance is timed by its own timer and waited with its own
+  `wait4(pid)` (Unix) or process handle (Windows). An early finisher is never charged the time of a
+  later one, with the same code on Linux, macOS and Windows. The `wait4(-1)` batch variant and
+  `WaitForMultipleObjects` of the proposal were not needed.
+- **Makespan.** `time_real` = latest process exit minus earliest process start over the instances
+  (`aggregate_batch` in `src/benchmark/executor.rs`, unit tested with synthetic start offsets).
+- **Timeout.** Each instance has its own watchdog armed at its own spawn, so the batch deadline is
+  `--timeout` after the last spawn (spawn skew is microseconds to a few milliseconds). Every instance
+  is killed (process group on Unix, job object on Windows) and the run is marked timed out.
+- **Failures.** Without `-i`, a failing instance fails the benchmark (the other instances of that run
+  finish first, they are not killed). With `-i`, `exit_codes` has N entries per run; for
+  `--omit-failed-runs` the run counts as failed if any instance failed and all N are omitted.
+- **Shell overhead.** The calibrated shell spawn time is subtracted once from the makespan, once from
+  each instance time, and N times from the summed user/system time (CPU time does not overlap).
+- **Rejected combinations (clap errors).** `--until`, `--show-output-on-failure`, `--output-metric`
+  (as proposed) and `--subtract` (a baseline of N instances has no useful meaning).
+  `--show-output` / `--output=inherit` warn that output interleaves.
+- **Warnings.** N above the logical CPU count; mean makespan below 5 ms x N.
+- **Energy.** The sampler brackets the whole batch (`energy_joules` per run is the batch energy);
+  `energy_per_instance_joules` is the mean divided by N. Not run on real RAPL hardware.
+- **Mock executor (`--debug-mode`).** Instance `i` takes `(1 + 0.01 i)` x the requested time, so tests
+  are deterministic.
+- **Not done (follow-ups).** `{param}` in the option value; per-instance capture for `--until` /
+  `--output-metric`; per-instance rusage in JSON; killing the already started instances when a
+  later spawn fails (the batch waits for them); other exports (CSV/Markdown `concurrency` column).

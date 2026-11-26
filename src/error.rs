@@ -79,6 +79,8 @@ pub enum OptionsError<'a> {
     InvalidTargetPrecision(String),
     #[error("Invalid duration '{0}' for '--timeout': {1}")]
     InvalidTimeout(String, String),
+    #[error("Invalid '--concurrency' value '{0}': expected an integer >= 1")]
+    InvalidConcurrency(String),
     #[error("Invalid duration '{0}' for '--energy-baseline': {1}")]
     InvalidEnergyBaseline(String, String),
     #[error("Invalid duration '{0}' for '--duration': {1}")]

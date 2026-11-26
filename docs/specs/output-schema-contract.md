@@ -1,7 +1,7 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Partly shipped (schemaVersion 1.2; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
+Partly shipped (schemaVersion 1.3; 1.2 plus the `--concurrency` fields from #53; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
@@ -159,11 +159,17 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `parameters`, `per_run_parameters` | strings / stats | optional (`--parameter-*`) |
 | `omitted_failed_runs`, `discarded_outliers` | indices | optional |
 | `resources` | counts[] per run | when `measurements.resources = "measured"` |
+| `concurrency` (**new in 1.3**, #53) | count | only with `--concurrency N`, N > 1. **When present, `times` holds the makespan of each run** (wall time until all N instances finished) and `exit_codes` holds N entries per run, row-major (run 0 instances 0..N-1, ...), i.e. `runs x N` entries instead of `runs` |
+| `instance_times` (**new in 1.3**, #53) | s[][], one row of N per run aligned with `times`, instances in spawn order | with `concurrency` |
+| `throughput` (**new in 1.3**, #53) | instances per second, `N / mean` | with `concurrency` (omitted for a zero mean) |
+| `instance_percentiles` { `p50`, `p95`, `max` } (**new in 1.3**, #53) | s, over all `runs x N` instance times | with `concurrency` |
+| `energy_per_instance_joules` (**new in 1.3**, #53) | J, `mean_energy_joules / N` | with `concurrency` and `mean_energy_joules` |
 | `diagnostics`, `precision`, `baseline`, `shell`, `timed_out`, `timeout`, `runs_planned` | see `BenchmarkResult` | optional |
 
 Rules:
 - An unavailable or unrequested value is **omitted**, never written as `0`. `null` is used
   only where the table says so (`stddev`, `exit_codes[i]`).
+- `concurrency` is the discriminator for the changed meaning of `times` and `exit_codes` (see the table). Without it, nothing changes. `user`/`system` are then sums over the instances of a run, `memory_usage_byte` is the maximum of any instance.
 - `custom_metrics` units are whatever the command prints; perfratio does not interpret them.
   Names follow `[A-Za-z0-9_]+`. A consumer that needs units encodes them in the name
   (e.g. `algo_ns`) or in a `--label`.

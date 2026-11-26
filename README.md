@@ -162,7 +162,7 @@ request comment. A GitHub Actions example is in [doc/ci.md](doc/ci.md).
 
 `--export-json <FILE>` (or `-e results.json`) writes the summary statistics and every run's
 timings. perfratio owns this output, and consumers such as `tools-benchmark` read it.
-The current version is `"1.2"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested. The legacy top-level `joulex` key was removed in `schemaVersion` 1.0: read `perfratio` instead ([docs/MIGRATION.md](docs/MIGRATION.md)).
+The current version is `"1.3"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested. The legacy top-level `joulex` key was removed in `schemaVersion` 1.0: read `perfratio` instead ([docs/MIGRATION.md](docs/MIGRATION.md)).
 
 The contract is a top-level `"schemaVersion": "MAJOR.MINOR"` string. Consumers must ignore
 unknown keys and accept any MINOR version of the MAJOR version they support. A removed or
@@ -203,7 +203,8 @@ Benchmark 1: sh -c 'echo algo_ms=12.5; sleep 0.05'
 
 On this busy laptop `--warmup auto` hit its 100-run limit without the timings settling, and
 perfratio also printed a warning saying so. Other useful flags: `--affinity <CPUS>`,
-`--priority <POLICY>`, `--discard-outliers`, `--timeout <DURATION>`.
+`--priority <POLICY>`, `--discard-outliers`, `--timeout <DURATION>`,
+`--concurrency <N>` (N simultaneous instances per run, see [docs/specs/concurrency.md](docs/specs/concurrency.md)).
 
 ## Platform support
 

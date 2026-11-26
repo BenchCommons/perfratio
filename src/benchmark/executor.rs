@@ -12,7 +12,7 @@ use crate::util::priority::Priority;
 use crate::util::randomized_environment_offset;
 use crate::util::units::Second;
 
-use super::timing_result::TimingResult;
+use super::timing_result::{InstanceTiming, ResourceCounters, TimingResult};
 
 use crate::stats::basic::mean;
 use anyhow::{anyhow, bail, Context, Result};
@@ -389,6 +389,138 @@ fn warn_failed_run_output(
     }
 }
 
+/// Number of instances of one execution: `--concurrency` for warmup and
+/// benchmark runs, 1 for `--prepare`, `--conclude`, `--setup` and `--cleanup`.
+fn batch_size(options: &Options, iteration: BenchmarkIteration) -> usize {
+    batch_size_of(options.concurrency, iteration)
+}
+
+fn batch_size_of(concurrency: usize, iteration: BenchmarkIteration) -> usize {
+    match iteration {
+        BenchmarkIteration::NonBenchmarkRun => 1,
+        BenchmarkIteration::Warmup(_) | BenchmarkIteration::Benchmark(_) => concurrency,
+    }
+}
+
+/// One finished instance of a `--concurrency` batch.
+pub struct BatchInstance {
+    /// Start of the instance, relative to the start of the batch
+    pub offset: Second,
+    pub result: TimerResult,
+}
+
+/// Start `n` instances at the same time (one thread each, released together by
+/// a barrier) and wait for all of them. Every instance is timed by its own
+/// timer, so an early finisher is not charged the time of a later one.
+fn run_batch(
+    n: usize,
+    run_one: impl Fn() -> Result<TimerResult> + Sync,
+) -> Result<Vec<BatchInstance>> {
+    let barrier = std::sync::Barrier::new(n);
+    let base = std::time::Instant::now();
+    let outcomes: Vec<Result<BatchInstance>> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..n)
+            .map(|_| {
+                scope.spawn(|| {
+                    barrier.wait();
+                    let offset = base.elapsed().as_secs_f64();
+                    run_one().map(|result| BatchInstance { offset, result })
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| {
+                handle
+                    .join()
+                    .unwrap_or_else(|_| Err(anyhow!("a benchmark instance thread panicked")))
+            })
+            .collect()
+    });
+    // Report an interruption first, otherwise the first failing instance
+    let mut instances = Vec::with_capacity(n);
+    let mut first_error = None;
+    for outcome in outcomes {
+        match outcome {
+            Ok(instance) => instances.push(instance),
+            Err(error) => {
+                let interrupted = error.downcast_ref::<crate::error::Interrupted>().is_some();
+                if first_error.is_none() || interrupted {
+                    first_error = Some(error);
+                }
+            }
+        }
+    }
+    match first_error {
+        Some(error) => Err(error),
+        None => Ok(instances),
+    }
+}
+
+/// Combine the instances of one run into the figures of the run (see
+/// `docs/specs/concurrency.md`):
+/// - `time_real`: makespan, from the earliest process start to the latest exit;
+/// - `time_total`: the same, including the spawn overhead;
+/// - `time_user`/`time_system`: sum over the instances;
+/// - `memory_usage_byte`: maximum of any instance (the sum would count shared pages twice);
+/// - `status`: that of the first failed instance, else of the first instance;
+/// - `timed_out`: any instance timed out.
+pub fn aggregate_batch(instances: Vec<BatchInstance>) -> (TimerResult, Vec<InstanceTiming>) {
+    use crate::util::exit_code::extract_exit_code;
+    let end = |i: &BatchInstance| i.offset + i.result.time_total;
+    let start_total = instances.iter().map(|i| i.offset).fold(f64::MAX, f64::min);
+    let start_real = instances
+        .iter()
+        .map(|i| i.offset + (i.result.time_total - i.result.time_real).max(0.0))
+        .fold(f64::MAX, f64::min);
+    let last_end = instances.iter().map(end).fold(0.0, f64::max);
+
+    let timings = instances
+        .iter()
+        .map(|i| InstanceTiming {
+            time_real: i.result.time_real,
+            exit_code: extract_exit_code(i.result.status),
+        })
+        .collect();
+
+    let counters = instances
+        .iter()
+        .filter_map(|i| i.result.counters)
+        .reduce(|a, b| ResourceCounters {
+            voluntary_ctx_switches: a.voluntary_ctx_switches + b.voluntary_ctx_switches,
+            involuntary_ctx_switches: a.involuntary_ctx_switches + b.involuntary_ctx_switches,
+            minor_faults: a.minor_faults + b.minor_faults,
+            major_faults: a.major_faults + b.major_faults,
+            block_input_ops: a.block_input_ops + b.block_input_ops,
+            block_output_ops: a.block_output_ops + b.block_output_ops,
+        });
+
+    let status = instances
+        .iter()
+        .find(|i| !i.result.status.success())
+        .unwrap_or(&instances[0])
+        .result
+        .status;
+    let aggregate = TimerResult {
+        time_real: (last_end - start_real).max(0.0),
+        time_total: (last_end - start_total).max(0.0),
+        time_user: instances.iter().map(|i| i.result.time_user).sum(),
+        time_system: instances.iter().map(|i| i.result.time_system).sum(),
+        memory_usage_byte: instances
+            .iter()
+            .map(|i| i.result.memory_usage_byte)
+            .max()
+            .unwrap_or(0),
+        counters,
+        status,
+        captured: None,
+        timed_out: instances.iter().any(|i| i.result.timed_out),
+        until_matched: None,
+        custom_metrics: std::collections::BTreeMap::new(),
+    };
+    (aggregate, timings)
+}
+
 pub struct RawExecutor<'a> {
     options: &'a Options,
 }
@@ -408,15 +540,25 @@ impl Executor for RawExecutor<'_> {
         output_policy: &CommandOutputPolicy,
     ) -> Result<(TimingResult, ExitStatus)> {
         let command = command.for_iteration(&iteration);
-        let result = run_command_and_measure_common(
-            command.get_command()?,
-            iteration,
-            command_failure_action.unwrap_or_else(|| self.options.command_failure_action.clone()),
-            &self.options.command_input_policy,
-            output_policy,
-            &command.get_command_line(),
-            ProcessSettings::from_options(self.options),
-        )?;
+        let action =
+            command_failure_action.unwrap_or_else(|| self.options.command_failure_action.clone());
+        let run_one = || {
+            run_command_and_measure_common(
+                command.get_command()?,
+                iteration,
+                action.clone(),
+                &self.options.command_input_policy,
+                output_policy,
+                &command.get_command_line(),
+                ProcessSettings::from_options(self.options),
+            )
+        };
+        let (result, instances) = if batch_size(self.options, iteration) > 1 {
+            aggregate_batch(run_batch(self.options.concurrency, run_one)?)
+        } else {
+            (run_one()?, Vec::new())
+        };
+        let status = result.status;
 
         Ok((
             TimingResult {
@@ -429,8 +571,9 @@ impl Executor for RawExecutor<'_> {
                 counters: result.counters,
                 timed_out: result.timed_out,
                 custom_metrics: result.custom_metrics,
+                instances,
             },
-            result.status,
+            status,
         ))
     }
 
@@ -488,36 +631,54 @@ impl Executor for ShellExecutor<'_> {
     ) -> Result<(TimingResult, ExitStatus)> {
         let command = command.for_iteration(&iteration);
         let on_windows_cmd = cfg!(windows) && *self.shell == Shell::Default("cmd.exe");
-        let mut command_builder = self.shell.command();
-        command_builder.arg(if on_windows_cmd { "/C" } else { "-c" });
+        let build = || {
+            let mut command_builder = self.shell.command();
+            command_builder.arg(if on_windows_cmd { "/C" } else { "-c" });
 
-        // Windows needs special treatment for its behavior on parsing cmd arguments
-        if on_windows_cmd {
-            #[cfg(windows)]
-            command_builder.raw_arg(normalize_relative_command_path_for_cmd(
+            // Windows needs special treatment for its behavior on parsing cmd arguments
+            if on_windows_cmd {
+                #[cfg(windows)]
+                command_builder.raw_arg(normalize_relative_command_path_for_cmd(
+                    &command.get_command_line(),
+                ));
+            } else {
+                command_builder.arg(command.get_command_line());
+            }
+            command_builder
+        };
+        let action =
+            command_failure_action.unwrap_or_else(|| self.options.command_failure_action.clone());
+        let run_one = || {
+            run_command_and_measure_common(
+                build(),
+                iteration,
+                action.clone(),
+                &self.options.command_input_policy,
+                output_policy,
                 &command.get_command_line(),
-            ));
+                ProcessSettings::from_options(self.options),
+            )
+        };
+        let batch = batch_size(self.options, iteration);
+        let (mut result, mut instances) = if batch > 1 {
+            aggregate_batch(run_batch(batch, run_one)?)
         } else {
-            command_builder.arg(command.get_command_line());
-        }
+            (run_one()?, Vec::new())
+        };
 
-        let mut result = run_command_and_measure_common(
-            command_builder,
-            iteration,
-            command_failure_action.unwrap_or_else(|| self.options.command_failure_action.clone()),
-            &self.options.command_input_policy,
-            output_policy,
-            &command.get_command_line(),
-            ProcessSettings::from_options(self.options),
-        )?;
-
-        // Subtract shell spawning time
+        // Subtract shell spawning time. The spawns of a batch overlap, so the
+        // makespan loses it once; CPU time and each instance lose it per instance.
         if let Some(ref spawning_time) = self.shell_spawning_time {
+            let copies = batch.max(1) as f64;
             result.time_real = (result.time_real - spawning_time.time_real).max(0.0);
             result.time_total = (result.time_total - spawning_time.time_total).max(0.0);
-            result.time_user = (result.time_user - spawning_time.time_user).max(0.0);
-            result.time_system = (result.time_system - spawning_time.time_system).max(0.0);
+            result.time_user = (result.time_user - spawning_time.time_user * copies).max(0.0);
+            result.time_system = (result.time_system - spawning_time.time_system * copies).max(0.0);
+            for instance in &mut instances {
+                instance.time_real = (instance.time_real - spawning_time.time_real).max(0.0);
+            }
         }
+        let status = result.status;
 
         Ok((
             TimingResult {
@@ -530,8 +691,9 @@ impl Executor for ShellExecutor<'_> {
                 counters: result.counters,
                 timed_out: result.timed_out,
                 custom_metrics: result.custom_metrics,
+                instances,
             },
-            result.status,
+            status,
         ))
     }
 
@@ -600,6 +762,7 @@ impl Executor for ShellExecutor<'_> {
             counters: None,
             timed_out: false,
             custom_metrics: std::collections::BTreeMap::new(),
+            instances: Vec::new(),
         });
 
         Ok(())
@@ -621,11 +784,24 @@ impl Executor for ShellExecutor<'_> {
 pub struct MockExecutor {
     shell: Option<String>,
     timeout: Option<std::time::Duration>,
+    concurrency: usize,
 }
 
 impl MockExecutor {
     pub fn new(shell: Option<String>, timeout: Option<std::time::Duration>) -> Self {
-        MockExecutor { shell, timeout }
+        MockExecutor {
+            shell,
+            timeout,
+            concurrency: 1,
+        }
+    }
+
+    /// `--concurrency N`: simulate N instances per run. Instance `i` takes
+    /// `(1 + 0.01 * i)` times the requested time, so the makespan is that of
+    /// the last instance and the instance times are distinct but deterministic.
+    pub fn with_concurrency(mut self, concurrency: usize) -> Self {
+        self.concurrency = concurrency.max(1);
+        self
     }
 
     /// `--debug-mode` doesn't run anything: it only understands commands of
@@ -721,17 +897,32 @@ impl Executor for MockExecutor {
             requested
         };
 
+        let n = batch_size_of(self.concurrency, iteration);
+        let instances: Vec<InstanceTiming> = if n > 1 {
+            (0..n)
+                .map(|i| InstanceTiming {
+                    time_real: time_real * (1.0 + 0.01 * i as f64),
+                    exit_code: Some(0),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let copies = n as f64;
+        let time_real = instances.last().map_or(time_real, |i| i.time_real);
+
         Ok((
             TimingResult {
                 time_real,
                 time_total: time_real,
-                time_user,
-                time_system,
+                time_user: time_user * copies,
+                time_system: time_system * copies,
                 memory_usage_byte,
                 energy_joules: None,
                 counters: None,
                 timed_out,
                 custom_metrics: std::collections::BTreeMap::new(),
+                instances,
             },
             status,
         ))
@@ -803,4 +994,82 @@ fn captured_output_is_tailed_escaped_and_cut() {
         format_captured_output(&crate::timer::CapturedOutput::default()),
         "(the command produced no output)\n"
     );
+}
+
+#[cfg(test)]
+mod batch_tests {
+    use super::*;
+
+    fn status(code: i32) -> ExitStatus {
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            ExitStatus::from_raw(code << 8)
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::ExitStatusExt;
+            ExitStatus::from_raw(code as u32)
+        }
+    }
+
+    fn instance(offset: f64, real: f64, user: f64, memory: u64, code: i32) -> BatchInstance {
+        BatchInstance {
+            offset,
+            result: TimerResult {
+                time_real: real,
+                time_total: real,
+                time_user: user,
+                time_system: user / 2.0,
+                memory_usage_byte: memory,
+                counters: None,
+                status: status(code),
+                captured: None,
+                timed_out: false,
+                until_matched: None,
+                custom_metrics: Default::default(),
+            },
+        }
+    }
+
+    #[test]
+    fn early_finisher_is_not_charged_the_later_finishers_time() {
+        // instance 0 starts at 0 and runs 0.1 s, instance 1 starts at 0.01 and runs 0.3 s
+        let (aggregate, timings) = aggregate_batch(vec![
+            instance(0.0, 0.1, 0.1, 10, 0),
+            instance(0.01, 0.3, 0.2, 30, 0),
+        ]);
+        assert_eq!(timings[0].time_real, 0.1);
+        assert_eq!(timings[1].time_real, 0.3);
+        // makespan: from the first start (0) to the last exit (0.01 + 0.3)
+        assert!((aggregate.time_real - 0.31).abs() < 1e-12);
+        assert!((aggregate.time_user - 0.3).abs() < 1e-12);
+        assert!((aggregate.time_system - 0.15).abs() < 1e-12);
+        assert_eq!(aggregate.memory_usage_byte, 30);
+        assert!(aggregate.status.success());
+    }
+
+    #[test]
+    fn one_failing_instance_fails_the_run() {
+        let (aggregate, timings) = aggregate_batch(vec![
+            instance(0.0, 0.1, 0.0, 1, 0),
+            instance(0.0, 0.1, 0.0, 1, 3),
+        ]);
+        assert!(!aggregate.status.success());
+        assert_eq!(timings[0].exit_code, Some(0));
+        assert_eq!(timings[1].exit_code, Some(3));
+    }
+
+    #[test]
+    fn batch_runs_every_instance() {
+        let counter = std::sync::atomic::AtomicUsize::new(0);
+        let instances = run_batch(5, || {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(instance(0.0, 0.0, 0.0, 0, 0).result)
+        })
+        .unwrap();
+        assert_eq!(instances.len(), 5);
+        assert_eq!(counter.load(std::sync::atomic::Ordering::SeqCst), 5);
+        assert!(run_batch(3, || Err(anyhow!("boom"))).is_err());
+    }
 }

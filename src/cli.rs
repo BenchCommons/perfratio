@@ -579,6 +579,19 @@ pub fn build_command() -> Command {
                        command are skipped."),
         )
         .arg(
+            Arg::new("concurrency")
+                .conflicts_with("subtract")
+                .long("concurrency")
+                .action(ArgAction::Set)
+                .value_name("N")
+                .conflicts_with_all(["until", "show-output-on-failure", "output-metric"])
+                .help("Start N instances of the command simultaneously for every run. The \
+                       reported time is the wall time until all N instances finished. \
+                       User/system time is summed over the instances, memory is the \
+                       maximum of any instance. The JSON export gains per-instance times \
+                       and a throughput. Default: 1."),
+        )
+        .arg(
             Arg::new("until")
                 .long("until")
                 .visible_alias("ready-when")
