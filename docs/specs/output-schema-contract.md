@@ -294,6 +294,15 @@ perfratio -N --warmup auto --first-run=separate \
   combinations against a strict copy of it (no undeclared keys), checks that every schema
   property is produced by some case and that the `const` equals `SCHEMA_VERSION`. **A change to
   the export must update the schema in the same PR.**
+- Per-version archive (#319): `docs/schema/<MAJOR.MINOR>/perfratio-export.schema.json` is a
+  frozen copy of the schema of each `schemaVersion`. **A MINOR bump must add the new
+  directory** and never edit an older one. `tests/json_schema_compat_tests.rs` checks that
+  the current schema equals the archive of its version, that a fresh export validates against
+  every older archived schema of the same MAJOR (additive changes only), and that the diff
+  against the previous MINOR has no removed or renamed property, changed type, removed enum
+  value or newly required key (those are MAJOR changes). The release workflow uploads
+  `perfratio-export-<MAJOR.MINOR>.schema.json` to the GitHub release and includes it in
+  `SHA256SUMS`. Not done: a `$schema` field in the export and `--print-schema`.
 - The deprecation steps of §4, which cover only the JSON key of #225. The other #225
   items are not part of this spec.
 
