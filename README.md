@@ -100,8 +100,10 @@ page faults and I/O operation counts only; the other counters show as `n/a` ([sp
 
 **Energy.** `-E, --energy` measures energy in joules and average power in watts. It reads RAPL
 counters through Linux powercap sysfs, so it needs **bare-metal Linux with a readable
-`energy_uj`** (`/sys/class/powercap/intel-rapl`). Containers, virtual machines, macOS and
-Windows usually cannot read it, and recent kernels restrict `energy_uj` to root. Continuous
+`energy_uj`** (`/sys/class/powercap/intel-rapl`). Containers and virtual machines usually cannot
+read it, and recent kernels restrict `energy_uj` to root. macOS (Apple Silicon, IOReport) and
+Windows (Energy Meter Interface) have their own backends; see
+[docs/specs/energy-macos-windows.md](docs/specs/energy-macos-windows.md). Continuous
 integration covers time and memory only.
 
 Without a readable counter, perfratio says so instead of printing a number. This is real output from
@@ -116,7 +118,7 @@ Benchmark 1: sleep 0.1
   Energy:             RAPL unprivileged/unavailable on host
 ```
 
-`--energy-backend <auto|sysfs|perf>` (or `PERFRATIO_ENERGY_BACKEND`) picks the source on Linux.
+`--energy-backend <auto|sysfs|perf|ioreport|emi>` (or `PERFRATIO_ENERGY_BACKEND`) picks the source (`ioreport` on macOS, `emi` on Windows; `auto` picks the native one). On Linux:
 `auto`, the default, uses sysfs powercap and falls back to the perf power PMU
 (`power/energy-pkg`) when `energy_uj` is unreadable. `--energy-baseline <DURATION>` measures
 idle power first and also reports net energy (measured minus idle power times run time).
@@ -164,7 +166,7 @@ request comment. A GitHub Actions example is in [doc/ci.md](doc/ci.md).
 
 `--export-json <FILE>` (or `-e results.json`) writes the summary statistics and every run's
 timings. perfratio owns this output, and consumers such as `tools-benchmark` read it.
-The current version is `"1.2"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested. The legacy top-level `joulex` key was removed in `schemaVersion` 1.0: read `perfratio` instead ([docs/MIGRATION.md](docs/MIGRATION.md)).
+The current version is `"1.4"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested. The legacy top-level `joulex` key was removed in `schemaVersion` 1.0: read `perfratio` instead ([docs/MIGRATION.md](docs/MIGRATION.md)).
 
 The contract is a top-level `"schemaVersion": "MAJOR.MINOR"` string. Consumers must ignore
 unknown keys and accept any MINOR version of the MAJOR version they support. A removed or
@@ -214,7 +216,7 @@ The CI builds and tests these targets and attaches them to releases. Features di
 | Feature | Linux | macOS | Windows |
 |---|---|---|---|
 | Time, CPU time, peak memory | yes | yes | yes |
-| Energy (`--energy`, RAPL) | bare metal, via sysfs `energy_uj` or the perf power PMU | no | no |
+| Energy (`--energy`) | bare metal RAPL, via sysfs `energy_uj` or the perf power PMU | Apple Silicon via IOReport (unavailable where CPU counters are frozen, e.g. macOS 27) | Energy Meter Interface (EMI), needs a meter driver and usually admin |
 | `--resource-usage` | yes | yes | partial (page faults, I/O operations; no context switches) |
 | `--affinity` | yes | no | yes |
 | `--priority realtime` | yes (`SCHED_FIFO`) | no | yes |

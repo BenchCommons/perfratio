@@ -1,5 +1,7 @@
+pub mod ioreport;
 pub mod perf_rapl;
 pub mod rapl;
+pub mod windows_emi;
 
 pub trait EnergySampler: Send + Sync {
     /// Start an energy measurement window
@@ -18,11 +20,16 @@ pub const ENERGY_BACKEND_ENV: &str = "PERFRATIO_ENERGY_BACKEND";
 /// Which energy backend the user asked for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BackendPreference {
-    /// sysfs powercap first, perf PMU if sysfs is unreadable
+    /// The native source of the OS: sysfs powercap then perf PMU (Linux), IOReport (macOS),
+    /// EMI (Windows)
     #[default]
     Auto,
     Sysfs,
     Perf,
+    /// macOS Apple Silicon IOReport "Energy Model"
+    Ioreport,
+    /// Windows Energy Meter Interface
+    Emi,
 }
 
 impl BackendPreference {
@@ -31,6 +38,8 @@ impl BackendPreference {
             "auto" => Some(Self::Auto),
             "sysfs" => Some(Self::Sysfs),
             "perf" => Some(Self::Perf),
+            "ioreport" => Some(Self::Ioreport),
+            "emi" => Some(Self::Emi),
             _ => None,
         }
     }
@@ -49,6 +58,10 @@ impl BackendPreference {
 pub enum EnergyBackend {
     SysfsPowercap,
     PerfPmu,
+    /// macOS IOReport "Energy Model" channels
+    IoReport,
+    /// Windows Energy Meter Interface
+    WindowsEmi,
 }
 
 impl EnergyBackend {
@@ -57,6 +70,8 @@ impl EnergyBackend {
         match self {
             Self::SysfsPowercap => "sysfs_powercap",
             Self::PerfPmu => "perf_pmu",
+            Self::IoReport => "ioreport",
+            Self::WindowsEmi => "windows_emi",
         }
     }
 }
@@ -69,6 +84,17 @@ pub enum Unavailable {
     RaplNotFound,
     /// Files or the PMU exist but cannot be read or opened (EACCES, paranoid)
     RaplUnreadable,
+    /// Intel Mac: no no-root energy source
+    UnsupportedCpu,
+    /// macOS: IOReport or its "Energy Model" channels are missing (VM, old OS)
+    IoreportNotFound,
+    /// macOS: IOReport answers but the CPU energy counters stay at 0 (macOS 27 without
+    /// Apple's entitlement), so energy would be silently wrong
+    IoreportFrozen,
+    /// Windows: no EMI energy meter device on this machine
+    EmiNotFound,
+    /// Windows: EMI devices exist but cannot be opened or read (needs admin)
+    EmiUnreadable,
 }
 
 impl Unavailable {
@@ -77,6 +103,11 @@ impl Unavailable {
             Self::UnsupportedPlatform => "unsupported_platform",
             Self::RaplNotFound => "rapl_not_found",
             Self::RaplUnreadable => "rapl_unreadable",
+            Self::UnsupportedCpu => "unsupported_cpu",
+            Self::IoreportNotFound => "ioreport_not_found",
+            Self::IoreportFrozen => "ioreport_frozen",
+            Self::EmiNotFound => "emi_not_found",
+            Self::EmiUnreadable => "emi_unreadable",
         }
     }
 }
@@ -114,14 +145,55 @@ pub(crate) fn select_with(
 }
 
 /// Picks a working sampler for `pref`, or the reason no backend is usable.
+/// A backend that belongs to another OS is `unsupported_platform`.
 pub fn select_sampler_detailed(pref: BackendPreference) -> Result<Selected, Unavailable> {
     #[cfg(target_os = "linux")]
     {
+        if matches!(pref, BackendPreference::Ioreport | BackendPreference::Emi) {
+            return Err(Unavailable::UnsupportedPlatform);
+        }
         select_with(pref, std::path::Path::new(rapl::SYSFS_ROOT), &|| {
             perf_rapl::PerfRaplSampler::try_new().map(|s| Box::new(s) as Box<dyn EnergySampler>)
         })
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    {
+        if !matches!(pref, BackendPreference::Auto | BackendPreference::Ioreport) {
+            return Err(Unavailable::UnsupportedPlatform);
+        }
+        if cfg!(target_arch = "x86_64") {
+            return Err(Unavailable::UnsupportedCpu);
+        }
+        ioreport::IoReportSampler::try_new()
+            .map(|s| {
+                (
+                    Box::new(s) as Box<dyn EnergySampler>,
+                    EnergyBackend::IoReport,
+                )
+            })
+            .map_err(|e| match e {
+                ioreport::IoReportError::Frozen => Unavailable::IoreportFrozen,
+                _ => Unavailable::IoreportNotFound,
+            })
+    }
+    #[cfg(windows)]
+    {
+        if !matches!(pref, BackendPreference::Auto | BackendPreference::Emi) {
+            return Err(Unavailable::UnsupportedPlatform);
+        }
+        windows_emi::EmiSampler::try_new()
+            .map(|s| {
+                (
+                    Box::new(s) as Box<dyn EnergySampler>,
+                    EnergyBackend::WindowsEmi,
+                )
+            })
+            .map_err(|e| match e {
+                windows_emi::EmiError::NotFound => Unavailable::EmiNotFound,
+                windows_emi::EmiError::Unreadable => Unavailable::EmiUnreadable,
+            })
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     {
         let _ = pref;
         Err(Unavailable::UnsupportedPlatform)
@@ -265,6 +337,24 @@ mod tests {
             BackendPreference::Sysfs
         );
         assert!(BackendPreference::resolve(None, Some("bogus")).is_err());
+        assert_eq!(
+            BackendPreference::parse("ioreport"),
+            Some(BackendPreference::Ioreport)
+        );
+        assert_eq!(
+            BackendPreference::parse("emi"),
+            Some(BackendPreference::Emi)
+        );
+    }
+
+    #[test]
+    fn backend_and_reason_names() {
+        assert_eq!(EnergyBackend::IoReport.as_str(), "ioreport");
+        assert_eq!(EnergyBackend::WindowsEmi.as_str(), "windows_emi");
+        assert_eq!(Unavailable::UnsupportedCpu.as_str(), "unsupported_cpu");
+        assert_eq!(Unavailable::IoreportNotFound.as_str(), "ioreport_not_found");
+        assert_eq!(Unavailable::EmiNotFound.as_str(), "emi_not_found");
+        assert_eq!(Unavailable::EmiUnreadable.as_str(), "emi_unreadable");
     }
 
     struct Stub;

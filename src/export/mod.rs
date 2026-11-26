@@ -127,7 +127,9 @@ impl ExportManager {
                     .as_deref(),
             )
             .map_err(|v| {
-                anyhow::anyhow!("Invalid energy backend '{v}': expected auto, sysfs or perf")
+                anyhow::anyhow!(
+                    "Invalid energy backend '{v}': expected auto, sysfs, perf, ioreport or emi"
+                )
             })?;
             Some(crate::energy::select_sampler_detailed(pref).map(|(_, backend)| backend))
         } else {
