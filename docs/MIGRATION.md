@@ -2,26 +2,24 @@
 
 This guide covers moving from [hyperfine](https://github.com/sharkdp/hyperfine) or joulex to perfratio 1.0. See [CHANGELOG.md](../CHANGELOG.md) for the full list of changes.
 
-Items marked **(pending)** are in open pull requests at the time of writing and take effect when those merge. Check the CHANGELOG section "Pending for 1.0" for their status.
-
 ## Binary and package names
 
 | From | To |
 |---|---|
 | `hyperfine`, `joulex` binary | `perfratio` |
 | `joulex` crate, `joulex.1` man page | `perfratio` crate, `perfratio.1` ([#224](https://github.com/BenchCommons/perfratio/pull/224)) |
-| `joulex` shell completions | removed; generate with `perfratio --generate-completions SHELL` **(pending, #263)** |
-| `doc/joulex.1` (second man page copy) | removed immediately, use `perfratio.1` **(pending, #263)** |
-| `joulex_eta` progress template key (internal) | removed immediately; only matters if you patched the progress template **(pending, #263)** |
+| `joulex` shell completions | removed; generate with `perfratio --generate-completions SHELL` ([#263](https://github.com/BenchCommons/perfratio/pull/263)) |
+| `doc/joulex.1` (second man page copy) | removed, use `perfratio.1` ([#263](https://github.com/BenchCommons/perfratio/pull/263)) |
+| `joulex_eta` progress template key (internal) | removed; only matters if you patched the progress template ([#263](https://github.com/BenchCommons/perfratio/pull/263)) |
 
 ## Environment variables
 
 | Old | New | Status |
 |---|---|---|
-| `$HYPERFINE_ITERATION` | `$PERFRATIO_ITERATION` | old name still exported today; deprecated with a warning **(pending, #263)** |
+| `$HYPERFINE_ITERATION` | `$PERFRATIO_ITERATION` | old name is still exported; the command line triggers a deprecation warning if it mentions it |
 | `$JOULEX_ITERATION` | `$PERFRATIO_ITERATION` | same as above |
-| `$JOULEX_SYSTEM_CHECK_ROOT` (test hook for `--check-system`) | `$PERFRATIO_SYSTEM_CHECK_ROOT` | old name is a fallback today; fallback warns **(pending, #263)** |
-| `$HYPERFINE_RANDOMIZED_ENVIRONMENT_OFFSET` | `$PERFRATIO_RANDOMIZED_ENVIRONMENT_OFFSET` | renamed **(pending, #263)** |
+| `$JOULEX_SYSTEM_CHECK_ROOT` (test hook for `--check-system`) | `$PERFRATIO_SYSTEM_CHECK_ROOT` | old name is a fallback and warns |
+| `$HYPERFINE_RANDOMIZED_ENVIRONMENT_OFFSET` | `$PERFRATIO_RANDOMIZED_ENVIRONMENT_OFFSET` | renamed, no fallback |
 
 The `{iteration}` placeholder ([#149](https://github.com/BenchCommons/perfratio/pull/149)) also works without a shell, so prefer it over the variable with `-N`.
 
@@ -49,30 +47,35 @@ New:
 
 | Area | Flags |
 |---|---|
-| Energy | `-E`, `--energy` (Linux RAPL, needs readable `energy_uj`) |
-| Statistics | `--deep-stats`, `--discard-outliers`, `--suppress-outlier-warnings`, `--suppress-warnings`, `--target-precision`, `--precision`, `--first-run include\|separate\|discard` |
+| Energy | `-E`, `--energy` (Linux RAPL: sysfs powercap with readable `energy_uj`, or the perf power PMU), `--energy-backend auto\|sysfs\|perf` (or `PERFRATIO_ENERGY_BACKEND`), `--energy-baseline DURATION` (idle power and net energy) |
+| Statistics | `--deep-stats`, `--discard-outliers`, `--suppress-outlier-warnings`, `--suppress-warnings`, `--target-precision`, `--duration`, `--precision`, `--outlier-method modified-z\|iqr`, `--first-run include\|separate\|discard` |
+| Comparison | `--metric wall\|cpu\|user\|system\|energy\|memory`, `--delta-table`, `--reference` |
 | Run control | `--timeout`, `--until`, `--until-stderr`, `--subtract`, `--shell` per command, `--omit-failed-runs`, `--filter-failed`, `--show-output-on-failure`, `--schedule`, `--round-robin` |
 | Parameters | `--parameter-file`, `--parameter-sample`, `--aggregate-parameter-runs`, `--expand-used-parameters`, `--seed`, `--max-benchmarks` |
 | System | `--check-system`, `--affinity`, `--priority`, `--resource-usage` |
-| Data | `--output-metric NAME=REGEX`, `--label KEY=VALUE`, `--import-json`, `--export-html`, `--export-markdown-runs`, `--export-orgmode-runs`, `--export-asciidoc-runs`, `--export-asciidoc` |
+| Data | `--output-metric NAME=REGEX`, `--output-metric-stderr`, `--label KEY=VALUE`, `--import-json`, `--export-html`, `--export-markdown-runs`, `--export-orgmode-runs`, `--export-asciidoc-runs`, `--export-asciidoc` |
 | CI | `--compare`, `--fail-if-regressed`, `--export-diff-markdown` |
 
-Not yet available **(pending)**: `--metric` (#226), `--duration` (#269), `--energy-backend` (#272), `--delta-table` (#274), `--output-metric-stderr` (#265).
+`--output-metric` values are exported in `custom_metrics`, one entry per run aligned with `times`; a run where an ignored failure left the metric out is `null`. Speedup summary lines carry a significance marker (`[+]`, `[-]`, `[~]` without colors).
 
 ## JSON export
 
-> **BREAKING CHANGE for consumers (#262, #240).** perfratio no longer writes the top-level `"joulex"` key. It was removed in one step, with no deprecation period, together with the introduction of `"schemaVersion": "1.0"`. Any tool that reads `json["joulex"]` must read `json["perfratio"]` instead. The content is identical. `--import-json` still reads old files that contain only `"joulex"`.
+> **BREAKING CHANGE for consumers ([#262](https://github.com/BenchCommons/perfratio/pull/262), [#240](https://github.com/BenchCommons/perfratio/issues/240)).** perfratio no longer writes the top-level `"joulex"` key. It was removed in one step, with no deprecation period, together with the introduction of `"schemaVersion"` (now `"1.1"`). Any tool that reads `json["joulex"]` must read `json["perfratio"]` instead. The content is identical. `--import-json` still reads old files that contain only `"joulex"`.
 
 perfratio writes run metadata under a top-level `perfratio` key, with `version`, `command_line`, `started_at`, `labels` and `system`. Files from hyperfine have no such key. `--import-json` reads hyperfine, joulex and perfratio files.
 
-| Change | Status |
+| Change | Since |
 |---|---|
-| `perfratio` metadata key added | merged |
+| `perfratio` metadata key | merged |
 | Per-result `user_times`, `system_times`, `median`, `percentiles`, `geometric_mean`, `relative_speed`, `first_run`, `custom_metrics`, per-run parameters | merged |
-| `"joulex"` key (an identical copy of `perfratio`) | **removed (pending, #262)**. Read `perfratio` instead. |
-| `"schemaVersion": "1.0"` added as the first key | **pending, #262** |
-| `perfratio.measurements` with `time`, `memory`, `energy`, `resources` set to `measured`, `unavailable` or `not_requested`, plus `energy_unavailable_reason` | **pending, #262** |
-| `energy_samples` per result, JSON Schema file | planned, see `docs/specs/output-schema-contract.md` |
+| `"joulex"` key (an identical copy of `perfratio`) | removed in `schemaVersion` 1.0. Read `perfratio` instead. |
+| `"schemaVersion"` as the first key | 1.0 |
+| `perfratio.measurements` with `time`, `memory`, `energy`, `resources` set to `measured`, `unavailable` or `not_requested`, plus `energy_unavailable_reason` | 1.0 |
+| Top-level `metric` and per-result `primary_metric` (`--metric`) | 1.1 |
+| `idle_watts` and `mean_net_energy_joules` (`--energy-baseline`) | 1.1 |
+| Per-result `significance` and `p_value` against the reference | additive |
+| `perfratio.energy_backend` (`--energy-backend`) | additive |
+| `energy_samples` per result, JSON Schema file | not yet, see `docs/specs/output-schema-contract.md` |
 
 Rules for consumers, from the schema contract:
 

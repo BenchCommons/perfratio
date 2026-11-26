@@ -22,8 +22,11 @@ perfratio -N --warmup auto --first-run=separate \
 
 | Flag | Use |
 |---|---|
-| `-E`, `--energy` | Only on bare-metal Linux with readable RAPL `energy_uj`. Check `perfratio.measurements.energy` (once #262 lands) before using energy fields. |
+| `-E`, `--energy` | Only on bare-metal Linux with readable RAPL `energy_uj`. Check `perfratio.measurements.energy` before using energy fields. `--energy-backend perf` uses the perf power PMU when `energy_uj` is not readable; `--energy-baseline DURATION` adds idle power and net energy. |
 | `--min-runs N`, `--max-runs N` | Enough samples for very fast implementations. |
+| `--duration DURATION` | Samples each command until the summed run time reaches DURATION (at least 3 runs), for example `--duration 5s` for fast implementations. Conflicts with `--runs` and `--target-precision`. |
+| `--metric METRIC` | Ranks and compares by `wall`, `cpu`, `user`, `system`, `energy` or `memory` instead of wall time. The JSON records it as `metric`. |
+| `--delta-table` | One table of wall time, peak memory, energy, power and CPU time against the reference command. |
 | `--target-precision PCT` | Runs until the 95% confidence interval of the mean is within PCT of the mean. |
 | `--affinity CPUS` | Pins to CPUs to reduce migration noise (Linux and Windows). |
 | `--check-system` | Reports noise sources before benchmarking. |
@@ -31,10 +34,8 @@ perfratio -N --warmup auto --first-run=separate \
 | `--discard-outliers` | Excludes outlier runs from the statistics. |
 | `--schedule round-robin` | Interleaves commands to reduce temporal bias when several languages run in one invocation. |
 
-## Not yet available
+## JSON fields for consumers
 
-- `--duration` (time-budgeted sampling, #216, PR #269): use `--min-runs` or `--target-precision` meanwhile.
-- `--metric` (rank by a chosen metric, #48, PR #226) and `--delta-table` (#212, PR #274).
-- `schemaVersion` and `perfratio.measurements` in the JSON (PR #262). Until then, treat missing energy fields as unavailable.
+Read `schemaVersion` first (currently `"1.1"`), accept any 1.x and ignore unknown keys. There is no `joulex` key; use `perfratio`. Check `perfratio.measurements.energy` (`measured`, `unavailable` or `not_requested`) before reading energy fields. With `--output-metric-stderr` the metric is read from stderr instead of stdout.
 
 Correctness checks of the algorithm output and per-language builds belong to the catalog contract in tools-benchmark, not to perfratio.
