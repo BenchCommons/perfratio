@@ -23,7 +23,7 @@ fn json_of(args: &[&str]) -> Value {
 #[test]
 fn debug_mode_reports_region_next_to_whole_process_time() {
     let json = json_of(&["--debug-mode", "--runs=3", "--region=work", "sleep 0.2"]);
-    assert_eq!(json["schemaVersion"], "1.20");
+    assert_eq!(json["schemaVersion"], "1.21");
     assert_eq!(json["perfratio"]["region_protocol"], 1);
     assert_eq!(json["perfratio"]["measurements"]["region"], "measured");
     let result = &json["results"][0];
@@ -39,6 +39,21 @@ fn debug_mode_reports_region_next_to_whole_process_time() {
     assert_eq!(region["count_per_run"], serde_json::json!([1, 1, 1]));
     assert!((region["mean"].as_f64().unwrap() - 0.1).abs() < 1e-9);
     assert!(result.get("custom_metrics").is_none());
+}
+
+#[test]
+fn region_has_a_metric_descriptor_with_region_scope() {
+    let json = json_of(&["--debug-mode", "--runs=2", "--region=work", "sleep 0.2"]);
+    let metrics = json["perfratio"]["metrics"].as_array().unwrap();
+    let descriptor = metrics.iter().find(|m| m["id"] == "region.work").unwrap();
+    assert_eq!(descriptor["unit"], "seconds");
+    assert_eq!(descriptor["scope"], "region");
+    assert_eq!(descriptor["direction"], "lower_is_better");
+    assert_eq!(descriptor["status"], "available");
+    assert_eq!(descriptor["fields"], serde_json::json!(["regions"]));
+    // whole-process time keeps its own process scope
+    let wall = metrics.iter().find(|m| m["id"] == "time.wall").unwrap();
+    assert_eq!(wall["scope"], "process");
 }
 
 #[test]

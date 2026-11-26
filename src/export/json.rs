@@ -24,7 +24,7 @@ pub struct PrimaryMetricStats {
 }
 
 /// Version of the JSON output contract (`docs/specs/output-schema-contract.md`).
-pub const SCHEMA_VERSION: &str = "1.20";
+pub const SCHEMA_VERSION: &str = "1.21";
 
 #[derive(Serialize, Debug)]
 struct PerfratioSummary<'a> {
@@ -35,7 +35,7 @@ struct PerfratioSummary<'a> {
     metric: Metric,
     /// Information about the perfratio run (version, command line, date, labels, system)
     #[serde(skip_serializing_if = "Option::is_none")]
-    perfratio: Option<&'a ExportMetadata>,
+    perfratio: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     interrupted: bool,
     /// Result of `--optimize` (object, or array with one entry per search)
@@ -66,6 +66,18 @@ struct ResultEntry<'a> {
     /// p-value of the bootstrap Welch test against the reference
     #[serde(skip_serializing_if = "Option::is_none")]
     p_value: Option<f64>,
+}
+
+/// The `perfratio` object: the run metadata plus the descriptor of every metric (#317).
+fn with_metrics(metadata: &ExportMetadata, results: &[BenchmarkResult]) -> serde_json::Value {
+    let mut value = serde_json::to_value(metadata).unwrap_or(serde_json::Value::Null);
+    if let (Some(object), Ok(metrics)) = (
+        value.as_object_mut(),
+        serde_json::to_value(crate::metric_registry::descriptors(results, metadata)),
+    ) {
+        object.insert("metrics".into(), metrics);
+    }
+    value
 }
 
 #[derive(Default)]
@@ -99,6 +111,7 @@ impl Exporter for JsonExporter {
         };
         let reference_result = reference
             .or_else(|| (!results.is_empty()).then(|| relative_speed::fastest_of(results)));
+        let perfratio = self.metadata.as_ref().map(|m| with_metrics(m, results));
         let results = results
             .iter()
             .enumerate()
@@ -135,7 +148,7 @@ impl Exporter for JsonExporter {
         let mut output = to_vec_pretty(&PerfratioSummary {
             schema_version: SCHEMA_VERSION,
             metric,
-            perfratio: self.metadata.as_ref(),
+            perfratio,
             interrupted: crate::util::interrupt::interrupted(),
             optimize: self
                 .optimize
