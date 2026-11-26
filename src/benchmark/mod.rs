@@ -952,11 +952,25 @@ impl<'a> BenchmarkRunner<'a> {
         let num_omitted_failed_runs = omitted_failed_runs.len();
 
         // Hardware counters of the runs that are kept (aligned with the times)
-        let hw_export = self
-            .options
-            .counters
-            .as_ref()
-            .and_then(|config| crate::perf_counters::export(config, &self.hw_counters));
+        let hw_export = self.options.counters.as_ref().and_then(|config| {
+            let cpus = self.options.affinity.as_deref();
+            crate::perf_counters::export(
+                config,
+                &self.hw_counters,
+                &crate::perf_counters::RunContext {
+                    real_seconds: &self.times_real,
+                    user_seconds: &self.times_user,
+                    system_seconds: &self.times_system,
+                    single_cpu: cpus.is_some_and(|c| c.len() == 1),
+                    // deterministic output in --debug-mode
+                    max_frequency_hz: if config.mock {
+                        None
+                    } else {
+                        crate::frequency::max_frequency_hz(cpus)
+                    },
+                },
+            )
+        });
 
         // Topdown readings follow the counters in each run's reading
         let topdown_export = self
@@ -1722,6 +1736,17 @@ impl<'a> BenchmarkRunner<'a> {
             if let Some(warning) = simd_export.as_ref().and_then(|e| e.warning.as_ref()) {
                 eprintln!("  {}", colors::yellow(warning));
             }
+            if !self.options.suppress_outlier_warnings {
+                for advisory in hw_export.iter().flat_map(|e| &e.advisories) {
+                    // The tip line of a warning is not a warning of its own
+                    let label = if advisory.starts_with("Tip:") {
+                        ""
+                    } else {
+                        "Warning: "
+                    };
+                    eprintln!("  {}", colors::yellow(format!("{label}{advisory}")));
+                }
+            }
         }
 
         if report.is_some() && !warnings.is_empty() {
@@ -1846,6 +1871,22 @@ impl<'a> BenchmarkRunner<'a> {
                 .as_ref()
                 .map(|e| e.multiplexed_runs)
                 .filter(|&n| n > 0),
+            effective_frequency_hz: hw_export
+                .as_ref()
+                .and_then(|e| e.frequency.as_ref())
+                .map(|f| f.series.clone()),
+            mean_effective_frequency_hz: hw_export
+                .as_ref()
+                .and_then(|e| e.frequency.as_ref())
+                .and_then(|f| f.mean),
+            stddev_effective_frequency_hz: hw_export
+                .as_ref()
+                .and_then(|e| e.frequency.as_ref())
+                .and_then(|f| f.stddev),
+            effective_frequency_basis: hw_export
+                .as_ref()
+                .and_then(|e| e.frequency.as_ref())
+                .map(|f| f.basis.as_str().to_string()),
             simd: simd_export.as_ref().map(|e| e.series.clone()),
             simd_summary: simd_export.as_ref().map(|e| e.summary.clone()),
             simd_scaling: simd_export

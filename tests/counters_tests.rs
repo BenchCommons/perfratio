@@ -46,7 +46,7 @@ fn explicit_list_and_terminal_line() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "Counters (mean):    cycles 100.0M (IPC 2.00) · instr 200.0M",
+            "Counters (mean):    cycles 100.0M (IPC 2.00) @1.00 GHz · instr 200.0M",
         ));
     let json = export(&["--runs=2", "--counters=cycles", "sleep 0.1"]);
     let counters = json["results"][0]["counters"].as_object().unwrap();
@@ -123,7 +123,7 @@ fn split_terminal_line_shows_the_breakdown() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "instr 200.0M [user 50.0M, kernel 150.0M] · cycles 100.0M [user 25.0M, kernel 75.0M] (IPC 2.00)",
+            "instr 200.0M [user 50.0M, kernel 150.0M] · cycles 100.0M [user 25.0M, kernel 75.0M] (IPC 2.00) @1.00 GHz",
         ));
 }
 
@@ -259,6 +259,84 @@ fn real_instructions_are_counted() {
             .unwrap()
             > 1e6
     );
+}
+
+#[test]
+fn software_events_are_exported_and_printed() {
+    let json = export(&[
+        "--runs=3",
+        "--counters=cpu-migrations,context-switches,page-faults",
+        "sleep 0.5",
+    ]);
+    let r = &json["results"][0];
+    assert_eq!(
+        r["counters"]["cpu-migrations"],
+        serde_json::json!([0, 0, 0])
+    );
+    assert_eq!(r["counters"]["context-switches"][0], 50);
+    assert_eq!(r["counters"]["page-faults"][0], 500);
+    assert_eq!(r["counters_summary"]["context-switches"]["mean"], 50.0);
+    // no cycles: no frequency
+    assert!(r.get("effective_frequency_hz").is_none());
+    perfratio()
+        .args(["--debug-mode", "--runs=2", "--counters=sw"])
+        .arg("sleep 0.5")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Counters (mean):    cpu-migr 0.0 · ctx-sw 50",
+        ));
+}
+
+#[test]
+fn frequency_is_exported_next_to_cycles() {
+    let json = export(&["--runs=3", "--counters=frequency", "sleep 0.5"]);
+    let r = &json["results"][0];
+    assert_eq!(r["effective_frequency_basis"], "task_clock");
+    assert_eq!(r["mean_effective_frequency_hz"], 1.0e9);
+    let series = r["effective_frequency_hz"].as_array().unwrap();
+    assert_eq!(series.len(), r["times"].as_array().unwrap().len());
+    assert_eq!(series[0], 1.0e9);
+    // the divisor is an implementation detail, not a counter
+    let counters = r["counters"].as_object().unwrap();
+    assert_eq!(counters.keys().collect::<Vec<_>>(), ["cycles"]);
+    // the default list collects cycles too
+    let json = export(&["--runs=2", "--counters", "sleep 0.5"]);
+    assert_eq!(json["results"][0]["mean_effective_frequency_hz"], 1.0e9);
+    assert!(json["results"][0]["counters"].get("task-clock").is_none());
+}
+
+#[test]
+fn explicit_task_clock_is_a_counter_in_nanoseconds() {
+    let json = export(&["--runs=2", "--counters=cycles,task-clock", "sleep 0.5"]);
+    let r = &json["results"][0];
+    assert_eq!(r["counters"]["task-clock"][0], 500_000_000u64);
+    assert_eq!(r["mean_effective_frequency_hz"], 1.0e9);
+}
+
+#[test]
+fn frequency_line_and_no_flag_means_no_frequency() {
+    perfratio()
+        .args(["--debug-mode", "--runs=2", "--counters=cycles"])
+        .arg("sleep 0.2")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("cycles 200.0M @1.00 GHz"));
+    let json = export(&["--runs=2", "sleep 0.1"]);
+    assert!(json["results"][0].get("effective_frequency_hz").is_none());
+}
+
+#[test]
+fn unknown_name_lists_software_events_and_shorthands() {
+    perfratio()
+        .args(["--debug-mode", "--counters=migrations", "sleep 0.1"])
+        .assert()
+        .failure()
+        .stderr(
+            predicate::str::contains("cpu-migrations").and(predicate::str::contains(
+                "shorthands: default, sw, frequency",
+            )),
+        );
 }
 
 #[test]

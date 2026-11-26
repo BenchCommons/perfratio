@@ -67,6 +67,8 @@ pub mod error;
 #[doc(hidden)]
 pub mod export;
 #[doc(hidden)]
+pub mod frequency;
+#[doc(hidden)]
 pub mod import;
 #[doc(hidden)]
 pub mod metric;

@@ -105,7 +105,8 @@ fn run() -> Result<()> {
     }
 
     if let Some(mode) = cli_arguments.get_one::<String>("check-system") {
-        let checks = system_check::run_checks();
+        let mut checks = system_check::run_checks();
+        checks.extend(system_check::scheduler_check(options.counters.as_ref()));
         let passed = system_check::all_passed(&checks);
         if options.output_style != options::OutputStyleOption::Disabled {
             perfratio::outln!("{}", system_check::report(&checks));
