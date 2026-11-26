@@ -322,8 +322,10 @@ fn exports_of_many_flag_combinations_match_the_schema() {
 /// `runs_planned` come from Ctrl-C (see `an_interrupted_run_matches_the_schema`), the energy
 /// idle fields need readable RAPL, `counters_multiplexed_runs` and `counters_coverage` and `simd_scaling` a busy PMU,
 /// `discarded_outliers` a noisy run, `omitted_failed_runs` a flaky command and `shell`
-/// benchmarks with differing shells.
+/// benchmarks with differing shells, `interference` readable sensors or a cgroup (a fixture tree
+/// produces it in `interference_matches_the_schema`).
 const NEEDS_REAL_HOST: &[&str] = &[
+    "interference",
     "interrupted",
     "runs_planned",
     "idle_watts",
@@ -505,4 +507,40 @@ fn an_interrupted_run_matches_the_schema() {
     let document: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(document["interrupted"], true);
     assert_valid("interrupted", &document);
+}
+
+#[test]
+fn interference_matches_the_schema() {
+    let root = tempfile::tempdir().unwrap();
+    let write = |path: &str, content: &str| {
+        let full = root.path().join(path);
+        std::fs::create_dir_all(full.parent().unwrap()).unwrap();
+        std::fs::write(full, content).unwrap();
+    };
+    write("sys/class/thermal/thermal_zone0/temp", "48000\n");
+    write(
+        "sys/devices/system/cpu/cpu0/thermal_throttle/core_throttle_count",
+        "0\n",
+    );
+    write("proc/self/cgroup", "0::/job\n");
+    write("sys/fs/cgroup/cgroup.controllers", "cpu memory\n");
+    write(
+        "sys/fs/cgroup/job/cpu.stat",
+        "nr_throttled 0\nthrottled_usec 0\n",
+    );
+    write("sys/fs/cgroup/job/memory.events", "oom_kill 0\n");
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("out.json");
+    perfratio()
+        .env("PERFRATIO_SYSTEM_CHECK_ROOT", root.path())
+        .args(["--debug-mode", "--runs=3", "sleep 0.1", "--export-json"])
+        .arg(&path)
+        .assert()
+        .success();
+    let document: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let interference = &document["results"][0]["interference"];
+    assert_eq!(interference["cgroup_throttled_usec"], 0, "{interference}");
+    assert_eq!(interference["thermal"]["throttle_events"], 0);
+    assert_eq!(interference["cgroup_oom_kills"], 0);
+    assert_valid("interference", &document);
 }

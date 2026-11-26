@@ -70,6 +70,9 @@ pub enum OptionsError<'a> {
     #[error("{0}")]
     InvalidValidation(String),
 
+    #[error("{0}")]
+    InvalidCooldown(String),
+
     #[error("Invalid threshold '{0}' for '--discard-outliers': expected a positive number")]
     InvalidOutlierThreshold(String),
 

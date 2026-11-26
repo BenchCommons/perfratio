@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.18 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.19 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.18",
+      "const": "1.19",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -1219,6 +1219,52 @@
             ]
           },
           "description": "Buckets scaled for multiplexing: runs and lowest coverage."
+        },
+        "interference": {
+          "type": "object",
+          "properties": {
+            "cgroup_throttled_usec": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Microseconds the cgroup was throttled by its CPU quota during the runs (the cgroup's counter). Omitted when unreadable."
+            },
+            "cgroup_throttled_runs": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Runs during which the throttled time grew."
+            },
+            "cgroup_oom_kills": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Processes killed by the OOM killer in the cgroup during the runs."
+            },
+            "thermal": {
+              "type": "object",
+              "properties": {
+                "start_c": {
+                  "type": "number"
+                },
+                "end_c": {
+                  "type": "number"
+                },
+                "max_c": {
+                  "type": "number"
+                },
+                "throttle_events": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Thermal throttling events the CPUs reported; omitted when no counter exists."
+                }
+              },
+              "required": [
+                "start_c",
+                "end_c",
+                "max_c"
+              ],
+              "description": "Hottest CPU temperature sensor in degrees Celsius."
+            }
+          },
+          "description": "Environment observed while the runs executed (new in 1.19, #315). A source that cannot be read is omitted, never 0."
         }
       },
       "required": [

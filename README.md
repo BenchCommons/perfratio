@@ -185,7 +185,7 @@ alone does not fail the gate. When the command did not get slower, the same gate
 `-2.3%  p = 0.401  ~` and exits 0. `--export-diff-markdown <FILE>` writes the table for a pull
 request comment. A GitHub Actions example is in [doc/ci.md](doc/ci.md).
 
-Every benchmark also gets a measurement quality report (`results[].quality` in the JSON, a summary in the terminal when a check warns or fails): sample sufficiency, CI precision, outliers, trend, clusters, counter and energy coverage, workload validation. `--fail-on-quality with_caveats` exits with code 5 if a measurement is `unreliable`, next to `--fail-if-regressed` ([spec](docs/specs/measurement-quality.md)).
+Every benchmark also gets a measurement quality report (`results[].quality` in the JSON, a summary in the terminal when a check warns or fails): sample sufficiency, CI precision, outliers, trend, clusters, counter and energy coverage, workload validation. `--fail-on-quality with_caveats` exits with code 5 if a measurement is `unreliable`, next to `--fail-if-regressed` ([spec](docs/specs/measurement-quality.md)). On Linux, cgroup CPU-quota throttling and CPU temperature during the runs are exported as `interference` and checked by the quality report; `--cooldown 2s` or `--cooldown until-temp=60` waits between runs ([spec](docs/specs/cgroup-thermal.md)).
 
 ## JSON export and the `schemaVersion` contract
 

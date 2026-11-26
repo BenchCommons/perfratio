@@ -146,14 +146,14 @@ pub fn all_passed(checks: &[Check]) -> bool {
 // ---------------------------------------------------------------------------
 // Linux (sysfs / procfs below `root`)
 
-fn read(root: &Path, path: &str) -> Option<String> {
+pub(crate) fn read(root: &Path, path: &str) -> Option<String> {
     std::fs::read_to_string(root.join(path.trim_start_matches('/')))
         .ok()
         .map(|s| s.trim().to_string())
 }
 
 /// Entries of a directory below `root` whose name starts with `prefix`, sorted.
-fn entries(root: &Path, dir: &str, prefix: &str) -> Vec<PathBuf> {
+pub(crate) fn entries(root: &Path, dir: &str, prefix: &str) -> Vec<PathBuf> {
     let mut paths: Vec<PathBuf> = std::fs::read_dir(root.join(dir.trim_start_matches('/')))
         .into_iter()
         .flatten()
@@ -199,12 +199,8 @@ fn linux_checks(root: &Path, cpus: usize) -> Vec<Check> {
         checks.push(check);
     }
 
-    let temperatures: Vec<f64> = entries(root, "/sys/class/thermal", "thermal_zone")
-        .iter()
-        .filter_map(|zone| std::fs::read_to_string(zone.join("temp")).ok())
-        .filter_map(|t| t.trim().parse::<f64>().ok())
-        .map(|millidegrees| millidegrees / 1000.0)
-        .collect();
+    // the reader `interference.thermal` and `--cooldown` use too
+    let temperatures = crate::thermal::temperatures(root);
     if let Some(check) = thermal_check(&temperatures) {
         checks.push(check);
     }

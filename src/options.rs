@@ -390,6 +390,12 @@ pub struct Options {
     /// `--fail-on-quality`: exit non-zero when a benchmark's grade is worse
     pub fail_on_quality: Option<crate::quality::Grade>,
 
+    /// `--cooldown`: wait before every run
+    pub cooldown: Option<crate::cooldown::Cooldown>,
+
+    /// `--cooldown-timeout`: how long `until-temp` waits before it gives up
+    pub cooldown_timeout: std::time::Duration,
+
     /// Modified Z-score above which runs are discarded (--discard-outliers)
     pub discard_outliers: Option<f64>,
 
@@ -480,6 +486,8 @@ impl Default for Options {
             validation: None,
             quality_mode: Default::default(),
             fail_on_quality: None,
+            cooldown: None,
+            cooldown_timeout: crate::cooldown::DEFAULT_TIMEOUT,
             discard_outliers: None,
             show_resource_usage: false,
             counters: None,
@@ -914,6 +922,19 @@ impl Options {
         options.fail_on_quality = matches
             .get_one::<String>("fail-on-quality")
             .and_then(|value| crate::quality::Grade::parse(value));
+        options.cooldown = matches
+            .get_one::<String>("cooldown")
+            .map(|value| {
+                crate::cooldown::Cooldown::parse(value).map_err(OptionsError::InvalidCooldown)
+            })
+            .transpose()?;
+        if let Some(value) = matches.get_one::<String>("cooldown-timeout") {
+            options.cooldown_timeout = crate::util::units::parse_duration(value).map_err(|e| {
+                OptionsError::InvalidCooldown(format!(
+                    "Invalid '--cooldown-timeout' '{value}': {e}"
+                ))
+            })?;
+        }
         options.show_resource_usage = matches.get_flag("resource-usage");
         let simd = matches.get_flag("simd");
         // `--metric instructions|cycles` collects its own counter

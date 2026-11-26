@@ -138,6 +138,11 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quality: Option<crate::quality::QualityReport>,
 
+    /// CPU throttling by the cgroup quota and temperature during the runs.
+    /// Absent when neither could be read. See `docs/specs/cgroup-thermal.md`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interference: Option<crate::environment_watch::Interference>,
+
     /// Zero-based indices of the runs excluded from the statistics by
     /// --discard-outliers
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

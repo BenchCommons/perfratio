@@ -1108,6 +1108,10 @@ fn scheduler_basic() -> Result<()> {
             metric: time
             status: unavailable
             detail: needs at least 8 runs
+          - id: environment_stability
+            metric: environment
+            status: not_applicable
+            detail: no cgroup throttle counters or temperature sensors can be read on this host
           - id: counter_coverage
             metric: counters
             status: not_applicable
@@ -1169,6 +1173,10 @@ fn scheduler_basic() -> Result<()> {
             metric: time
             status: unavailable
             detail: needs at least 8 runs
+          - id: environment_stability
+            metric: environment
+            status: not_applicable
+            detail: no cgroup throttle counters or temperature sensors can be read on this host
           - id: counter_coverage
             metric: counters
             status: not_applicable
@@ -1239,6 +1247,10 @@ fn scheduler_round_robin() -> Result<()> {
             metric: time
             status: unavailable
             detail: needs at least 8 runs
+          - id: environment_stability
+            metric: environment
+            status: not_applicable
+            detail: no cgroup throttle counters or temperature sensors can be read on this host
           - id: counter_coverage
             metric: counters
             status: not_applicable
@@ -1300,6 +1312,10 @@ fn scheduler_round_robin() -> Result<()> {
             metric: time
             status: unavailable
             detail: needs at least 8 runs
+          - id: environment_stability
+            metric: environment
+            status: not_applicable
+            detail: no cgroup throttle counters or temperature sensors can be read on this host
           - id: counter_coverage
             metric: counters
             status: not_applicable
