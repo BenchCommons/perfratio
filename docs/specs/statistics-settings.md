@@ -1,6 +1,6 @@
 # Spec: Selectable estimator, confidence and significance levels, bootstrap settings (#320)
 
-**Status:** Implemented. JSON `schemaVersion` 1.20.
+**Status:** Implemented. JSON `schemaVersion` 1.21.
 
 ## Problem / Motivation
 References: #320, #82, #50, #215, #240; megafine `--estimator`, benchstat, criterion.rs
@@ -55,7 +55,7 @@ median when a few slow runs (GC, a cold cache) should not decide the ranking, an
 the largest or second-largest value and its bootstrap interval is wide. The median of few runs
 is noisy but unbiased. The quality report flags small samples.
 
-### JSON (additive, `schemaVersion` 1.19 → 1.20)
+### JSON (additive, `schemaVersion` 1.20 → 1.21)
 - `perfratio.statistics = { estimator, confidence_level, significance_level,
   bootstrap_resamples, bootstrap_seed }`, always present.
 - `results[].relative_speed_ci = [low, high]` for estimators other than the mean.
