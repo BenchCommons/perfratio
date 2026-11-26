@@ -90,7 +90,24 @@ mod unix {
         }
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn realtime_on_macos_raises_priority_or_explains_permission() {
+        let output = perfratio()
+            .args(["--runs=1", "-N", "--priority=realtime", "true"])
+            .output()
+            .unwrap();
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                stderr.contains("could not set '--priority realtime'")
+                    && stderr.contains("requires root"),
+                "{stderr}"
+            );
+        }
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     #[test]
     fn realtime_is_rejected_where_unsupported() {
         perfratio()
@@ -98,7 +115,7 @@ mod unix {
             .assert()
             .failure()
             .stderr(predicate::str::contains(
-                "only supported on Linux and Windows",
+                "only supported on Linux, macOS and Windows",
             ));
     }
 }

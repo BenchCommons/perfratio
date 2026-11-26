@@ -32,12 +32,162 @@ pub fn parse_cpu_list(list: &str) -> Result<Vec<usize>> {
     Ok(cpus)
 }
 
+/// Core class selected by `--affinity p-cores|e-cores` (macOS).
+///
+/// macOS cannot pin a process to CPUs. On Apple Silicon the scheduler picks the
+/// core type from the task and thread policy, so this is a scheduling
+/// preference, not a hard guarantee like Linux `sched_setaffinity`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoreClass {
+    /// Performance cores (foreground task role)
+    Performance,
+    /// Efficiency cores (`PRIO_DARWIN_BG`)
+    Efficiency,
+}
+
+impl CoreClass {
+    /// Parse `p-cores` or `e-cores` (case-insensitive). `None` for anything else.
+    pub fn parse(value: &str) -> Option<CoreClass> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "p-cores" => Some(CoreClass::Performance),
+            "e-cores" => Some(CoreClass::Efficiency),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CoreClass::Performance => "p-cores",
+            CoreClass::Efficiency => "e-cores",
+        }
+    }
+}
+
+/// Check a core class request. `perf_levels` is the number of CPU performance
+/// levels the system reports (`hw.nperflevels` on macOS), `None` if unknown.
+pub fn validate_core_class(class: CoreClass, perf_levels: Option<u32>) -> Result<()> {
+    if !cfg!(target_os = "macos") {
+        bail!(
+            "'--affinity {}' is only supported on macOS; use a CPU list such as '0-3' on \
+             Linux and Windows",
+            class.as_str()
+        );
+    }
+    ensure!(
+        perf_levels.is_some_and(|levels| levels > 1),
+        "'--affinity {}' needs a CPU with performance and efficiency cores (Apple Silicon); \
+         this system has a single core type",
+        class.as_str()
+    );
+    Ok(())
+}
+
+/// Number of CPU performance levels (`hw.nperflevels`): 2 on Apple Silicon with
+/// P and E cores, 1 on Intel Macs.
+#[cfg(target_os = "macos")]
+pub fn perf_levels() -> Option<u32> {
+    let mut value: libc::c_int = 0;
+    let mut size = std::mem::size_of::<libc::c_int>();
+    // SAFETY: the name is a NUL-terminated string and `value`/`size` describe a
+    // valid c_int buffer.
+    let ret = unsafe {
+        libc::sysctlbyname(
+            c"hw.nperflevels".as_ptr(),
+            (&mut value as *mut libc::c_int).cast(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    (ret == 0 && value > 0).then_some(value as u32)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn perf_levels() -> Option<u32> {
+    None
+}
+
+/// Mach task policy declarations (libSystem); the `libc` crate lacks them.
+#[cfg(target_os = "macos")]
+mod mach {
+    pub const TASK_CATEGORY_POLICY: u32 = 1;
+    pub const TASK_FOREGROUND_APPLICATION: i32 = 1;
+    /// Size of `task_category_policy_data_t` in 32-bit words
+    pub const TASK_CATEGORY_POLICY_COUNT: u32 = 1;
+
+    extern "C" {
+        pub static mach_task_self_: u32;
+        pub fn task_policy_set(task: u32, flavor: u32, info: *mut i32, count: u32) -> i32;
+    }
+}
+
+/// Give the calling task the foreground application role (macOS). Unlike
+/// thread QoS and thread policies, the task role survives exec.
+#[cfg(target_os = "macos")]
+pub fn set_foreground_role() -> std::io::Result<()> {
+    let mut role = mach::TASK_FOREGROUND_APPLICATION;
+    // SAFETY: `role` is a task_category_policy_data_t of the stated size; after
+    // fork, mach_task_self_ names the child's own task.
+    let ret = unsafe {
+        mach::task_policy_set(
+            mach::mach_task_self_,
+            mach::TASK_CATEGORY_POLICY,
+            &mut role,
+            mach::TASK_CATEGORY_POLICY_COUNT,
+        )
+    };
+    if ret == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::other(format!(
+            "task_policy_set(TASK_CATEGORY_POLICY) failed with kern_return_t {ret}"
+        )))
+    }
+}
+
+/// Prefer the given core class for the process spawned by `command` (macOS).
+/// Set in the child between fork and exec with task-level policies, which
+/// (unlike thread QoS) survive exec and are inherited by its children:
+/// - e-cores: `PRIO_DARWIN_BG`; on Apple Silicon background tasks run on the
+///   efficiency cores only (also lowers I/O priority).
+/// - p-cores: clears `PRIO_DARWIN_BG` and sets the foreground task role. The
+///   scheduler may still place threads on efficiency cores under load.
+#[cfg(target_os = "macos")]
+pub fn apply_core_class(command: &mut std::process::Command, class: CoreClass) {
+    use std::os::unix::process::CommandExt;
+
+    // SAFETY: the closure runs between fork and exec and only calls the
+    // setpriority syscall and the task_policy_set Mach call on the child.
+    unsafe {
+        command.pre_exec(move || {
+            let background = match class {
+                CoreClass::Efficiency => libc::PRIO_DARWIN_BG,
+                CoreClass::Performance => 0,
+            };
+            if libc::setpriority(libc::PRIO_DARWIN_PROCESS, 0, background) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            if class == CoreClass::Performance {
+                set_foreground_role()?;
+            }
+            Ok(())
+        });
+    }
+}
+
 /// Check that the CPUs exist and that pinning is supported on this platform.
 pub fn validate(cpus: &[usize]) -> Result<()> {
+    if cfg!(target_os = "macos") {
+        bail!(
+            "'--affinity' with a CPU list is not supported on macOS (it has no API to pin a \
+             process to CPUs); use '--affinity p-cores' or '--affinity e-cores' to prefer a \
+             core type"
+        );
+    }
     if !cfg!(any(target_os = "linux", windows)) {
         bail!(
-            "'--affinity' is only supported on Linux and Windows (this OS has no API to pin \
-             a process to CPUs)"
+            "'--affinity' is only supported on Linux, Windows and macOS (this OS has no API \
+             to pin a process to CPUs)"
         );
     }
     let available = configured_cpus();
@@ -129,7 +279,39 @@ mod tests {
         assert!(validate(&[0]).is_ok());
     }
 
-    #[cfg(not(any(target_os = "linux", windows)))]
+    #[test]
+    fn parses_core_classes() {
+        assert_eq!(CoreClass::parse("p-cores"), Some(CoreClass::Performance));
+        assert_eq!(CoreClass::parse(" E-Cores "), Some(CoreClass::Efficiency));
+        assert_eq!(CoreClass::parse("0-3"), None);
+        assert_eq!(CoreClass::parse("cores"), None);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn core_class_needs_two_performance_levels() {
+        assert!(validate_core_class(CoreClass::Efficiency, Some(2)).is_ok());
+        for levels in [None, Some(1)] {
+            let err = validate_core_class(CoreClass::Performance, levels).unwrap_err();
+            assert!(err.to_string().contains("single core type"), "{err}");
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn core_class_is_macos_only() {
+        let err = validate_core_class(CoreClass::Performance, Some(2)).unwrap_err();
+        assert!(err.to_string().contains("only supported on macOS"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn cpu_list_is_rejected_on_macos_with_alternative() {
+        let err = validate(&[0]).unwrap_err().to_string();
+        assert!(err.contains("p-cores") && err.contains("not supported on macOS"));
+    }
+
+    #[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
     #[test]
     fn is_unsupported_on_this_platform() {
         assert!(validate(&[0])

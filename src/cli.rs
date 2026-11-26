@@ -889,7 +889,8 @@ pub fn build_command() -> Command {
                 .help("Pin every benchmarked command (and --prepare/--conclude/--setup/--cleanup) \
                        to the given CPUs, e.g. '2', '0-3' or '0,2,4-5'. Reduces noise from \
                        migrations between cores, especially on CPUs with performance and \
-                       efficiency cores. Linux and Windows only."),
+                       efficiency cores. Linux and Windows. macOS cannot pin to CPUs: use \
+                       'p-cores' or 'e-cores' (Apple Silicon) to prefer a core type."),
         )
         .arg(
             Arg::new("check-system")
@@ -923,7 +924,8 @@ pub fn build_command() -> Command {
                 .help("Scheduling priority of every benchmarked command (and \
                        --prepare/--conclude/--setup/--cleanup): 'high' and 'realtime' reduce \
                        preemption by other processes, 'idle' benchmarks background workloads. \
-                       Default: normal (inherited).")
+                       On macOS 'realtime' is nice -20 plus the foreground task role, not a \
+                       real-time policy. Default: normal (inherited).")
                 .long_help("Scheduling priority of every benchmarked command (and \
                        --prepare/--conclude/--setup/--cleanup).\n\n\
                        'normal' (default): inherit perfratio's priority.\n\

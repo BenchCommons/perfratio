@@ -214,8 +214,8 @@ The CI builds and tests these targets and attaches them to releases. Features di
 | Time, CPU time, peak memory | yes | yes | yes |
 | Energy (`--energy`, RAPL) | bare metal, via sysfs `energy_uj` or the perf power PMU | no | no |
 | `--resource-usage` | yes | yes | no (Unix only) |
-| `--affinity` | yes | no | yes |
-| `--priority realtime` | yes (`SCHED_FIFO`) | no | yes |
+| `--affinity` | yes | `p-cores`/`e-cores` only (scheduling preference) | yes |
+| `--priority realtime` | yes (`SCHED_FIFO`) | nice -20 + foreground role (not real-time) | yes |
 | `--check-system` | yes | yes (fewer checks) | no |
 
 Release targets: `x86_64`, `aarch64`, `i686` and `arm` Linux (gnu and musl), `x86_64` and
