@@ -296,6 +296,7 @@ fn schema_1_1_layout_snapshot() {
       - measurements
       - metrics
       - started_at
+      - statistics
       - system
       - version
     result_guaranteed:

@@ -115,10 +115,13 @@ pub fn build_command() -> Command {
         .arg(
             Arg::new("seed")
                 .long("seed")
+                .visible_alias("bootstrap-seed")
                 .action(ArgAction::Set)
                 .value_name("NUM")
                 .value_parser(clap::value_parser!(u64))
-                .help("Seed for '--parameter-sample' (default: 0, so runs are reproducible)."),
+                .help("Seed for '--parameter-sample' (default: 0) and for the bootstrap \
+                       resampling of intervals and tests (default: a fixed seed). Defaults make \
+                       runs reproducible; the same seed gives the same output."),
         )
         .arg(
             Arg::new("compare")
@@ -712,6 +715,40 @@ pub fn build_command() -> Command {
                 .long("deep-stats")
                 .action(ArgAction::SetTrue)
                 .help("Perform deep statistical analysis (bootstrapped confidence intervals for mean, median, and stddev, plus hypothesis testing)."),
+        )
+        .arg(
+            Arg::new("estimator")
+                .long("estimator")
+                .action(ArgAction::Set)
+                .value_name("ESTIMATOR")
+                .help("Central value used for ranking, relative speed, significance, the delta \
+                       table, '--compare' and '--target-precision': 'mean' (default), \
+                       'median' or a percentile such as 'p95'. Prefer the median or a \
+                       percentile for skewed timings (GC pauses, page-cache effects); with few \
+                       runs a percentile is noisy. Other than the mean, intervals are bootstrap \
+                       intervals and the ratio carries a bootstrap interval instead of ± σ."),
+        )
+        .arg(
+            Arg::new("confidence-level")
+                .long("confidence-level")
+                .action(ArgAction::Set)
+                .value_name("LEVEL")
+                .help("Confidence level of intervals, strictly between 0 and 1 (default: 0.95)."),
+        )
+        .arg(
+            Arg::new("significance-level")
+                .long("significance-level")
+                .action(ArgAction::Set)
+                .value_name("ALPHA")
+                .help("Level of hypothesis tests and significance markers, strictly between 0 \
+                       and 1 (default: 0.05)."),
+        )
+        .arg(
+            Arg::new("bootstrap-resamples")
+                .long("bootstrap-resamples")
+                .action(ArgAction::Set)
+                .value_name("N")
+                .help("Number of bootstrap resamples, at least 100 (default: 5000)."),
         )
         .arg(
             Arg::new("metric")

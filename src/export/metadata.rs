@@ -22,6 +22,33 @@ pub struct ExportMetadata {
     pub energy_backend: Option<&'static str>,
     /// Which measurement groups were measured, unavailable or not requested
     pub measurements: Measurements,
+    /// Estimator, levels and bootstrap settings behind the statistics (new in 1.21, #320)
+    pub statistics: StatisticsInfo,
+}
+
+/// The `perfratio.statistics` object: how the ranking, ratios, intervals and
+/// significance of this export were computed.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct StatisticsInfo {
+    /// `mean`, `median` or a percentile such as `p95`; the central value of
+    /// `relative_speed`, `significance` and the comparison
+    pub estimator: String,
+    pub confidence_level: f64,
+    pub significance_level: f64,
+    pub bootstrap_resamples: usize,
+    pub bootstrap_seed: u64,
+}
+
+impl StatisticsInfo {
+    pub fn from_settings(settings: &crate::stats::settings::StatSettings) -> Self {
+        StatisticsInfo {
+            estimator: settings.estimator.name(),
+            confidence_level: settings.confidence_level,
+            significance_level: settings.significance_level,
+            bootstrap_resamples: settings.bootstrap_resamples,
+            bootstrap_seed: settings.seed,
+        }
+    }
 }
 
 /// Status of one measurement group (`schemaVersion` 1.0, open enum).
@@ -199,6 +226,7 @@ impl ExportMetadata {
             },
             energy_backend: None,
             measurements,
+            statistics: StatisticsInfo::from_settings(&crate::stats::settings::current()),
         }
     }
 }

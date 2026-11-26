@@ -60,6 +60,11 @@ struct ResultEntry<'a> {
     relative_speed: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     relative_speed_stddev: Option<f64>,
+    /// Bootstrap interval `[low, high]` of `relative_speed` at
+    /// `perfratio.statistics.confidence_level`, for estimators other than the
+    /// mean (new in 1.21, #320)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    relative_speed_ci: Option<[f64; 2]>,
     /// Significance of the difference to the reference (#215). Omitted for the
     /// reference itself and if the test is undefined (fewer than 3 runs, no per-run times).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -151,6 +156,10 @@ impl Exporter for JsonExporter {
                     relative_speed_stddev: entry
                         .filter(|e| !e.is_reference)
                         .and_then(|e| e.relative_speed_stddev),
+                    relative_speed_ci: entry
+                        .filter(|e| !e.is_reference)
+                        .and_then(|e| e.relative_speed_ci)
+                        .map(|(lo, hi)| [lo, hi]),
                     significance: assessment.map(|a| a.significance),
                     p_value: assessment.map(|a| a.p_value),
                 }

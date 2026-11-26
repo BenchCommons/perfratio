@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.19 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.21 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
@@ -275,7 +275,43 @@
             "wall_floor_mad",
             "runs"
           ],
-          "description": "Runner floor measured by --calibrate (new in 1.21, #313). Omitted with --calibrate=off, with --debug-mode, or when it could not be measured."
+          "description": "Runner floor measured by --calibrate (new in 1.22, #313). Omitted with --calibrate=off, with --debug-mode, or when it could not be measured."
+        },
+        "statistics": {
+          "type": "object",
+          "properties": {
+            "estimator": {
+              "type": "string",
+              "description": "mean, median or a percentile such as p95: the central value behind relative_speed, significance and the comparisons."
+            },
+            "confidence_level": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1
+            },
+            "significance_level": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1
+            },
+            "bootstrap_resamples": {
+              "type": "integer",
+              "minimum": 100
+            },
+            "bootstrap_seed": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Unsigned 64-bit; may exceed 2^53, so read it as an integer, not a double."
+            }
+          },
+          "required": [
+            "estimator",
+            "confidence_level",
+            "significance_level",
+            "bootstrap_resamples",
+            "bootstrap_seed"
+          ],
+          "description": "New in 1.21 (#320): how the ranking, ratios, intervals and significance were computed. Always written by 1.21 and later; not required here, so that a MINOR addition is not a breaking change for consumers of older exports."
         }
       },
       "required": [
@@ -763,7 +799,7 @@
         },
         "below_resolution": {
           "type": "boolean",
-          "description": "The mean is within the runner floor (new in 1.21, #313). Omitted when no floor was measured."
+          "description": "The mean is within the runner floor (new in 1.22, #313). Omitted when no floor was measured."
         }
       },
       "required": [
@@ -850,6 +886,15 @@
         },
         "relative_speed_stddev": {
           "type": "number"
+        },
+        "relative_speed_ci": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "New in 1.21 (#320): [low, high] bootstrap interval of relative_speed at statistics.confidence_level, for estimators other than the mean."
         },
         "significance": {
           "enum": [

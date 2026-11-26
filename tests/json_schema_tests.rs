@@ -243,6 +243,10 @@ const CASES: &[(&str, &[&str])] = &[
         ],
     ),
     ("duration", &["--duration=1s", "sleep 0.5"]),
+    (
+        "estimator median",
+        &["--runs=3", "--estimator=median", "sleep 0.1", "sleep 0.2"],
+    ),
     ("target precision", &["--target-precision=1%", "sleep 0.1"]),
     (
         "discard outliers",
