@@ -47,6 +47,8 @@ pub mod import;
 #[doc(hidden)]
 pub mod metric;
 #[doc(hidden)]
+pub mod optimize;
+#[doc(hidden)]
 pub mod options;
 #[doc(hidden)]
 pub mod outlier_detection;

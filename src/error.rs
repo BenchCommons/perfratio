@@ -89,6 +89,8 @@ pub enum OptionsError<'a> {
     EmptyUntilPattern,
     #[error("Invalid '--output-metric': {0}")]
     InvalidOutputMetric(String),
+    #[error("{0}")]
+    InvalidOptimize(String),
 }
 
 #[derive(Debug, Error)]
