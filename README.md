@@ -5,7 +5,7 @@
 perfratio is a command-line benchmarking tool that measures **time, peak memory and energy**
 for the same command and compares the results with statistics. It is the measurement engine
 of [BenchCommons](https://github.com/BenchCommons). It owns the versioned JSON output
-contract that other BenchCommons tools consume. The `schemaVersion` field is coming in 1.0 and is pending PR #262 (see [JSON export](#json-export-and-the-schemaversion-contract)).
+contract that other BenchCommons tools consume. Every JSON export starts with a `schemaVersion` field (see [JSON export](#json-export-and-the-schemaversion-contract)).
 
 perfratio was formerly called `joulex`.
 
@@ -20,15 +20,15 @@ borrow from [`Gabriella439/bench`](https://github.com/Gabriella439/bench). perfr
 - Deep statistics (`--deep-stats`): bootstrapped confidence intervals and hypothesis tests.
 - A regression gate against an earlier export (`--compare`, `--fail-if-regressed`).
 - Cross-language helpers: `--warmup auto`, `--first-run`, `--output-metric`, `--target-precision`.
-- Time-budgeted sampling (`--duration 5s`) and significance indicators on speedups and regressions.
-- A versioned JSON export for tools that consume the results. The `schemaVersion` field is coming in 1.0 (pending #262).
+- Time-budgeted sampling (`--duration 5s`), a primary metric (`--metric`), a multi-dimensional `--delta-table`, and significance indicators on speedups and regressions.
+- A versioned JSON export for tools that consume the results (`schemaVersion`).
 
 Run `perfratio --help` for every option. perfratio can read hyperfine and joulex JSON
 files (`--import-json`).
 
 ## Install
 
-perfratio is not yet on crates.io or Homebrew. Both are coming soon (see
+perfratio is not yet on crates.io or Homebrew. Both are planned (see
 [#93](https://github.com/BenchCommons/perfratio/issues/93)).
 
 **From source** (Rust 1.88 or newer):
@@ -114,8 +114,16 @@ Benchmark 1: sleep 0.1
   Energy:             RAPL unprivileged/unavailable on host
 ```
 
-A backend based on the Linux perf PMU, which does not need root access to sysfs, is planned
-([#223](https://github.com/BenchCommons/perfratio/issues/223)).
+`--energy-backend <auto|sysfs|perf>` (or `PERFRATIO_ENERGY_BACKEND`) picks the source on Linux.
+`auto`, the default, uses sysfs powercap and falls back to the perf power PMU
+(`power/energy-pkg`) when `energy_uj` is unreadable. `--energy-baseline <DURATION>` measures
+idle power first and also reports net energy (measured minus idle power times run time).
+`--metric energy` ranks by energy and turns on `--energy`.
+
+`--delta-table` prints one table per command against the reference, with a row for each measured
+dimension (wall time, peak memory, energy, power, CPU time): mean ± σ, relative delta with its
+95% confidence interval, and the p-value. `--metric <wall|cpu|user|system|energy|memory>` sets the
+primary metric for statistics, comparison and sorting.
 
 `--check-system` reports conditions that add noise (frequency governor, turbo boost, load,
 power source). `--check-system=strict` aborts with exit code 4 if a check fails.
@@ -154,8 +162,7 @@ request comment. A GitHub Actions example is in [doc/ci.md](doc/ci.md).
 
 `--export-json <FILE>` (or `-e results.json`) writes the summary statistics and every run's
 timings. perfratio owns this output, and consumers such as `tools-benchmark` read it.
-**Status:** the `schemaVersion` key is not on `master` yet. It is pending PR #262 and
-planned for 1.0. Until then exports have no `schemaVersion` (the legacy shape).
+The current version is `"1.1"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested. The legacy top-level `joulex` key was removed in `schemaVersion` 1.0: read `perfratio` instead ([docs/MIGRATION.md](docs/MIGRATION.md)).
 
 The contract is a top-level `"schemaVersion": "MAJOR.MINOR"` string. Consumers must ignore
 unknown keys and accept any MINOR version of the MAJOR version they support. A removed or
@@ -163,9 +170,8 @@ renamed field, or a changed unit, bumps MAJOR.
 
 The contract is specified in [docs/specs/output-schema-contract.md](docs/specs/output-schema-contract.md)
 (see [#240](https://github.com/BenchCommons/perfratio/issues/240)). Read that document for the
-field list. The `schemaVersion` key is part of the contract and may not be present in
-every build until it is implemented. Files without it are the legacy shape, and
-`--import-json` still reads them.
+field list. Files without `schemaVersion` are the legacy shape, and `--import-json` still
+reads them. A JSON Schema file and per-run `energy_samples` are not available yet.
 
 ## Recommended flags for cross-language runs
 
@@ -178,6 +184,7 @@ warmup effects differ a lot between runtimes. Use:
 | `--warmup auto` | Warms up each command until timings are stable (at most 100 runs), so JIT-compiled and interpreted languages are not penalized by a fixed count. |
 | `--first-run=separate` | Reports the cold first run on its own line (`first_run` in the JSON) and keeps it out of the statistics. |
 | `--output-metric NAME=REGEX` | Reads a number from the command's stdout, or stderr with `--output-metric-stderr` (first capture group of the last match). Have the program time its algorithm and print it, so startup is separated from algorithm time. |
+| `--duration <DURATION>` | Samples each command until the summed run time reaches DURATION (at least 3 runs), for example `--duration 5s`. Conflicts with `--runs` and `--target-precision`. |
 | `--target-precision <PCT>` | Runs until the 95% confidence interval of the mean is within PCT of the mean, bounded by `--min-runs`, `--max-runs` and `--max-benchmarking-time`. Fast commands finish early. |
 
 Example (real output; the program prints `algo_ms=12.5` and sleeps 50 ms):
@@ -205,7 +212,7 @@ The CI builds and tests these targets and attaches them to releases. Features di
 | Feature | Linux | macOS | Windows |
 |---|---|---|---|
 | Time, CPU time, peak memory | yes | yes | yes |
-| Energy (`--energy`, RAPL) | bare metal with readable `energy_uj` only | no | no |
+| Energy (`--energy`, RAPL) | bare metal, via sysfs `energy_uj` or the perf power PMU | no | no |
 | `--resource-usage` | yes | yes | no (Unix only) |
 | `--affinity` | yes | no | yes |
 | `--priority realtime` | yes (`SCHED_FIFO`) | no | yes |
