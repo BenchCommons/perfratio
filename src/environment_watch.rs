@@ -48,15 +48,15 @@ impl Watch {
         Watch::default()
     }
 
-    /// Observe the host below `root`
-    pub fn new(root: &Path) -> Self {
+    /// Observe the host below `root`; the temperature only when `thermal`
+    pub fn new(root: &Path, thermal: bool) -> Self {
         let cgroup = crate::cgroup::locate(root).filter(|c| c.snapshot().is_some());
         Watch {
             cgroup,
             throttled_usec: 0,
             throttled_runs: 0,
             oom_kills: None,
-            thermal: Some(BackgroundThermal::start(root)),
+            thermal: thermal.then(|| BackgroundThermal::start(root)),
         }
     }
 
@@ -211,7 +211,7 @@ mod tests {
     fn counts_the_throttled_time_and_runs() {
         let dir = fixture();
         let r = dir.path();
-        let mut watch = Watch::new(r);
+        let mut watch = Watch::new(r, true);
         for (nr, usec) in [(0, 0), (3, 4000), (3, 4000), (5, 9000)] {
             let before = watch.begin();
             stat(r, nr, usec);
@@ -228,7 +228,7 @@ mod tests {
     #[test]
     fn a_quiet_cgroup_reports_zero_because_it_was_read() {
         let dir = fixture();
-        let mut watch = Watch::new(dir.path());
+        let mut watch = Watch::new(dir.path(), true);
         let before = watch.begin();
         watch.end(before);
         let i = watch.finish().unwrap();
@@ -244,7 +244,7 @@ mod tests {
         write(r, "sys/fs/cgroup/cgroup.controllers", "memory\n");
         // no throttle counters at all
         write(r, "sys/fs/cgroup/cpu.stat", "usage_usec 1\n");
-        let mut watch = Watch::new(r);
+        let mut watch = Watch::new(r, true);
         let before = watch.begin();
         watch.end(before);
         assert_eq!(watch.finish(), None);
@@ -257,7 +257,7 @@ mod tests {
         watch.end(before);
         assert_eq!(watch.finish(), None);
         let dir = tempfile::tempdir().unwrap();
-        assert_eq!(Watch::new(dir.path()).finish(), None);
+        assert_eq!(Watch::new(dir.path(), true).finish(), None);
     }
 
     #[test]

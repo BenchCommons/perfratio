@@ -67,7 +67,10 @@ fn debug_mode_without_a_fixture_observes_nothing() {
 #[test]
 fn temperature_is_traced_and_a_cool_host_passes() {
     let root = thermal_root("52000\n");
-    let json = export(&["--debug-mode", "--runs=3", "sleep 0.1"], root.path());
+    let json = export(
+        &["--debug-mode", "--thermal", "--runs=3", "sleep 0.1"],
+        root.path(),
+    );
     let result = &json["results"][0];
     let thermal = &result["interference"]["thermal"];
     assert_eq!(thermal["start_c"], 52.0);
