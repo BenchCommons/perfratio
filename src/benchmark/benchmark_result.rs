@@ -105,6 +105,12 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mean_net_energy_joules: Option<f64>,
 
+    /// Energy per RAPL domain in Joules, one value per run (`--energy-domains`). Keys are
+    /// `package`, `core`, `uncore`, `dram`, `psys`. The domains overlap, so they are not
+    /// additive and `energy_joules` is not their sum. Only present when every run has it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub energy_domains_joules: Option<std::collections::BTreeMap<String, Vec<f64>>>,
+
     /// Exit codes of all command invocations
     #[serde(default)]
     pub exit_codes: Vec<Option<i32>>,

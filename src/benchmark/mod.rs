@@ -8,7 +8,9 @@ use std::cmp;
 
 use crate::benchmark::executor::BenchmarkIteration;
 use crate::command::Command;
-use crate::energy::{get_energy_sampler, idle_power, net_energy, EnergySampler, SHORT_RUN_SECONDS};
+use crate::energy::{
+    align_to_child, get_energy_sampler, idle_power, net_energy, EnergySampler, SHORT_RUN_SECONDS,
+};
 use crate::metric::Metric;
 use crate::options::{
     CmdFailureAction, CommandOutputPolicy, ExecutorKind, FirstRunPolicy, Options,
@@ -40,6 +42,29 @@ use colored::Colorize as _;
 use self::executor::Executor;
 
 /// Threshold for warning about fast execution time
+/// Per-domain series for the export: only when every run has a reading of the same domains.
+fn domains_series(
+    runs: &[Option<Vec<(String, f64)>>],
+    total_runs: usize,
+) -> Option<std::collections::BTreeMap<String, Vec<f64>>> {
+    if runs.is_empty() || runs.len() != total_runs {
+        return None;
+    }
+    let first = runs[0].as_ref()?;
+    let mut series: std::collections::BTreeMap<String, Vec<f64>> =
+        first.iter().map(|(n, _)| (n.clone(), Vec::new())).collect();
+    for run in runs {
+        let run = run.as_ref()?;
+        if run.len() != series.len() {
+            return None;
+        }
+        for (name, joules) in run {
+            series.get_mut(name)?.push(*joules);
+        }
+    }
+    (!series.is_empty()).then_some(series)
+}
+
 pub const MIN_EXECUTION_TIME: Second = 5e-3;
 
 /// Manages the state, execution steps, and metric collection for a single benchmark command.
@@ -60,6 +85,10 @@ pub struct BenchmarkRunner<'a> {
     pub times_system: Vec<Second>,
     pub memory_usage_byte: Vec<u64>,
     pub energy_measurements: Vec<Option<f64>>,
+    /// Per-domain energy of each run (`--energy-domains`), aligned with `energy_measurements`
+    pub domain_measurements: Vec<Option<Vec<(String, f64)>>>,
+    /// Breakdown of the run being recorded, moved to `domain_measurements` with its time
+    pending_domains: Option<Vec<(String, f64)>>,
     pub exit_codes: Vec<Option<i32>>,
     /// `--concurrency N` (N > 1): instance wall times of every run, in spawn order
     pub instance_times: Vec<Vec<Second>>,
@@ -145,6 +174,13 @@ impl<'a> BenchmarkRunner<'a> {
             None
         };
 
+        let mut energy_sampler = energy_sampler;
+        if options.energy_domains {
+            if let Some(s) = energy_sampler.as_mut() {
+                s.enable_domains();
+            }
+        }
+
         let idle_watts = match options.energy_baseline {
             Some(d) if options.measure_energy => idle_power(d, options.energy_backend),
             _ => None,
@@ -166,6 +202,8 @@ impl<'a> BenchmarkRunner<'a> {
             times_system: vec![],
             memory_usage_byte: vec![],
             energy_measurements: vec![],
+            domain_measurements: vec![],
+            pending_domains: None,
             exit_codes: vec![],
             instance_times: vec![],
             instance_exit_codes: vec![],
@@ -369,6 +407,23 @@ impl<'a> BenchmarkRunner<'a> {
         res
     }
 
+    /// Stops the sampler and returns the energy of the child's lifetime. `window` is the
+    /// wall time from `start()` to the end of the run, `time_real` the child's own time.
+    /// The per-domain breakdown is scaled the same way and stored for the export.
+    fn stop_energy(&mut self, time_real: f64, window: f64) -> Option<f64> {
+        let sampler = self.energy_sampler.as_mut()?;
+        let energy = sampler.stop();
+        let domains = sampler.domain_energy().map(|d| {
+            d.into_iter()
+                .map(|(n, j)| (n, align_to_child(j, time_real, window)))
+                .collect::<Vec<_>>()
+        });
+        if self.options.energy_domains {
+            self.pending_domains = domains;
+        }
+        energy.map(|e| align_to_child(e, time_real, window))
+    }
+
     /// `--subtract`: subtract the baseline's mean energy from a run (clamped to 0).
     fn subtract_baseline_energy(&self, energy: Option<f64>) -> Option<f64> {
         match (energy, self.baseline.as_ref().and_then(|b| b.energy_joules)) {
@@ -508,13 +563,15 @@ impl<'a> BenchmarkRunner<'a> {
         if let Some(sampler) = self.energy_sampler.as_mut() {
             sampler.start();
         }
+        let window_start = std::time::Instant::now();
         let (res, status) = self.executor.run_command_and_measure(
             self.command,
             BenchmarkIteration::Benchmark(0),
             None,
             self.output_policy,
         )?;
-        let energy_initial = self.energy_sampler.as_mut().and_then(|s| s.stop());
+        let window = window_start.elapsed().as_secs_f64();
+        let energy_initial = self.stop_energy(res.time_real, window);
         let success = status.success();
 
         if res.timed_out {
@@ -563,6 +620,7 @@ impl<'a> BenchmarkRunner<'a> {
         self.memory_usage_byte.push(res.memory_usage_byte);
         self.energy_measurements
             .push(self.subtract_baseline_energy(energy_initial));
+        self.domain_measurements.push(self.pending_domains.take());
         self.exit_codes.push(extract_exit_code(status));
         self.push_instances(&res);
         self.resource_counters.push(res.counters);
@@ -583,13 +641,15 @@ impl<'a> BenchmarkRunner<'a> {
         if let Some(sampler) = self.energy_sampler.as_mut() {
             sampler.start();
         }
+        let window_start = std::time::Instant::now();
         let (res, status) = self.executor.run_command_and_measure(
             self.command,
             BenchmarkIteration::Benchmark(iteration),
             None,
             self.output_policy,
         )?;
-        let energy = self.energy_sampler.as_mut().and_then(|s| s.stop());
+        let window = window_start.elapsed().as_secs_f64();
+        let energy = self.stop_energy(res.time_real, window);
         let success = status.success();
 
         if res.timed_out {
@@ -605,6 +665,7 @@ impl<'a> BenchmarkRunner<'a> {
         self.memory_usage_byte.push(res.memory_usage_byte);
         self.energy_measurements
             .push(self.subtract_baseline_energy(energy));
+        self.domain_measurements.push(self.pending_domains.take());
         self.exit_codes.push(extract_exit_code(status));
         self.push_instances(&res);
         self.resource_counters.push(res.counters);
@@ -683,6 +744,12 @@ impl<'a> BenchmarkRunner<'a> {
         self.memory_usage_byte = select(&self.memory_usage_byte, keep);
         if self.energy_measurements.len() == run_count {
             self.energy_measurements = select(&self.energy_measurements, keep);
+        }
+        if self.domain_measurements.len() == run_count {
+            self.domain_measurements = keep
+                .iter()
+                .map(|&index| self.domain_measurements[index].clone())
+                .collect();
         }
         self.exit_codes = select(&self.exit_codes, keep);
         if self.instance_times.len() == run_count {
@@ -1304,6 +1371,16 @@ impl<'a> BenchmarkRunner<'a> {
                             colors::yellow(format!("{watts:.2} W")),
                             idle_str
                         );
+                        if let Some(domains) =
+                            domains_series(&self.domain_measurements, self.times_real.len())
+                        {
+                            let parts: Vec<String> = ["core", "uncore", "dram", "package", "psys"]
+                                .iter()
+                                .filter_map(|n| domains.get(*n).map(|v| (n, v)))
+                                .map(|(n, v)| format!("{n} {:.3} J", mean(v)))
+                                .collect();
+                            crate::outln!("  Domains (mean):      {}", parts.join(" · "));
+                        }
                     } else {
                         crate::outln!(
                             "  Energy:             {:>14}",
@@ -1561,6 +1638,7 @@ impl<'a> BenchmarkRunner<'a> {
 
         let total_runs = self.times_real.len();
         let mean_net_energy = self.net_energy_mean();
+        let energy_domains = domains_series(&self.domain_measurements, total_runs);
         let valid_energy: Vec<f64> = self.energy_measurements.into_iter().flatten().collect();
         let (mean_energy, mean_watts, energy_all) = if !valid_energy.is_empty() {
             let m_j = mean(&valid_energy);
@@ -1624,6 +1702,7 @@ impl<'a> BenchmarkRunner<'a> {
             energy_joules: energy_all,
             idle_watts: self.idle_watts,
             mean_net_energy_joules: mean_net_energy,
+            energy_domains_joules: energy_domains,
             exit_codes: if concurrency.is_some() {
                 // N exit codes per run, row-major (docs/specs/concurrency.md)
                 self.instance_exit_codes.into_iter().flatten().collect()
