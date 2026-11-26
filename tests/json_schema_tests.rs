@@ -334,6 +334,10 @@ const NEEDS_REAL_HOST: &[&str] = &[
     "discarded_outliers",
     "omitted_failed_runs",
     "shell",
+    // `leftover_processes` needs a command that leaves a child behind (Unix case in
+    // `real_cases`); `energy_per_instance_joules` is no longer written since 1.19
+    "leftover_processes",
+    "energy_per_instance_joules",
 ];
 
 /// Cases that need real commands, which `--debug-mode` cannot simulate (`--output-metric`,
@@ -379,6 +383,11 @@ fn real_cases() -> Vec<(&'static str, Vec<String>)> {
         (
             "ignored failing command",
             [args(&["--runs=3", "-N", "-i"]), vec![failing]].concat(),
+        ),
+        #[cfg(unix)]
+        (
+            "leftover processes",
+            args(&["--runs=2", "sleep 36 & sleep 0.05"]),
         ),
     ]
 }
@@ -489,7 +498,12 @@ fn an_interrupted_run_matches_the_schema() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("interrupted.json");
     let child = Command::new(assert_cmd::cargo_bin!("perfratio"))
-        .args(["--runs=50", "--shell=none", "--export-json"])
+        .args([
+            "--runs=50",
+            "--calibrate=off",
+            "--shell=none",
+            "--export-json",
+        ])
         .arg(&path)
         .arg("sleep 0.1")
         .stdout(Stdio::piped())
