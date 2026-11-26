@@ -99,6 +99,8 @@ pub enum OptionsError<'a> {
     InvalidOptimize(String),
     #[error("Invalid '--raw-ratios': {0}")]
     InvalidRawRatios(&'static str),
+    #[error("Invalid Pareto option: {0}")]
+    InvalidPareto(String),
 }
 
 #[derive(Debug, Error)]

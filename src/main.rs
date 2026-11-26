@@ -148,6 +148,7 @@ fn run() -> Result<()> {
     if cli_arguments.get_flag("delta-table") {
         scheduler.print_delta_table();
     }
+    scheduler.print_pareto();
     scheduler.final_export()?;
 
     if let Some((baseline_path, baseline)) = &baseline {

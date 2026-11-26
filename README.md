@@ -22,6 +22,7 @@ borrow from [`Gabriella439/bench`](https://github.com/Gabriella439/bench). perfr
 - Cross-language helpers: `--warmup auto`, `--first-run`, `--output-metric`, `--target-precision`.
 - Time-budgeted sampling (`--duration 5s`), a primary metric (`--metric`), a multi-dimensional `--delta-table`, and significance indicators on speedups and regressions.
 - Scripting helpers: `-P n 10 1000000 --parameter-step-n 5 --parameter-step-log` (geometric scans), `perfratio -` (one command per line from stdin), `--raw-ratios` (only the ratios on stdout) and `--command-name=` (automatic names).
+- `--pareto wall,energy,memory` marks the commands on the Pareto frontier; `--constraint 'memory <= 256MiB'` and `--objective minimize:energy` pick the best candidate under limits.
 - A versioned JSON export for tools that consume the results (`schemaVersion`).
 
 Run `perfratio --help` for every option. perfratio can read hyperfine and joulex JSON
