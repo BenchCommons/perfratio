@@ -6,7 +6,7 @@
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.19",
+      "const": "1.20",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -241,6 +241,13 @@
         },
         "measurements": {
           "$ref": "#/$defs/measurements"
+        },
+        "metrics": {
+          "type": "array",
+          "description": "Descriptor of every metric of this export, generated from one registry (new in 1.20, #317). A metric that could not be measured keeps its descriptor with a `status` other than `available` and has no values in `results`; it is never written as 0. `status`, `reason`, `kind`, `scope` and `direction` are open enums.",
+          "items": {
+            "$ref": "#/$defs/metricDescriptor"
+          }
         }
       },
       "required": [
@@ -1121,7 +1128,10 @@
         "energy_scope": {
           "type": "string",
           "description": "Scope of the energy values (1.19): `system` (package counter, covers the whole machine) or `batch` (--concurrency: energy of the whole batch over the makespan).",
-          "enum": ["system", "batch"]
+          "enum": [
+            "system",
+            "batch"
+          ]
         },
         "run_ids": {
           "type": "array",
@@ -1495,6 +1505,60 @@
         "excluded"
       ],
       "description": "Result of --pareto (1.16, #326)."
+    },
+    "metricDescriptor": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Dotted lowercase id, e.g. `time.wall`, `cpu.ipc`, `counter.instructions`, `custom.<name>`."
+        },
+        "unit": {
+          "type": "string",
+          "description": "`s`, `bytes`, `J`, `W`, `Hz`, `count`, `ns`, `ratio`, `percent`, `runs/s` or `unitless` (custom metrics)."
+        },
+        "direction": {
+          "type": "string",
+          "description": "`lower_is_better`, `higher_is_better` or `neutral`."
+        },
+        "scope": {
+          "type": "string",
+          "description": "`process`, `process_tree`, `batch`, `package`, `system` or `region`."
+        },
+        "source": {
+          "type": "string",
+          "description": "Where the value comes from, e.g. `perfratio.timer`, `os.rusage`, `linux.perf_event_open`, `sysfs_powercap`, `command_output`."
+        },
+        "kind": {
+          "type": "string",
+          "description": "`measured`, `estimated`, `simulated` or `derived`."
+        },
+        "status": {
+          "type": "string",
+          "description": "`available`, `partial`, `unsupported`, `permission_denied`, `below_resolution`, `contaminated`, `invalid` or `not_requested`."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why the status is not `available` (same tokens as `perfratio.measurements.*_unavailable_reason`)."
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Keys of `results[]` that hold the values."
+        }
+      },
+      "required": [
+        "id",
+        "unit",
+        "direction",
+        "scope",
+        "source",
+        "kind",
+        "status",
+        "fields"
+      ]
     }
   }
 }
