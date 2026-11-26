@@ -846,10 +846,18 @@ impl Options {
         options.omit_failed_runs = matches.get_flag("omit-failed-runs");
         options.show_resource_usage = matches.get_flag("resource-usage");
         if let Some(list) = matches.get_one::<String>("counters") {
-            let requested =
-                crate::perf_counters::parse_list(list).map_err(OptionsError::InvalidCounters)?;
-            let (config, warnings) =
-                crate::perf_counters::resolve(requested, matches.get_flag("debug-mode"));
+            let mode = matches
+                .get_one::<String>("scope")
+                .and_then(|v| crate::perf_counters::ScopeMode::parse(v))
+                .unwrap_or_default();
+            let requested = crate::perf_counters::parse_list(list, mode)
+                .map_err(OptionsError::InvalidCounters)?;
+            let (config, warnings) = crate::perf_counters::resolve(
+                requested,
+                mode.default_scope(),
+                matches.get_flag("debug-mode"),
+            )
+            .map_err(OptionsError::InvalidCounters)?;
             for warning in warnings {
                 eprintln!("{} {warning}", crate::output::colors::yellow("Warning:"));
             }
