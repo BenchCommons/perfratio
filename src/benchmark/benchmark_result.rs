@@ -133,6 +133,11 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub validation: Option<crate::validation::ValidationSummary>,
 
+    /// Measurement quality report: checks and the derived grade. See
+    /// `docs/specs/measurement-quality.md`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality: Option<crate::quality::QualityReport>,
+
     /// Zero-based indices of the runs excluded from the statistics by
     /// --discard-outliers
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

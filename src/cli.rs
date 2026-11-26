@@ -484,6 +484,42 @@ pub fn build_command() -> Command {
                 ),
         )
         .arg(
+            Arg::new("quality")
+                .long("quality")
+                .action(ArgAction::Set)
+                .value_name("MODE")
+                .value_parser(["off", "summary", "full"])
+                .help("Print the measurement quality report: off, summary or full.")
+                .long_help(
+                    "Print the measurement quality report of each benchmark.\n\n  \
+                     off      Print nothing (the JSON export always has the report)\n  \
+                     summary  The grade and the checks that are not 'pass'\n  \
+                     full     Every check\n\n\
+                     Without the option, the summary is printed only when some check is 'warn', \
+                     'fail' or 'unavailable'. The grade is 'unreliable' if any check fails, \
+                     'with_caveats' if any warns, else 'comparable'.",
+                ),
+        )
+        .arg(
+            Arg::new("fail-on-quality")
+                .long("fail-on-quality")
+                .action(ArgAction::Set)
+                .value_name("GRADE")
+                .value_parser(["comparable", "with_caveats", "unreliable"])
+                .help("Exit with code 5 if a benchmark's quality grade is worse than GRADE.")
+                .long_help(
+                    "Exit with code 5 if the measurement quality grade of any benchmark is worse \
+                     than GRADE (comparable > with_caveats > unreliable).\n\n  \
+                     comparable    fail on with_caveats and unreliable\n  \
+                     with_caveats  fail on unreliable\n\n\
+                     A CI gate on the trustworthiness of a measurement; use it next to \
+                     '--fail-if-regressed' (exit code 3), which gates on the size of a change.\n\n\
+                     Example:\n\n  \
+                       perfratio --compare base.json --fail-if-regressed 5% \
+                       --fail-on-quality with_caveats --runs 30 './my-program'",
+                ),
+        )
+        .arg(
             Arg::new("expect-output-sha256")
                 .long("expect-output-sha256")
                 .visible_alias("expect-output-hash")

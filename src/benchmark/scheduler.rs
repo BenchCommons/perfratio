@@ -1091,6 +1091,37 @@ fn scheduler_basic() -> Result<()> {
       exit_codes:
         - 0
         - 0
+      quality:
+        grade: unreliable
+        checks:
+          - id: sample_sufficiency
+            metric: wall
+            status: fail
+            detail: 2 runs; at least 3 are needed to estimate the spread
+          - id: statistical_precision
+            metric: wall
+            status: pass
+            detail: ±0.0% (95% CI of the mean)
+          - id: outlier_burden
+            metric: time
+            status: unavailable
+            detail: fewer than 4 runs
+          - id: trend
+            metric: time
+            status: unavailable
+            detail: needs at least 8 runs
+          - id: interference
+            metric: time
+            status: unavailable
+            detail: needs at least 8 runs
+          - id: counter_coverage
+            metric: counters
+            status: not_applicable
+          - id: energy_coverage
+            metric: energy
+            status: not_applicable
+          - id: workload_validation
+            status: not_applicable
     - command: sleep 0.456
       mean: 0.456
       stddev: 0
@@ -1121,6 +1152,37 @@ fn scheduler_basic() -> Result<()> {
       exit_codes:
         - 0
         - 0
+      quality:
+        grade: unreliable
+        checks:
+          - id: sample_sufficiency
+            metric: wall
+            status: fail
+            detail: 2 runs; at least 3 are needed to estimate the spread
+          - id: statistical_precision
+            metric: wall
+            status: pass
+            detail: ±0.0% (95% CI of the mean)
+          - id: outlier_burden
+            metric: time
+            status: unavailable
+            detail: fewer than 4 runs
+          - id: trend
+            metric: time
+            status: unavailable
+            detail: needs at least 8 runs
+          - id: interference
+            metric: time
+            status: unavailable
+            detail: needs at least 8 runs
+          - id: counter_coverage
+            metric: counters
+            status: not_applicable
+          - id: energy_coverage
+            metric: energy
+            status: not_applicable
+          - id: workload_validation
+            status: not_applicable
     "#);
 
     Ok(())
@@ -1160,6 +1222,37 @@ fn scheduler_round_robin() -> Result<()> {
       exit_codes:
         - 0
         - 0
+      quality:
+        grade: unreliable
+        checks:
+          - id: sample_sufficiency
+            metric: wall
+            status: fail
+            detail: 2 runs; at least 3 are needed to estimate the spread
+          - id: statistical_precision
+            metric: wall
+            status: pass
+            detail: ±0.0% (95% CI of the mean)
+          - id: outlier_burden
+            metric: time
+            status: unavailable
+            detail: fewer than 4 runs
+          - id: trend
+            metric: time
+            status: unavailable
+            detail: needs at least 8 runs
+          - id: interference
+            metric: time
+            status: unavailable
+            detail: needs at least 8 runs
+          - id: counter_coverage
+            metric: counters
+            status: not_applicable
+          - id: energy_coverage
+            metric: energy
+            status: not_applicable
+          - id: workload_validation
+            status: not_applicable
     - command: sleep 0.456
       mean: 0.456
       stddev: 0
@@ -1190,6 +1283,37 @@ fn scheduler_round_robin() -> Result<()> {
       exit_codes:
         - 0
         - 0
+      quality:
+        grade: unreliable
+        checks:
+          - id: sample_sufficiency
+            metric: wall
+            status: fail
+            detail: 2 runs; at least 3 are needed to estimate the spread
+          - id: statistical_precision
+            metric: wall
+            status: pass
+            detail: ±0.0% (95% CI of the mean)
+          - id: outlier_burden
+            metric: time
+            status: unavailable
+            detail: fewer than 4 runs
+          - id: trend
+            metric: time
+            status: unavailable
+            detail: needs at least 8 runs
+          - id: interference
+            metric: time
+            status: unavailable
+            detail: needs at least 8 runs
+          - id: counter_coverage
+            metric: counters
+            status: not_applicable
+          - id: energy_coverage
+            metric: energy
+            status: not_applicable
+          - id: workload_validation
+            status: not_applicable
     "#);
 
     Ok(())

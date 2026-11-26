@@ -117,6 +117,10 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR NAME ]
 .RB [ \-\-filter\-failed ]
 .RB [ \-\-omit\-failed\-runs ]
+.RB [ \-\-quality
+.IR MODE ]
+.RB [ \-\-fail\-on\-quality
+.IR GRADE ]
 .RB [ \-\-expect\-output\-sha256
 .IR HEX ]
 .RB [ \-\-validate
@@ -395,6 +399,14 @@ Exclude results with non-zero exit codes from the relative speed comparison and 
 \fB\-\-omit\-failed\-runs\fR
 .IP
 Exclude failed runs from summary statistics while still reporting how many failed. Requires \fB\-\-ignore\-failure\fR so that benchmark runs with non-zero exit codes can complete. Failed runs are omitted from mean, median, standard deviation, and exported timing data (and recorded in 'omitted_failed_runs'). When combined with \fB\-\-filter\-failed\fR, the benchmark is kept as long as at least one run succeeded.
+.HP
+\fB\-\-quality\fR \fIMODE\fP
+.IP
+Print the measurement quality report of each benchmark: off, summary (the grade and the checks that are not pass) or full (every check). Without the option the summary is printed when some check is warn, fail or unavailable. The grade is unreliable if any check fails, with_caveats if any warns, else comparable. The JSON export always has the report.
+.HP
+\fB\-\-fail\-on\-quality\fR \fIGRADE\fP
+.IP
+Exit with code 5 if the quality grade of any benchmark is worse than GRADE (comparable, with_caveats or unreliable, best first). A CI gate on how trustworthy a measurement is; \fB\-\-fail\-if\-regressed\fR gates on the size of a change.
 .HP
 \fB\-\-expect\-output\-sha256\fR \fIHEX\fP
 .IP
@@ -694,6 +706,9 @@ A benchmark regressed beyond the threshold given to \fB\-\-fail\-if\-regressed\f
 .TP
 .B 4
 \fB\-\-check\-system=strict\fR found a failing check.
+.TP
+.B 5
+\fB\-\-fail\-on\-quality\fR found a benchmark with a worse quality grade.
 .TP
 .B 130
 Interrupted by SIGINT / Ctrl-C (partial results and exports preserved).

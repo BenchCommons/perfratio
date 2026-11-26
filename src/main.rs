@@ -159,6 +159,18 @@ fn run() -> Result<()> {
         }
     }
 
+    if let Some(gate) = options.fail_on_quality {
+        let worse = scheduler
+            .results()
+            .iter()
+            .filter_map(|r| r.quality.as_ref())
+            .filter(|q| q.grade > gate)
+            .count();
+        if worse > 0 && !perfratio::util::interrupt::interrupted() {
+            return Err(error::QualityGateFailed(worse, gate.name()).into());
+        }
+    }
+
     if perfratio::util::interrupt::interrupted() {
         std::process::exit(130);
     }
@@ -176,6 +188,10 @@ fn main() {
             if e.is::<perfratio::error::RegressionDetected>() {
                 eprintln!("{} {:#}", colors::red("Error:"), e);
                 std::process::exit(3);
+            }
+            if e.is::<perfratio::error::QualityGateFailed>() {
+                eprintln!("{} {:#}", colors::red("Error:"), e);
+                std::process::exit(5);
             }
             if e.is::<perfratio::error::SystemCheckFailed>() {
                 eprintln!("{} {:#}", colors::red("Error:"), e);

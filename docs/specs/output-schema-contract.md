@@ -1,7 +1,7 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Shipped except the `.product` link (schemaVersion 1.18; 1.18 adds `perfratio.execution` and `results[].workers_used` / `contended` for `--jobs` (#306, `worker-pool.md`); 1.17 adds `results[].validation` from #316 (`workload-validation.md`); 1.16 adds the optional `pareto` object from #326 (`pareto.md`); 1.15 adds `optimize.reevaluated` and fractional `optimize` values with `-D` (#98); 1.14 adds `--simd` fields from #211 (`simd-breakdown.md`); 1.13 adds the software events and the effective frequency fields of #220 and #222; 1.12 adds `--topdown` fields from #221 (`topdown-tma.md`); 1.11 adds `results[].energy_samples` (#240) and the JSON Schema file `docs/schema/perfratio-export.schema.json`, validated by `tests/json_schema_tests.rs`; 1.10 adds `results[].counters_coverage` (#219); 1.9 adds the `:u`/`:k` counter key suffixes, `counters_scope` values `kernel` and `perfratio.measurements.counters_requested_scope` from #218 (`counter-scope-modifiers.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
+Shipped except the `.product` link (schemaVersion 1.19; 1.19 adds `perfratio.execution` and `results[].workers_used` / `contended` for `--jobs` (#306, `worker-pool.md`); 1.18 adds `results[].quality` from #318 (`measurement-quality.md`); 1.17 adds `results[].validation` from #316 (`workload-validation.md`); 1.16 adds the optional `pareto` object from #326 (`pareto.md`); 1.15 adds `optimize.reevaluated` and fractional `optimize` values with `-D` (#98); 1.14 adds `--simd` fields from #211 (`simd-breakdown.md`); 1.13 adds the software events and the effective frequency fields of #220 and #222; 1.12 adds `--topdown` fields from #221 (`topdown-tma.md`); 1.11 adds `results[].energy_samples` (#240) and the JSON Schema file `docs/schema/perfratio-export.schema.json`, validated by `tests/json_schema_tests.rs`; 1.10 adds `results[].counters_coverage` (#219); 1.9 adds the `:u`/`:k` counter key suffixes, `counters_scope` values `kernel` and `perfratio.measurements.counters_requested_scope` from #218 (`counter-scope-modifiers.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
@@ -104,7 +104,7 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
       "topdown": "measured"                                   // new in 1.12, #221
       "simd": "measured"                                      // new in 1.14, #211
     },
-    "execution": { "jobs": 4, "schedule_policy": "saturate",   // only with --jobs > 1, new in 1.18, #306
+    "execution": { "jobs": 4, "schedule_policy": "saturate",   // only with --jobs > 1, new in 1.19, #306
                    "contended": true }
   },
   "interrupted": true,                                        // optional
@@ -121,7 +121,7 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
   values is closed (a new built-in value is MAJOR); the `custom:` prefix is a pattern, so
   consumers must accept any `custom:<name>` and treat it as unitless.
 - `perfratio` (object, guaranteed): run metadata, as `ExportMetadata` today.
-- `perfratio.execution` (object, **new in 1.18**, #306): only with `--jobs` > 1. `jobs` (integer), `schedule_policy` (`saturate`, `exclusive` or `fair`; open enum) and `contended` (always `true`). Without `--jobs` the object is absent.
+- `perfratio.execution` (object, **new in 1.19**, #306): only with `--jobs` > 1. `jobs` (integer), `schedule_policy` (`saturate`, `exclusive` or `fair`; open enum) and `contended` (always `true`). Without `--jobs` the object is absent.
 - `perfratio.measurements` (object, guaranteed, **new**): one status per measurement group,
   host-level and identical for every result:
   - `"measured"`: requested and the backend works;
@@ -203,14 +203,15 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `parameters`, `per_run_parameters` | strings / stats | optional (`--parameter-*`) |
 | `omitted_failed_runs`, `discarded_outliers` | indices | optional |
 | `validation` (**new in 1.17**, #316) | object `{mode, on_invalid, first_only, runs_checked, runs_invalid, runs_omitted, omitted_runs?, output_sha256?}`, see `workload-validation.md` | only with `--expect-output-sha256` / `--validate`; `runs_invalid > 0` means the workload gave a wrong result |
+| `quality` (**new in 1.18**, #318) | object `{grade, checks: [{id, metric?, status, detail?}]}`; `grade` is `comparable`, `with_caveats` or `unreliable`; `status` is `pass`, `warn`, `fail`, `not_applicable` or `unavailable`; check ids are an open enum, see `measurement-quality.md` | every measured result |
 | `resources` { column: counts[] per run } (**columns individually optional since 1.3**, #291) | counts | when `measurements.resources = "measured"`; a column the OS cannot report is omitted (Windows has no `voluntary_ctx_switches`, `involuntary_ctx_switches`, `major_faults`), see `windows-resource-usage.md` |
 | `concurrency` (**new in 1.5**, #53) | count | only with `--concurrency N`, N > 1. **When present, `times` holds the makespan of each run** (wall time until all N instances finished) and `exit_codes` holds N entries per run, row-major (run 0 instances 0..N-1, ...), i.e. `runs x N` entries instead of `runs` |
 | `instance_times` (**new in 1.5**, #53) | s[][], one row of N per run aligned with `times`, instances in spawn order | with `concurrency` |
 | `throughput` (**new in 1.5**, #53) | instances per second, `N / mean` | with `concurrency` (omitted for a zero mean) |
 | `instance_percentiles` { `p50`, `p95`, `max` } (**new in 1.5**, #53) | s, over all `runs x N` instance times | with `concurrency` |
 | `energy_per_instance_joules` (**new in 1.5**, #53) | J, `mean_energy_joules / N` | with `concurrency` and `mean_energy_joules` |
-| `workers_used` (**new in 1.18**, #306) | count of workers that executed at least one timed run | only with `--jobs N`, N > 1 |
-| `contended` (**new in 1.18**, #306) | `true`: the runs were executed in parallel and may have disturbed each other; a consumer should not compare them with sequential results | only with `--jobs N`, N > 1 |
+| `workers_used` (**new in 1.19**, #306) | count of workers that executed at least one timed run | only with `--jobs N`, N > 1 |
+| `contended` (**new in 1.19**, #306) | `true`: the runs were executed in parallel and may have disturbed each other; a consumer should not compare them with sequential results | only with `--jobs N`, N > 1 |
 | `counters` (**new in 1.8**, #49) | { event: (u64 \| null)[] } raw counts per run aligned with `times`; `null` = not readable; events `instructions`, `cycles`, `cache-references`, `cache-misses`, `branches`, `branch-misses` (open set) | when `measurements.counters` is `measured` or `partial` |
 | `counters` events `cpu-migrations`, `context-switches`, `page-faults` (counts), `task-clock` (ns) (**new in 1.13**, #220) | counts | when requested by name or with `--counters=sw`; scheduler events are never counted when kernel scope is denied: then they are absent and `measurements.counters_unavailable_*` says `kernel_scope_denied` |
 | `effective_frequency_hz` (**new in 1.13**, #222) | Hz (f64 \| null)[] aligned with `times`, `cycles` / time on CPU | when `cycles` was counted and a time source exists |
