@@ -44,7 +44,7 @@ Before and after every timed run (outside the timed window) the counters are rea
 
 - `cgroup_throttled_usec`: throttled time that grew during the runs; `cgroup_throttled_runs`: runs in which it grew.
   It is the cgroup's counter: it includes other processes in the same cgroup. `0` means the counter was read and did not grow.
-- `thermal`: the hottest of the thermal zones (`/sys/class/thermal/thermal_zone*/temp`) and hwmon sensors
+- `thermal` (only with `--thermal`, off by default since the reads cost about 1 s on GitHub-hosted runners and delayed perfratio itself; sampled on a background thread once per second, never on the benchmark thread): the hottest of the thermal zones (`/sys/class/thermal/thermal_zone*/temp`) and hwmon sensors
   (`/sys/class/hwmon/hwmon*/temp*_input`) before the first run, after the last, and the highest read
   in between (at most every 100 ms). Readings of 0 or below, or from 150 °C, are sensors that are not working and are ignored.
   `throttle_events` is the growth of Intel's `thermal_throttle/core_throttle_count` and

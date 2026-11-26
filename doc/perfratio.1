@@ -121,6 +121,7 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR MODE ]
 .RB [ \-\-fail\-on\-quality
 .IR GRADE ]
+.RB [ \-\-thermal ]
 .RB [ \-\-cooldown
 .IR DURATION|until\-temp=C ]
 .RB [ \-\-cooldown\-timeout
@@ -483,6 +484,10 @@ Print the measurement quality report of each benchmark: off, summary (the grade 
 \fB\-\-fail\-on\-quality\fR \fIGRADE\fP
 .IP
 Exit with code 5 if the quality grade of any benchmark is worse than GRADE (comparable, with_caveats or unreliable, best first). A CI gate on how trustworthy a measurement is; \fB\-\-fail\-if\-regressed\fR gates on the size of a change.
+.HP
+\fB\-\-thermal\fR
+.IP
+Sample the hottest CPU temperature sensor (Linux thermal zones and hwmon) on a background thread while the benchmark runs, and report it as interference.thermal and in the environment_stability quality check. Off by default: on some hosts (cloud VMs) reading the sensors takes about a second. \fB\-\-cooldown\fR until\-temp reads the sensors either way.
 .HP
 \fB\-\-cooldown\fR \fIDURATION|until\-temp=C\fP
 .IP
