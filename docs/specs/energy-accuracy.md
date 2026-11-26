@@ -22,6 +22,10 @@ Delivered:
    above the gross energy), with the count of clamped runs.
 3. A warning when `--energy` is used and the mean run time is below 10 ms.
 
+Delivered later in `rapl-domains.md` (#59): RAPL domain breakdown (`--energy-domains`), overhead
+alignment of the energy window, the permission message with the udev hint, and the
+`#[ignore]` bare-metal test. The list below is the original deferral note.
+
 Deferred, commented on #59 (not done here):
 - RAPL domain breakdown (`--energy-domains`, `energy_domains` export): changes the
   `EnergySampler` trait and needs real multi-domain hardware to validate. It must keep the
