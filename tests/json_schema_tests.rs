@@ -74,6 +74,15 @@ fn export(args: &[&str]) -> Value {
 /// understands `sleep <seconds> [user] [system] [memory]`.
 const CASES: &[(&str, &[&str])] = &[
     ("default", &["--runs=3", "sleep 0.1"]),
+    (
+        "absolute budgets",
+        &[
+            "--runs=3",
+            "--budget=wall<=1s",
+            "--budget=energy<=3J",
+            "sleep 0.1",
+        ],
+    ),
     ("single run", &["--runs=1", "sleep 0.1"]),
     ("several commands", &["--runs=3", "sleep 0.1", "sleep 0.2"]),
     ("labels", &["--runs=2", "--label", "lang=rust", "sleep 0.1"]),
