@@ -62,8 +62,8 @@ Every list in `custom_metrics` has exactly one entry per recorded run, in the sa
 ## Contract version
 `custom_metrics` elements changed from `f64` to `f64 | null` and the lists are now aligned with `times`. `schemaVersion` is not emitted yet (see `output-schema-contract.md`), so this is part of the shape that `1.0` will freeze: consumers (tools-benchmark) must accept `null` elements. `output-schema-contract.md` is updated accordingly.
 
-## Future: `--metric custom:<name>` (hook point, not implemented)
-Using a custom metric as the primary metric (ranking, ratios, `--metric`) depends on the `--metric` selector from PR #226. Hook point: wherever #226 resolves the selected metric to a per-run `Vec<f64>`, `custom:<name>` should read `BenchmarkRunner::custom_metrics[<name>]` (`src/benchmark/mod.rs`) and use the non-null entries, with the same alignment rule as above. An unknown `<name>` must be an options error. Tracked in #90.
+## Primary metric: `--metric custom:<name>` (#90, #48)
+A metric extracted with `--output-metric` can be the primary metric for ranking, relative speed, summary and exports. Lower is better. Every recorded run needs a value: an undefined `<name>` is an options error, and a metric that no run (or only some runs, with `-i`) produced fails the benchmark, reusing the alignment rules above. Full contract in `metric-target.md` §8; JSON `schemaVersion` `1.2` (`output-schema-contract.md`).
 
 ## Verification Plan
 - Unit tests:
@@ -79,3 +79,4 @@ Using a custom metric as the primary metric (ranking, ratios, `--metric`) depend
   - JSON export contains `"custom_metrics"`.
   - CSV export contains `mean_<name>` columns.
   - Conflicts with `--show-output`.
+  - `--metric custom:<name>` selector, errors and ranking: `tests/custom_metric_tests.rs`.
