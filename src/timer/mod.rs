@@ -56,6 +56,8 @@ pub struct TimerResult {
     pub until_matched: Option<bool>,
     /// Extracted custom metrics
     pub custom_metrics: std::collections::BTreeMap<String, f64>,
+    /// Identifier of the region SDK that reported (`--region`)
+    pub region_sdk: Option<String>,
 }
 
 #[cfg(windows)]
@@ -738,6 +740,7 @@ pub fn execute_and_measure(
         timed_out,
         until_matched,
         custom_metrics: std::collections::BTreeMap::new(),
+        region_sdk: None,
     })
 }
 

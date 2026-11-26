@@ -114,6 +114,8 @@ pub struct BenchmarkRunner<'a> {
     pub timed_out: bool,
     /// Extracted custom metrics per run
     pub custom_metrics: std::collections::BTreeMap<String, Vec<Option<f64>>>,
+    /// `--region`: SDK identifier the program reported
+    pub region_sdk: Option<String>,
 }
 
 /// "1%", "0.5%"
@@ -218,6 +220,7 @@ impl<'a> BenchmarkRunner<'a> {
             baseline: None,
             timed_out: false,
             custom_metrics: std::collections::BTreeMap::new(),
+            region_sdk: None,
         }
     }
 
@@ -630,6 +633,9 @@ impl<'a> BenchmarkRunner<'a> {
                 .per_run_values(&BenchmarkIteration::Benchmark(0)),
         );
         self.push_custom_metrics(&res.custom_metrics);
+        if res.region_sdk.is_some() {
+            self.region_sdk.clone_from(&res.region_sdk);
+        }
         self.all_succeeded = self.all_succeeded && success;
 
         Ok(())
@@ -675,6 +681,9 @@ impl<'a> BenchmarkRunner<'a> {
                 .per_run_values(&BenchmarkIteration::Benchmark(iteration)),
         );
         self.push_custom_metrics(&res.custom_metrics);
+        if res.region_sdk.is_some() {
+            self.region_sdk.clone_from(&res.region_sdk);
+        }
         self.all_succeeded = self.all_succeeded && success;
 
         self.run_conclusion(BenchmarkIteration::Benchmark(iteration))?;
@@ -734,6 +743,16 @@ impl<'a> BenchmarkRunner<'a> {
                 .entry(metric.name.clone())
                 .or_default()
                 .push(extracted.get(&metric.name).copied());
+        }
+        // `--region`: the time and the pair count of every requested region
+        for name in &self.options.regions {
+            for key in [
+                crate::region::time_key(name),
+                crate::region::count_key(name),
+            ] {
+                let value = extracted.get(&key).copied();
+                self.custom_metrics.entry(key).or_default().push(value);
+            }
         }
     }
 
@@ -879,6 +898,28 @@ impl<'a> BenchmarkRunner<'a> {
                      (`kernel.perf_event_paranoid <= 1` or CAP_PERFMON); see '--counters'.",
                     kind.name()
                 );
+            }
+        }
+        for name in &self.options.regions {
+            let key = crate::region::time_key(name);
+            let values = self.custom_metrics.get(&key).map(Vec::as_slice);
+            let reported = values.is_some_and(|v| v.iter().any(Option::is_some));
+            if !reported {
+                bail!(
+                    "The program never reported the region '{name}' under '--region'. Check the \
+                     name in '--region={name}' against the name passed to the SDK's start()/stop()."
+                );
+            }
+            if self.options.metric.region_name() == Some(name.as_str()) {
+                let values = values.unwrap_or_default();
+                let missing = values.iter().filter(|v| v.is_none()).count();
+                if missing > 0 {
+                    bail!(
+                        "'--metric region:{name}' requires the region in every run, but {missing} \
+                         of {} runs did not report it (runs ignored with '-i' contribute nothing).",
+                        values.len()
+                    );
+                }
             }
         }
         if let Some(name) = self.options.metric.custom_name() {
@@ -1120,15 +1161,40 @@ impl<'a> BenchmarkRunner<'a> {
         let is_interrupted = crate::util::interrupt::interrupted() && (runs_done as u64) < planned;
         let runs_planned = if is_interrupted { Some(planned) } else { None };
 
-        let (custom_metrics, custom_metrics_summary) = if !self.custom_metrics.is_empty() {
+        // `--region` series live next to the custom metrics inside the runner;
+        // they are exported as `regions`
+        let regions: Vec<benchmark_result::RegionResult> = self
+            .options
+            .regions
+            .iter()
+            .filter_map(|name| {
+                benchmark_result::RegionResult::from_runs(
+                    name,
+                    self.custom_metrics.get(&crate::region::time_key(name))?,
+                    self.custom_metrics.get(&crate::region::count_key(name)),
+                    self.region_sdk.clone(),
+                )
+            })
+            .collect();
+        let regions = (!regions.is_empty()).then_some(regions);
+        let output_metric_series: std::collections::BTreeMap<_, _> = self
+            .custom_metrics
+            .iter()
+            .filter(|(key, _)| {
+                !key.starts_with(crate::region::METRIC_PREFIX)
+                    && !key.starts_with(crate::region::COUNT_PREFIX)
+            })
+            .map(|(key, values)| (key.clone(), values.clone()))
+            .collect();
+        let (custom_metrics, custom_metrics_summary) = if !output_metric_series.is_empty() {
             let mut summary_map = std::collections::BTreeMap::new();
-            for (name, values) in &self.custom_metrics {
+            for (name, values) in &output_metric_series {
                 let present: Vec<f64> = values.iter().flatten().copied().collect();
                 if let Some(summary) = benchmark_result::MetricSummary::from_values(&present) {
                     summary_map.insert(name.clone(), summary);
                 }
             }
-            (Some(self.custom_metrics.clone()), Some(summary_map))
+            (Some(output_metric_series.clone()), Some(summary_map))
         } else {
             (None, None)
         };
@@ -1309,6 +1375,11 @@ impl<'a> BenchmarkRunner<'a> {
                         Metric::Instructions | Metric::Cycles => {
                             (format_count(p_mean), p_stddev.map(format_count))
                         }
+                        Metric::Custom(_) if self.options.metric.is_region() => {
+                            let m = format_duration(p_mean, Some(time_unit));
+                            let s = p_stddev.map(|sd| format_duration(sd, Some(time_unit)));
+                            (m, s)
+                        }
                         Metric::Custom(_) => (
                             format!("{p_mean:.3}"),
                             p_stddev.map(|sd| format!("{sd:.3}")),
@@ -1407,6 +1478,29 @@ impl<'a> BenchmarkRunner<'a> {
                                 width = width
                             );
                         }
+                    }
+                }
+
+                for region in regions.iter().flatten() {
+                    // already printed as the primary metric above
+                    if self.options.metric.region_name() == Some(region.name.as_str()) {
+                        continue;
+                    }
+                    let title = format!("Region {} ({}", region.name, colors::green("mean").bold());
+                    let mean = format_duration(region.mean, Some(time_unit));
+                    match region.stddev {
+                        Some(sd) => crate::outln!(
+                            "  {title} ± {}):  {:>width$} ± {:>width$}",
+                            colors::green("σ"),
+                            colors::green(mean).bold(),
+                            colors::green(format_duration(sd, Some(time_unit))),
+                            width = width
+                        ),
+                        None => crate::outln!(
+                            "  {title}):  {:>width$}",
+                            colors::green(mean).bold(),
+                            width = width
+                        ),
                     }
                 }
 
@@ -1928,6 +2022,7 @@ impl<'a> BenchmarkRunner<'a> {
             },
             custom_metrics,
             custom_metrics_summary,
+            regions,
         };
         Ok((result, warning_texts))
     }

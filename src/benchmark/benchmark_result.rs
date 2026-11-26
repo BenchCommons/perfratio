@@ -262,6 +262,12 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_metrics_summary: Option<BTreeMap<String, MetricSummary>>,
 
+    /// `--region`: time inside each instrumented region, see
+    /// `docs/specs/region-protocol.md`. `mean`, `times` and `time` fields above
+    /// keep measuring the whole process.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub regions: Option<Vec<RegionResult>>,
+
     /// `--concurrency N` (only when N > 1): instances started simultaneously per
     /// run. With it present, `times` holds the makespan of each run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -283,6 +289,71 @@ pub struct BenchmarkResult {
     /// `--concurrency` with `--energy`: mean batch energy divided by N
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub energy_per_instance_joules: Option<f64>,
+}
+
+/// Whether every run reported a region.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RegionStatus {
+    /// Every run reported the region.
+    Measured,
+    /// Some runs did not report it (their entries are `null` and left out of the statistics).
+    RegionMissing,
+}
+
+/// Time inside one instrumented region (`--region`), in seconds. The wall time
+/// of one run is the sum of all start/stop pairs of the region in that run.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RegionResult {
+    pub name: String,
+    pub status: RegionStatus,
+    /// Statistics over the runs that reported the region.
+    pub mean: Second,
+    pub stddev: Option<Second>,
+    pub min: Second,
+    pub max: Second,
+    /// Start/stop pairs per run, `null` where the run did not report the region.
+    pub count_per_run: Vec<Option<u64>>,
+    /// Region time of every run, `null` where the run did not report the region.
+    pub times: Vec<Option<Second>>,
+    /// Identifier of the SDK that reported, when it sent one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sdk: Option<String>,
+}
+
+impl RegionResult {
+    /// `None` when no run reported the region.
+    pub fn from_runs(
+        name: &str,
+        times: &[Option<Second>],
+        counts: Option<&Vec<Option<f64>>>,
+        sdk: Option<String>,
+    ) -> Option<Self> {
+        let present: Vec<Second> = times.iter().flatten().copied().collect();
+        if present.is_empty() {
+            return None;
+        }
+        let mean = crate::stats::basic::mean(&present);
+        let stddev = (present.len() > 1)
+            .then(|| crate::stats::basic::standard_deviation(&present, Some(mean)));
+        Some(RegionResult {
+            name: name.to_string(),
+            status: if present.len() == times.len() {
+                RegionStatus::Measured
+            } else {
+                RegionStatus::RegionMissing
+            },
+            mean,
+            stddev,
+            min: present.iter().copied().fold(f64::INFINITY, f64::min),
+            max: present.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+            count_per_run: counts
+                .map(|c| c.iter().map(|v| v.map(|v| v as u64)).collect())
+                .unwrap_or_else(|| vec![None; times.len()]),
+            times: times.to_vec(),
+            sdk,
+        })
+    }
 }
 
 /// Percentiles of the per-instance wall times of a `--concurrency` benchmark.
@@ -497,6 +568,12 @@ impl BenchmarkResult {
         self.exit_codes.iter().any(|code| *code != Some(0))
     }
 
+    /// The region selected by `--metric region:<name>`.
+    fn region_of(&self, metric: Metric) -> Option<&RegionResult> {
+        let name = metric.region_name()?;
+        self.regions.as_ref()?.iter().find(|r| r.name == name)
+    }
+
     /// Extracts samples corresponding to the specified metric.
     pub fn primary_samples(&self, metric: Metric) -> Option<Vec<f64>> {
         match metric {
@@ -523,6 +600,16 @@ impl BenchmarkResult {
                     .iter()
                     .flatten()
                     .map(|&v| v as f64)
+                    .collect();
+                (!samples.is_empty()).then_some(samples)
+            }
+            Metric::Custom(_) if metric.is_region() => {
+                let samples: Vec<f64> = self
+                    .region_of(metric)?
+                    .times
+                    .iter()
+                    .flatten()
+                    .copied()
                     .collect();
                 (!samples.is_empty()).then_some(samples)
             }
@@ -564,6 +651,7 @@ impl BenchmarkResult {
                 .as_ref()?
                 .get(metric.name())
                 .map(|s| s.mean),
+            Metric::Custom(_) if metric.is_region() => self.region_of(metric).map(|r| r.mean),
             Metric::Custom(name) => self
                 .custom_metrics_summary
                 .as_ref()?
@@ -632,6 +720,7 @@ impl BenchmarkResult {
                 .as_ref()?
                 .get(metric.name())
                 .and_then(|s| s.stddev),
+            Metric::Custom(_) if metric.is_region() => self.region_of(metric)?.stddev,
             Metric::Custom(name) => self
                 .custom_metrics_summary
                 .as_ref()?

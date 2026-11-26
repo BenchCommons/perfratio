@@ -114,6 +114,9 @@ pub struct TimingResult {
     /// Custom metrics extracted via --output-metric
     pub custom_metrics: BTreeMap<String, f64>,
 
+    /// Identifier of the region SDK that reported (`--region`)
+    pub region_sdk: Option<String>,
+
     /// `--concurrency N` with N > 1: one entry per instance, in spawn order.
     /// The other fields are then the aggregate of the batch (see
     /// `docs/specs/concurrency.md`). Empty for a single instance.

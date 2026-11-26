@@ -20,6 +20,10 @@ pub struct ExportMetadata {
     /// Omitted unless `--energy` is given and a backend is usable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub energy_backend: Option<&'static str>,
+    /// Region protocol version perfratio speaks (new in 1.16). Omitted unless
+    /// `--region` or `--metric region:<name>` is given.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region_protocol: Option<u32>,
     /// Which measurement groups were measured, unavailable or not requested
     pub measurements: Measurements,
 }
@@ -74,6 +78,10 @@ pub struct Measurements {
     /// `perf_paranoid`, `no_pmu`, `hybrid_cpu_unpinned` or `other` (open enum)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub simd_unavailable_reason: Option<&'static str>,
+    /// `--region` instrumented region timing (new in 1.16): `measured` when
+    /// requested (a run that did not report a region shows as `null` in
+    /// `results[].regions[]`), otherwise `not_requested`
+    pub region: MeasurementStatus,
 }
 
 impl Measurements {
@@ -106,7 +114,16 @@ impl Measurements {
             topdown_unavailable_reason: None,
             simd: NotRequested,
             simd_unavailable_reason: None,
+            region: NotRequested,
         }
+    }
+
+    /// Records `--region` (`true`: requested).
+    pub fn with_region(mut self, requested: bool) -> Self {
+        if requested {
+            self.region = MeasurementStatus::Measured;
+        }
+        self
     }
 
     /// Records the outcome of `--topdown` (`None`: not requested).
@@ -198,6 +215,7 @@ impl ExportMetadata {
                 kernel: kernel_release(),
             },
             energy_backend: None,
+            region_protocol: None,
             measurements,
         }
     }

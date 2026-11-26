@@ -95,6 +95,8 @@ pub enum OptionsError<'a> {
     InvalidOutputMetric(String),
     #[error("{0}")]
     InvalidOptimize(String),
+    #[error("Invalid '--region': {0}")]
+    InvalidRegion(String),
 }
 
 #[derive(Debug, Error)]
