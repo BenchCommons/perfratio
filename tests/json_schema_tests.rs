@@ -74,6 +74,27 @@ fn export(args: &[&str]) -> Value {
 /// understands `sleep <seconds> [user] [system] [memory]`.
 const CASES: &[(&str, &[&str])] = &[
     ("default", &["--runs=3", "sleep 0.1"]),
+    (
+        "sequential stopping",
+        &[
+            "--target-precision=5%",
+            "--target-precision-method=sequential",
+            "sleep 0.1",
+        ],
+    ),
+    (
+        "randomized order",
+        &[
+            "--runs=3",
+            "--schedule=randomized",
+            "sleep 0.1",
+            "sleep 0.2",
+        ],
+    ),
+    (
+        "balanced order",
+        &["--runs=3", "--schedule=balanced", "sleep 0.1", "sleep 0.2"],
+    ),
     ("single run", &["--runs=1", "sleep 0.1"]),
     ("several commands", &["--runs=3", "sleep 0.1", "sleep 0.2"]),
     ("labels", &["--runs=2", "--label", "lang=rust", "sleep 0.1"]),
@@ -116,6 +137,18 @@ const CASES: &[(&str, &[&str])] = &[
             "n",
             "1,2",
             "sleep 0.{n}",
+        ],
+    ),
+    ("region", &["--runs=3", "--region=work", "sleep 0.1"]),
+    (
+        "region metric and first run separate",
+        &[
+            "--runs=3",
+            "--first-run=separate",
+            "--region",
+            "--metric=region:work",
+            "sleep 0.1",
+            "sleep 0.2",
         ],
     ),
     ("energy", &["--runs=3", "--energy", "sleep 0.1"]),
@@ -210,6 +243,17 @@ const CASES: &[(&str, &[&str])] = &[
         "concurrency with energy",
         &["--runs=2", "--concurrency", "3", "--energy", "sleep 0.1"],
     ),
+    ("jobs", &["--runs=4", "--jobs", "2", "sleep 0.1"]),
+    (
+        "jobs with an exclusive policy",
+        &[
+            "--runs=4",
+            "--jobs=2",
+            "--schedule=exclusive",
+            "sleep 0.1",
+            "sleep 0.05",
+        ],
+    ),
     (
         "optimize",
         &["--runs=3", "--optimize", "n", "1", "40", "sleep {n}"],
@@ -243,6 +287,10 @@ const CASES: &[(&str, &[&str])] = &[
         ],
     ),
     ("duration", &["--duration=1s", "sleep 0.5"]),
+    (
+        "estimator median",
+        &["--runs=3", "--estimator=median", "sleep 0.1", "sleep 0.2"],
+    ),
     ("target precision", &["--target-precision=1%", "sleep 0.1"]),
     (
         "discard outliers",
@@ -336,6 +384,10 @@ const NEEDS_REAL_HOST: &[&str] = &[
     "discarded_outliers",
     "omitted_failed_runs",
     "shell",
+    // `leftover_processes` needs a command that leaves a child behind (Unix case in
+    // `real_cases`); `energy_per_instance_joules` is no longer written since 1.19
+    "leftover_processes",
+    "energy_per_instance_joules",
 ];
 
 /// Cases that need real commands, which `--debug-mode` cannot simulate (`--output-metric`,
@@ -381,6 +433,11 @@ fn real_cases() -> Vec<(&'static str, Vec<String>)> {
         (
             "ignored failing command",
             [args(&["--runs=3", "-N", "-i"]), vec![failing]].concat(),
+        ),
+        #[cfg(unix)]
+        (
+            "leftover processes",
+            args(&["--runs=2", "sleep 36 & sleep 0.05"]),
         ),
     ]
 }
@@ -491,7 +548,12 @@ fn an_interrupted_run_matches_the_schema() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("interrupted.json");
     let child = Command::new(assert_cmd::cargo_bin!("perfratio"))
-        .args(["--runs=50", "--shell=none", "--export-json"])
+        .args([
+            "--runs=50",
+            "--calibrate=off",
+            "--shell=none",
+            "--export-json",
+        ])
         .arg(&path)
         .arg("sleep 0.1")
         .stdout(Stdio::piped())

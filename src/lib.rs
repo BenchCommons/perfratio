@@ -47,6 +47,7 @@ pub mod api;
 
 #[doc(hidden)]
 pub mod benchmark;
+pub mod calibration;
 #[doc(hidden)]
 pub mod cgroup;
 #[cfg(feature = "cli")]
@@ -66,6 +67,7 @@ pub mod cpu_id;
 pub mod delta_table;
 #[doc(hidden)]
 pub mod energy;
+pub mod environment;
 #[doc(hidden)]
 pub mod environment_watch;
 #[doc(hidden)]
@@ -78,6 +80,8 @@ pub mod frequency;
 pub mod import;
 #[doc(hidden)]
 pub mod metric;
+#[doc(hidden)]
+pub mod metric_registry;
 #[doc(hidden)]
 pub mod optimize;
 #[doc(hidden)]
@@ -100,6 +104,10 @@ pub mod pmu;
 pub mod pmu_scaling;
 #[doc(hidden)]
 pub mod quality;
+#[doc(hidden)]
+pub mod region;
+#[doc(hidden)]
+pub mod run_id;
 #[doc(hidden)]
 pub mod simd;
 #[doc(hidden)]

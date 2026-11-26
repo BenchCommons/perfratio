@@ -29,6 +29,40 @@ fn parse_shell(name: &str) -> Result<Shell> {
     }
 }
 
+/// `--compare` and `--import-json`: warn when a file was measured in another
+/// environment (`--require-compatible-env`: fail, also for a file without one)
+fn check_environments(
+    cli_arguments: &clap::ArgMatches,
+    current: &perfratio::environment::Environment,
+    baseline: Option<&str>,
+) -> Result<()> {
+    let strict = cli_arguments.get_flag("require-compatible-env");
+    let imports = cli_arguments
+        .get_many::<String>("import-json")
+        .into_iter()
+        .flatten()
+        .map(|file| (file.as_str(), format!("The imported file '{file}'")));
+    let files = baseline
+        .into_iter()
+        .map(|file| (file, format!("The baseline '{file}'")))
+        .chain(imports);
+    for (path, what) in files {
+        let message = match perfratio::import::import_environment(path) {
+            Some(environment) => {
+                perfratio::environment::mismatch_message(&what, &environment, current)
+            }
+            None if strict => Some(format!("{what} records no environment")),
+            None => None,
+        };
+        let Some(message) = message else { continue };
+        if strict {
+            anyhow::bail!("{message} ('--require-compatible-env')");
+        }
+        eprintln!("{} {message}", output::colors::yellow("Warning:"));
+    }
+    Ok(())
+}
+
 fn run() -> Result<()> {
     perfratio::util::interrupt::install()?;
 
@@ -50,6 +84,7 @@ fn run() -> Result<()> {
     }
 
     let mut options = Options::from_cli_arguments(&cli_arguments)?;
+    perfratio::stats::settings::install(options.stat_settings.clone());
     if let Some(precision) = cli_arguments.get_one::<String>("precision") {
         util::units::set_precision(match precision.as_str() {
             "auto" => util::units::Precision::Auto,
@@ -86,6 +121,7 @@ fn run() -> Result<()> {
         options.metric,
         options.counters.as_ref(),
         options.topdown.as_ref(),
+        options.execution_info(),
     )?;
 
     // Load the baseline before benchmarking, so that a bad file fails fast
@@ -97,6 +133,12 @@ fn run() -> Result<()> {
         .get_one::<String>("fail-if-regressed")
         .map(|value| compare::parse_threshold(value).map_err(anyhow::Error::msg))
         .transpose()?;
+
+    check_environments(
+        &cli_arguments,
+        export_manager.environment(),
+        baseline.as_ref().map(|(path, _)| *path),
+    )?;
 
     let mut imported_results = vec![];
     if let Some(files) = cli_arguments.get_many::<String>("import-json") {
@@ -128,6 +170,9 @@ fn run() -> Result<()> {
     if let Some(mode) = cli_arguments.get_one::<String>("check-system") {
         let mut checks = system_check::run_checks();
         checks.extend(system_check::scheduler_check(options.counters.as_ref()));
+        checks.extend(system_check::worker_cpus_check(
+            options.cpu_partition.as_ref(),
+        ));
         let passed = system_check::all_passed(&checks);
         if options.output_style != options::OutputStyleOption::Disabled {
             perfratio::outln!("{}", system_check::report(&checks));
@@ -144,6 +189,7 @@ fn run() -> Result<()> {
     scheduler.add_imported_results(imported_results);
     scheduler.run_benchmarks()?;
     scheduler.print_relative_speed_comparison();
+    scheduler.print_below_floor_warning();
     scheduler.print_raw_ratios();
     if cli_arguments.get_flag("delta-table") {
         scheduler.print_delta_table();
@@ -192,6 +238,18 @@ fn run() -> Result<()> {
         }
     }
 
+    if options.below_floor == perfratio::calibration::BelowFloorAction::Fail {
+        let below = scheduler
+            .results()
+            .iter()
+            .filter_map(|r| r.quality.as_ref())
+            .filter(|q| q.below_resolution == Some(true))
+            .count();
+        if below > 0 && !perfratio::util::interrupt::interrupted() {
+            return Err(error::BelowFloor(below).into());
+        }
+    }
+
     if perfratio::util::interrupt::interrupted() {
         std::process::exit(130);
     }
@@ -213,6 +271,10 @@ fn main() {
             if e.is::<perfratio::error::QualityGateFailed>() {
                 eprintln!("{} {:#}", colors::red("Error:"), e);
                 std::process::exit(5);
+            }
+            if e.is::<perfratio::error::BelowFloor>() {
+                eprintln!("{} {:#}", colors::red("Error:"), e);
+                std::process::exit(6);
             }
             if e.is::<perfratio::error::SystemCheckFailed>() {
                 eprintln!("{} {:#}", colors::red("Error:"), e);

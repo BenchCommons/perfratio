@@ -9,3 +9,7 @@ fuzz/target/
 fuzz/corpus/
 fuzz/artifacts/
 fuzz/Cargo.lock
+
+# region SDK build and test artifacts
+sdk/**/__pycache__/
+sdk/rust/target/

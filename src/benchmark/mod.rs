@@ -1,5 +1,7 @@
 pub mod benchmark_result;
 pub mod executor;
+pub mod order;
+pub mod pool;
 pub mod relative_speed;
 pub mod scheduler;
 pub mod timing_result;
@@ -94,6 +96,15 @@ pub struct BenchmarkRunner<'a> {
     pub instance_times: Vec<Vec<Second>>,
     /// `--concurrency N` (N > 1): instance exit codes of every run
     pub instance_exit_codes: Vec<Vec<Option<i32>>>,
+    /// `PERFRATIO_RUN_ID` of every timed run, aligned with the times (with
+    /// `--concurrency`: the id of instance 0, which `--prepare` and
+    /// `--conclude` also see)
+    pub run_ids: Vec<u64>,
+    /// `--concurrency N` (N > 1): `PERFRATIO_RUN_ID` of every instance of every
+    /// run; the position in the row is its `PERFRATIO_WORKER_ID`
+    pub instance_run_ids: Vec<Vec<u64>>,
+    /// A command, its `--prepare` or `--conclude` left processes behind
+    leftover_processes: std::cell::Cell<bool>,
     /// OS resource counters per run (`None` where unavailable, e.g. Windows)
     pub resource_counters: Vec<Option<timing_result::ResourceCounters>>,
     /// Hardware counter totals per run (`--counters`), aligned with the times
@@ -112,8 +123,12 @@ pub struct BenchmarkRunner<'a> {
     pub baseline: Option<benchmark_result::Baseline>,
     /// Whether this runner timed out (`--timeout <DURATION>`)
     pub timed_out: bool,
+    /// `--jobs`: the worker slots that executed at least one run
+    pub workers_seen: std::collections::BTreeSet<usize>,
     /// Extracted custom metrics per run
     pub custom_metrics: std::collections::BTreeMap<String, Vec<Option<f64>>>,
+    /// `--region`: SDK identifier the program reported
+    pub region_sdk: Option<String>,
     /// Output validation of each run (`--expect-output-sha256`, `--validate`):
     /// `None` where the run was not checked, aligned with the times
     validity: Vec<Option<bool>>,
@@ -124,6 +139,40 @@ pub struct BenchmarkRunner<'a> {
     first_output_sha256: Option<String>,
     /// cgroup throttling and temperature during the runs
     watch: crate::environment_watch::Watch,
+}
+
+const PREPARATION_ERROR: &str = "The preparation command terminated with a non-zero exit code. \
+                                 Append ' || true' to the command if you are sure that this can be ignored.";
+const CONCLUSION_ERROR: &str = "The conclusion command terminated with a non-zero exit code. \
+                                Append ' || true' to the command if you are sure that this can be ignored.";
+
+/// Run a `--prepare`, `--conclude`, `--setup` or `--cleanup` command.
+fn run_intermediate(
+    executor: &dyn Executor,
+    output_policy: &CommandOutputPolicy,
+    options: &Options,
+    command: &Command<'_>,
+    iteration: executor::BenchmarkIteration,
+    kind: &'static str,
+    error_output: &'static str,
+) -> Result<TimingResult> {
+    let (result, _) = executor
+        .run_command_and_measure(
+            command,
+            iteration,
+            Some(CmdFailureAction::RaiseError),
+            output_policy,
+        )
+        .map_err(|_| anyhow!(error_output))?;
+
+    if result.timed_out {
+        let timeout_str = options
+            .timeout
+            .map(|t| format_duration(t.as_secs_f64(), options.time_unit).to_string())
+            .unwrap_or_default();
+        bail!("The {kind} command timed out (> {timeout_str}).");
+    }
+    Ok(result)
 }
 
 /// "1%", "0.5%"
@@ -217,6 +266,9 @@ impl<'a> BenchmarkRunner<'a> {
             exit_codes: vec![],
             instance_times: vec![],
             instance_exit_codes: vec![],
+            run_ids: vec![],
+            instance_run_ids: vec![],
+            leftover_processes: std::cell::Cell::new(false),
             resource_counters: vec![],
             hw_counters: vec![],
             per_run_values: vec![],
@@ -238,7 +290,9 @@ impl<'a> BenchmarkRunner<'a> {
             cold_warmup_time: None,
             baseline: None,
             timed_out: false,
+            workers_seen: std::collections::BTreeSet::new(),
             custom_metrics: std::collections::BTreeMap::new(),
+            region_sdk: None,
         }
     }
 
@@ -249,25 +303,23 @@ impl<'a> BenchmarkRunner<'a> {
         kind: &'static str,
         error_output: &'static str,
     ) -> Result<TimingResult> {
-        let (result, _) = self
-            .executor
-            .run_command_and_measure(
-                command,
-                iteration,
-                Some(CmdFailureAction::RaiseError),
-                self.output_policy,
-            )
-            .map_err(|_| anyhow!(error_output))?;
-
-        if result.timed_out {
-            let timeout_str = self
-                .options
-                .timeout
-                .map(|t| format_duration(t.as_secs_f64(), self.options.time_unit).to_string())
-                .unwrap_or_default();
-            bail!("The {kind} command timed out (> {timeout_str}).");
-        }
+        let result = run_intermediate(
+            self.executor,
+            self.output_policy,
+            self.options,
+            command,
+            iteration,
+            kind,
+            error_output,
+        )?;
+        self.note_leftovers(&result);
         Ok(result)
+    }
+
+    pub(crate) fn note_leftovers(&self, result: &TimingResult) {
+        if result.leftover_processes {
+            self.leftover_processes.set(true);
+        }
     }
 
     pub fn run_setup(&self) -> Result<TimingResult> {
@@ -321,22 +373,20 @@ impl<'a> BenchmarkRunner<'a> {
     }
 
     pub fn run_preparation(&self, iteration: BenchmarkIteration) -> Result<Option<TimingResult>> {
-        let error_output = "The preparation command terminated with a non-zero exit code. \
-                            Append ' || true' to the command if you are sure that this can be ignored.";
-
         self.preparation_command
             .as_ref()
-            .map(|cmd| self.run_intermediate_command(cmd, iteration, "preparation", error_output))
+            .map(|cmd| {
+                self.run_intermediate_command(cmd, iteration, "preparation", PREPARATION_ERROR)
+            })
             .transpose()
     }
 
     pub fn run_conclusion(&self, iteration: BenchmarkIteration) -> Result<Option<TimingResult>> {
-        let error_output = "The conclusion command terminated with a non-zero exit code. \
-                            Append ' || true' to the command if you are sure that this can be ignored.";
-
         self.conclusion_command
             .as_ref()
-            .map(|cmd| self.run_intermediate_command(cmd, iteration, "conclusion", error_output))
+            .map(|cmd| {
+                self.run_intermediate_command(cmd, iteration, "conclusion", CONCLUSION_ERROR)
+            })
             .transpose()
     }
 
@@ -350,6 +400,8 @@ impl<'a> BenchmarkRunner<'a> {
 
     pub fn run_warmup_iteration(&mut self, iteration: u64) -> Result<Second> {
         self.cool_down();
+        // Prepare, command and conclude of the run share one run id
+        let _run = crate::run_id::enter(self.concurrency());
         let _ = self.run_preparation(BenchmarkIteration::Warmup(iteration))?;
         let (result, _) = self.executor.run_command_and_measure(
             self.command,
@@ -357,6 +409,7 @@ impl<'a> BenchmarkRunner<'a> {
             None,
             self.output_policy,
         )?;
+        self.note_leftovers(&result);
         if result.timed_out {
             self.timed_out = true;
             return Ok(result.time_real);
@@ -533,17 +586,31 @@ impl<'a> BenchmarkRunner<'a> {
         if started.elapsed().as_secs_f64() >= budget {
             return false;
         }
-        let (base_sd, base_runs) = self
-            .baseline
-            .as_ref()
-            .map(|b| (b.stddev, b.runs))
-            .unwrap_or((None, 0));
-        crate::stats::precision::relative_ci_half_width_with_baseline(
-            self.measured_times(),
-            base_sd,
-            base_runs,
-        )
-        .is_none_or(|width| width > target)
+        self.precision_half_width(self.measured_times())
+            .is_none_or(|width| width > target)
+    }
+
+    /// Relative half-width of the interval that `--target-precision-method` stops on:
+    /// the fixed Student-t interval of the mean (with the uncertainty of a subtracted
+    /// baseline), or the confidence sequence of the mean.
+    fn precision_half_width(&self, times: &[Second]) -> Option<f64> {
+        use crate::stats::sequential::StoppingRule;
+        match self.options.target_precision_method {
+            StoppingRule::FixedCi => {
+                let (base_sd, base_runs) = self
+                    .baseline
+                    .as_ref()
+                    .map(|b| (b.stddev, b.runs))
+                    .unwrap_or((None, 0));
+                crate::stats::precision::relative_ci_half_width_with_baseline(
+                    times, base_sd, base_runs,
+                )
+            }
+            StoppingRule::ConfidenceSequence => crate::stats::sequential::relative_half_width(
+                times,
+                crate::stats::settings::current().confidence_level,
+            ),
+        }
     }
 
     /// `--aggregate-parameter-runs`: round the run count up to whole cycles
@@ -586,6 +653,7 @@ impl<'a> BenchmarkRunner<'a> {
 
     pub fn run_initial_measurement(&mut self) -> Result<()> {
         self.cool_down();
+        let run = crate::run_id::enter(self.concurrency());
         let preparation_result = self.run_preparation(BenchmarkIteration::Benchmark(0))?;
         let preparation_overhead =
             preparation_result.map_or(0.0, |res| res.time_total + self.executor.time_overhead());
@@ -605,6 +673,7 @@ impl<'a> BenchmarkRunner<'a> {
         self.watch.end(watch_before);
         let energy_initial = self.stop_energy(res.time_real, window);
         let success = status.success();
+        self.note_leftovers(&res);
 
         if res.timed_out {
             self.timed_out = true;
@@ -656,7 +725,7 @@ impl<'a> BenchmarkRunner<'a> {
             .push(self.subtract_baseline_energy(energy_initial));
         self.domain_measurements.push(self.pending_domains.take());
         self.exit_codes.push(extract_exit_code(status));
-        self.push_instances(&res);
+        self.push_instances(&res, run.ids());
         self.resource_counters.push(res.counters);
         self.hw_counters.push(res.hw_counters);
         self.per_run_values.push(
@@ -664,6 +733,9 @@ impl<'a> BenchmarkRunner<'a> {
                 .per_run_values(&BenchmarkIteration::Benchmark(0)),
         );
         self.push_custom_metrics(&res.custom_metrics);
+        if res.region_sdk.is_some() {
+            self.region_sdk.clone_from(&res.region_sdk);
+        }
         self.all_succeeded = self.all_succeeded && success;
 
         Ok(())
@@ -671,6 +743,7 @@ impl<'a> BenchmarkRunner<'a> {
 
     pub fn run_timed_iteration(&mut self, iteration: u64) -> Result<()> {
         self.cool_down();
+        let run = crate::run_id::enter(self.concurrency());
         self.run_preparation(BenchmarkIteration::Benchmark(iteration))?;
 
         if let Some(sampler) = self.energy_sampler.as_mut() {
@@ -678,7 +751,7 @@ impl<'a> BenchmarkRunner<'a> {
         }
         let watch_before = self.watch.begin();
         let window_start = std::time::Instant::now();
-        let (mut res, status) = self.executor.run_command_and_measure(
+        let (res, status) = self.executor.run_command_and_measure(
             self.command,
             BenchmarkIteration::Benchmark(iteration),
             None,
@@ -687,13 +760,30 @@ impl<'a> BenchmarkRunner<'a> {
         let window = window_start.elapsed().as_secs_f64();
         self.watch.end(watch_before);
         let energy = self.stop_energy(res.time_real, window);
-        let success = status.success();
+        self.note_leftovers(&res);
 
         if res.timed_out {
             self.timed_out = true;
             return Ok(());
         }
 
+        self.record_run(res, status, energy, iteration, run.ids())?;
+
+        self.run_conclusion(BenchmarkIteration::Benchmark(iteration))?;
+
+        Ok(())
+    }
+
+    /// Store one measured (not timed out) benchmark run.
+    fn record_run(
+        &mut self,
+        mut res: TimingResult,
+        status: std::process::ExitStatus,
+        energy: Option<f64>,
+        iteration: u64,
+        ids: crate::run_id::RunIds,
+    ) -> Result<()> {
+        let success = status.success();
         let validity = self.validate_run(iteration, res.stdout.take(), success)?;
         let res = self.subtract_baseline(res);
         self.validity.push(validity);
@@ -706,7 +796,7 @@ impl<'a> BenchmarkRunner<'a> {
             .push(self.subtract_baseline_energy(energy));
         self.domain_measurements.push(self.pending_domains.take());
         self.exit_codes.push(extract_exit_code(status));
-        self.push_instances(&res);
+        self.push_instances(&res, ids);
         self.resource_counters.push(res.counters);
         self.hw_counters.push(res.hw_counters);
         self.per_run_values.push(
@@ -714,10 +804,10 @@ impl<'a> BenchmarkRunner<'a> {
                 .per_run_values(&BenchmarkIteration::Benchmark(iteration)),
         );
         self.push_custom_metrics(&res.custom_metrics);
+        if res.region_sdk.is_some() {
+            self.region_sdk.clone_from(&res.region_sdk);
+        }
         self.all_succeeded = self.all_succeeded && success;
-
-        self.run_conclusion(BenchmarkIteration::Benchmark(iteration))?;
-
         Ok(())
     }
 
@@ -766,8 +856,10 @@ impl<'a> BenchmarkRunner<'a> {
     }
 
     /// `--concurrency`: remember the instances of the run just measured.
-    fn push_instances(&mut self, res: &TimingResult) {
+    fn push_instances(&mut self, res: &TimingResult, ids: crate::run_id::RunIds) {
+        self.run_ids.push(ids.first);
         if self.concurrency() > 1 {
+            self.instance_run_ids.push(ids.all());
             self.instance_times
                 .push(res.instances.iter().map(|i| i.time_real).collect());
             self.instance_exit_codes
@@ -813,6 +905,16 @@ impl<'a> BenchmarkRunner<'a> {
                 .or_default()
                 .push(extracted.get(&metric.name).copied());
         }
+        // `--region`: the time and the pair count of every requested region
+        for name in &self.options.regions {
+            for key in [
+                crate::region::time_key(name),
+                crate::region::count_key(name),
+            ] {
+                let value = extracted.get(&key).copied();
+                self.custom_metrics.entry(key).or_default().push(value);
+            }
+        }
     }
 
     /// Keep only the runs at `keep` (ascending indices) in every per-run vector.
@@ -835,6 +937,15 @@ impl<'a> BenchmarkRunner<'a> {
                 .collect();
         }
         self.exit_codes = select(&self.exit_codes, keep);
+        if self.run_ids.len() == run_count {
+            self.run_ids = select(&self.run_ids, keep);
+        }
+        if self.instance_run_ids.len() == run_count {
+            self.instance_run_ids = keep
+                .iter()
+                .map(|&index| self.instance_run_ids[index].clone())
+                .collect();
+        }
         if self.validity.len() == run_count {
             self.validity = select(&self.validity, keep);
         }
@@ -960,6 +1071,28 @@ impl<'a> BenchmarkRunner<'a> {
                      (`kernel.perf_event_paranoid <= 1` or CAP_PERFMON); see '--counters'.",
                     kind.name()
                 );
+            }
+        }
+        for name in &self.options.regions {
+            let key = crate::region::time_key(name);
+            let values = self.custom_metrics.get(&key).map(Vec::as_slice);
+            let reported = values.is_some_and(|v| v.iter().any(Option::is_some));
+            if !reported {
+                bail!(
+                    "The program never reported the region '{name}' under '--region'. Check the \
+                     name in '--region={name}' against the name passed to the SDK's start()/stop()."
+                );
+            }
+            if self.options.metric.region_name() == Some(name.as_str()) {
+                let values = values.unwrap_or_default();
+                let missing = values.iter().filter(|v| v.is_none()).count();
+                if missing > 0 {
+                    bail!(
+                        "'--metric region:{name}' requires the region in every run, but {missing} \
+                         of {} runs did not report it (runs ignored with '-i' contribute nothing).",
+                        values.len()
+                    );
+                }
             }
         }
         if let Some(name) = self.options.metric.custom_name() {
@@ -1162,26 +1295,21 @@ impl<'a> BenchmarkRunner<'a> {
         let median_str = format_duration(t_median, Some(time_unit));
         let max_str = format_duration(t_max, Some(time_unit));
         let mut excluded = Vec::new();
-        let (base_sd, base_runs) = self
-            .baseline
-            .as_ref()
-            .map(|b| (b.stddev, b.runs))
-            .unwrap_or((None, 0));
         // --target-precision: the precision reached (and the target)
-        let precision_reached = self.options.target_precision.map(|target| {
-            (
-                target,
-                crate::stats::precision::relative_ci_half_width_with_baseline(
-                    &self.times_real,
-                    base_sd,
-                    base_runs,
-                ),
-            )
-        });
+        let precision_reached = self
+            .options
+            .target_precision
+            .map(|target| (target, self.precision_half_width(&self.times_real)));
         if let Some((target, reached)) = precision_reached {
             excluded.push(format!(
-                "±{} @95%, target {}",
+                "±{} @{}%{}, target {}",
                 reached.map_or("?".to_string(), |r| format!("{:.1}%", r * 100.0)),
+                crate::stats::settings::current().confidence_percent(),
+                match self.options.target_precision_method {
+                    crate::stats::sequential::StoppingRule::FixedCi => "",
+                    crate::stats::sequential::StoppingRule::ConfidenceSequence =>
+                        " confidence sequence",
+                },
                 format_percent(target)
             ));
         }
@@ -1241,15 +1369,40 @@ impl<'a> BenchmarkRunner<'a> {
         let is_interrupted = crate::util::interrupt::interrupted() && (runs_done as u64) < planned;
         let runs_planned = if is_interrupted { Some(planned) } else { None };
 
-        let (custom_metrics, custom_metrics_summary) = if !self.custom_metrics.is_empty() {
+        // `--region` series live next to the custom metrics inside the runner;
+        // they are exported as `regions`
+        let regions: Vec<benchmark_result::RegionResult> = self
+            .options
+            .regions
+            .iter()
+            .filter_map(|name| {
+                benchmark_result::RegionResult::from_runs(
+                    name,
+                    self.custom_metrics.get(&crate::region::time_key(name))?,
+                    self.custom_metrics.get(&crate::region::count_key(name)),
+                    self.region_sdk.clone(),
+                )
+            })
+            .collect();
+        let regions = (!regions.is_empty()).then_some(regions);
+        let output_metric_series: std::collections::BTreeMap<_, _> = self
+            .custom_metrics
+            .iter()
+            .filter(|(key, _)| {
+                !key.starts_with(crate::region::METRIC_PREFIX)
+                    && !key.starts_with(crate::region::COUNT_PREFIX)
+            })
+            .map(|(key, values)| (key.clone(), values.clone()))
+            .collect();
+        let (custom_metrics, custom_metrics_summary) = if !output_metric_series.is_empty() {
             let mut summary_map = std::collections::BTreeMap::new();
-            for (name, values) in &self.custom_metrics {
+            for (name, values) in &output_metric_series {
                 let present: Vec<f64> = values.iter().flatten().copied().collect();
                 if let Some(summary) = benchmark_result::MetricSummary::from_values(&present) {
                     summary_map.insert(name.clone(), summary);
                 }
             }
-            (Some(self.custom_metrics.clone()), Some(summary_map))
+            (Some(output_metric_series.clone()), Some(summary_map))
         } else {
             (None, None)
         };
@@ -1430,6 +1583,11 @@ impl<'a> BenchmarkRunner<'a> {
                         Metric::Instructions | Metric::Cycles => {
                             (format_count(p_mean), p_stddev.map(format_count))
                         }
+                        Metric::Custom(_) if self.options.metric.is_region() => {
+                            let m = format_duration(p_mean, Some(time_unit));
+                            let s = p_stddev.map(|sd| format_duration(sd, Some(time_unit)));
+                            (m, s)
+                        }
                         Metric::Custom(_) => (
                             format!("{p_mean:.3}"),
                             p_stddev.map(|sd| format!("{sd:.3}")),
@@ -1443,6 +1601,13 @@ impl<'a> BenchmarkRunner<'a> {
                         colors::green("mean").bold(),
                         colors::green("σ")
                     );
+                    // a long metric name (`region:<name>`) must not touch the value
+                    let title =
+                        if self.options.metric.is_region() && header.chars().count() + 12 >= 21 {
+                            format!("{title} ")
+                        } else {
+                            title
+                        };
                     if let Some(s) = p_stddev_str {
                         crate::outln!(
                             "  {:<21}{:>width$} ± {:>width$}",
@@ -1528,6 +1693,29 @@ impl<'a> BenchmarkRunner<'a> {
                                 width = width
                             );
                         }
+                    }
+                }
+
+                for region in regions.iter().flatten() {
+                    // already printed as the primary metric above
+                    if self.options.metric.region_name() == Some(region.name.as_str()) {
+                        continue;
+                    }
+                    let title = format!("Region {} ({}", region.name, colors::green("mean").bold());
+                    let mean = format_duration(region.mean, Some(time_unit));
+                    match region.stddev {
+                        Some(sd) => crate::outln!(
+                            "  {title} ± {}):  {:>width$} ± {:>width$}",
+                            colors::green("σ"),
+                            colors::green(mean).bold(),
+                            colors::green(format_duration(sd, Some(time_unit))),
+                            width = width
+                        ),
+                        None => crate::outln!(
+                            "  {title}):  {:>width$}",
+                            colors::green(mean).bold(),
+                            width = width
+                        ),
                     }
                 }
 
@@ -1631,7 +1819,8 @@ impl<'a> BenchmarkRunner<'a> {
                 if self.options.deep_stats {
                     if let Some(deep) = compute_deep_stats(&self.times_real) {
                         crate::outln!(
-                            "  Bootstrap 95% CI:   [mean: {} … {}, median: {} … {}, σ: {} … {}]",
+                            "  Bootstrap {}% CI:   [mean: {} … {}, median: {} … {}, σ: {} … {}]",
+                            crate::stats::settings::current().confidence_percent(),
                             format_duration(deep.mean_ci_lower, Some(time_unit)),
                             format_duration(deep.mean_ci_upper, Some(time_unit)),
                             format_duration(deep.median_ci_lower, Some(time_unit)),
@@ -1684,6 +1873,10 @@ impl<'a> BenchmarkRunner<'a> {
 
         // Warnings
         let mut warnings = vec![];
+
+        if self.leftover_processes.get() {
+            warnings.push(Warnings::LeftoverProcesses);
+        }
 
         let diagnostics = if !self.timed_out && !self.times_real.is_empty() {
             // Check execution time
@@ -1980,7 +2173,15 @@ impl<'a> BenchmarkRunner<'a> {
             instance_times: concurrency.map(|_| self.instance_times),
             throughput,
             instance_percentiles,
-            energy_per_instance_joules: concurrency.and_then(|n| mean_energy.map(|e| e / n as f64)),
+            // Package energy is shared by all instances: never divided per instance
+            energy_per_instance_joules: None,
+            energy_scope: mean_energy
+                .map(|_| benchmark_result::energy_scope(concurrency).to_string()),
+            run_ids: Some(self.run_ids).filter(|ids| !ids.is_empty()),
+            instance_run_ids: concurrency.map(|_| self.instance_run_ids),
+            leftover_processes: self.leftover_processes.get(),
+            workers_used: (self.options.jobs > 1).then_some(self.workers_seen.len()),
+            contended: (self.options.jobs > 1).then_some(true),
             parameters: self
                 .command
                 .get_parameters()
@@ -2051,8 +2252,10 @@ impl<'a> BenchmarkRunner<'a> {
                 benchmark_result::PrecisionReached {
                     target,
                     reached,
-                    confidence: 0.95,
+                    confidence: crate::stats::settings::current().confidence_level,
                     met: reached.is_some_and(|r| r <= target),
+                    stopping_rule: Some(self.options.target_precision_method),
+                    achieved_half_width: reached,
                 }
             }),
             timed_out: self.timed_out,
@@ -2063,6 +2266,7 @@ impl<'a> BenchmarkRunner<'a> {
             },
             custom_metrics,
             custom_metrics_summary,
+            regions,
         };
         let quality = crate::quality::QualityReport::assess(
             &result,
@@ -2070,6 +2274,8 @@ impl<'a> BenchmarkRunner<'a> {
                 metric: self.options.metric,
                 counters_requested: self.options.counters.is_some(),
                 energy_requested: self.options.measure_energy,
+                floor: self.executor.floor(),
+                below_floor: self.options.below_floor,
             },
         );
         if report.is_some() && self.options.output_style != OutputStyleOption::Disabled {

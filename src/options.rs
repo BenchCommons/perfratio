@@ -136,6 +136,31 @@ pub enum FirstRunPolicy {
     Discard,
 }
 
+/// The schedule from `--schedule` (`None`: not given) and `--jobs`.
+#[cfg(feature = "cli")]
+fn resolve_schedule<'a>(
+    explicit: Option<ScheduleMode>,
+    jobs: usize,
+) -> Result<ScheduleMode, OptionsError<'a>> {
+    match (explicit, jobs > 1) {
+        (None, false) => Ok(ScheduleMode::Grouped),
+        (None, true) => Ok(ScheduleMode::Saturate),
+        (Some(mode), false) if mode.pool_policy().is_some() => {
+            Err(OptionsError::InvalidSchedule(format!(
+                "'{}' needs '--jobs' > 1 (it schedules the workers of the pool)",
+                mode.name()
+            )))
+        }
+        (Some(mode), true) if mode.pool_policy().is_none() => {
+            Err(OptionsError::InvalidSchedule(format!(
+                "'{}' cannot be combined with '--jobs' > 1; use 'saturate', 'exclusive' or 'fair'",
+                mode.name()
+            )))
+        }
+        (Some(mode), _) => Ok(mode),
+    }
+}
+
 /// Benchmark execution schedule mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ScheduleMode {
@@ -145,6 +170,54 @@ pub enum ScheduleMode {
 
     /// Interleave iterations across all commands in round-robin fashion
     RoundRobin,
+
+    /// `--jobs`: keep every worker busy (default with `--jobs` > 1)
+    Saturate,
+
+    /// `--jobs`: a command never runs concurrently with itself
+    Exclusive,
+
+    /// `--jobs`: every command keeps the same number of runs
+    Fair,
+
+    /// Interleaved, with an independent seeded shuffle of the command order in every round (#324)
+    Randomized,
+
+    /// Interleaved, with the order rotated every round (cyclic Latin square, #324)
+    Balanced,
+}
+
+impl ScheduleMode {
+    /// The worker-pool policy, for the schedules that need `--jobs` > 1.
+    pub fn pool_policy(self) -> Option<crate::benchmark::pool::Policy> {
+        use crate::benchmark::pool::Policy;
+        match self {
+            ScheduleMode::Saturate => Some(Policy::Saturate),
+            ScheduleMode::Exclusive => Some(Policy::Exclusive),
+            ScheduleMode::Fair => Some(Policy::Fair),
+            ScheduleMode::Grouped
+            | ScheduleMode::RoundRobin
+            | ScheduleMode::Randomized
+            | ScheduleMode::Balanced => None,
+        }
+    }
+
+    /// Runs of different commands are interleaved
+    pub fn interleaves(self) -> bool {
+        self != ScheduleMode::Grouped
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            ScheduleMode::Grouped => "grouped",
+            ScheduleMode::RoundRobin => "round-robin",
+            ScheduleMode::Saturate => "saturate",
+            ScheduleMode::Exclusive => "exclusive",
+            ScheduleMode::Fair => "fair",
+            ScheduleMode::Randomized => "randomized",
+            ScheduleMode::Balanced => "balanced",
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -283,6 +356,12 @@ pub struct Options {
     /// `--target-precision`: run until the 95% CI of the mean is at most this
     /// fraction of the mean (0.01 = ±1%)
     pub target_precision: Option<f64>,
+    /// `--target-precision-method`: the rule that decides the interval is narrow enough
+    pub target_precision_method: crate::stats::sequential::StoppingRule,
+
+    /// `--estimator`, `--confidence-level`, `--significance-level`,
+    /// `--bootstrap-resamples` and `--seed` (#320)
+    pub stat_settings: crate::stats::settings::StatSettings,
 
     /// `--duration`: sample each command until its summed run time (seconds)
     /// reaches this budget
@@ -395,6 +474,11 @@ pub struct Options {
 
     /// `--cooldown-timeout`: how long `until-temp` waits before it gives up
     pub cooldown_timeout: std::time::Duration,
+    /// `--calibrate`: measure the runner floor before benchmarking
+    pub calibrate: crate::calibration::CalibrateMode,
+
+    /// `--below-floor`: what a result within the runner floor does
+    pub below_floor: crate::calibration::BelowFloorAction,
 
     /// Modified Z-score above which runs are discarded (--discard-outliers)
     pub discard_outliers: Option<f64>,
@@ -432,8 +516,20 @@ pub struct Options {
     /// (`Command::with_concurrency_template`); `concurrency` stays 1
     pub concurrency_template: Option<String>,
 
+    /// `--jobs`: independent runs executed at the same time (1: sequential)
+    pub jobs: usize,
+    /// `--artifact-dir`: parent of the per-run directories (`PERFRATIO_RUN_DIR`)
+    pub artifact_dir: Option<PathBuf>,
+
+    /// `--pin-workers` / `--reserve-cpus`: the CPUs of every worker (`None`:
+    /// the workers are not pinned)
+    pub cpu_partition: Option<crate::util::cpu_partition::Partition>,
+
     /// `--until`: stop timer upon readiness output pattern
     pub until: Option<UntilSettings>,
+
+    /// `--region`: names of the instrumented regions to measure
+    pub regions: Vec<String>,
 
     /// `--output-metric`: custom metrics to extract from command output
     pub output_metrics: Vec<crate::output_metric::OutputMetric>,
@@ -451,6 +547,8 @@ impl Default for Options {
             first_run: FirstRunPolicy::default(),
             min_benchmarking_time: 3.0,
             target_precision: None,
+            target_precision_method: Default::default(),
+            stat_settings: Default::default(),
             duration: None,
             max_benchmarking_time: 60.0,
             command_failure_action: CmdFailureAction::RaiseError,
@@ -488,6 +586,8 @@ impl Default for Options {
             fail_on_quality: None,
             cooldown: None,
             cooldown_timeout: crate::cooldown::DEFAULT_TIMEOUT,
+            calibrate: Default::default(),
+            below_floor: Default::default(),
             discard_outliers: None,
             show_resource_usage: false,
             counters: None,
@@ -500,7 +600,11 @@ impl Default for Options {
             timeout: None,
             concurrency: 1,
             concurrency_template: None,
+            jobs: 1,
+            artifact_dir: None,
+            cpu_partition: None,
             until: None,
+            regions: Vec::new(),
             output_metrics: Vec::new(),
             output_metrics_stderr: false,
         }
@@ -752,6 +856,24 @@ impl Options {
                 .ok_or_else(|| OptionsError::InvalidTargetPrecision(value.clone()))?;
             options.target_precision = Some(pct / 100.0);
         }
+        options.stat_settings = parse_stat_settings(matches)?;
+        if matches
+            .get_one::<String>("target-precision-method")
+            .is_some_and(|m| m == "sequential")
+        {
+            if !options.stat_settings.estimator.is_mean() {
+                return Err(OptionsError::InvalidStatistics(
+                    "'--target-precision-method sequential' is defined for the mean: it cannot be combined with another '--estimator'".into(),
+                ));
+            }
+            if matches.get_one::<String>("subtract").is_some() {
+                return Err(OptionsError::InvalidStatistics(
+                    "'--target-precision-method sequential' cannot be combined with '--subtract': the uncertainty of the subtracted baseline is not part of the confidence sequence".into(),
+                ));
+            }
+            options.target_precision_method =
+                crate::stats::sequential::StoppingRule::ConfidenceSequence;
+        }
         if let Some(time) = matches.get_one::<String>("max-benchmarking-time") {
             options.max_benchmarking_time = time
                 .parse::<f64>()
@@ -789,6 +911,17 @@ impl Options {
                     .ok_or_else(|| OptionsError::InvalidConcurrency(val.clone()))?;
             }
         }
+        if let Some(val) = matches.get_one::<String>("jobs") {
+            options.jobs = if val.eq_ignore_ascii_case("auto") {
+                std::thread::available_parallelism().map_or(1, |n| n.get())
+            } else {
+                val.parse::<usize>()
+                    .ok()
+                    .filter(|&n| n >= 1)
+                    .ok_or_else(|| OptionsError::InvalidJobs(val.clone()))?
+            };
+        }
+        options.artifact_dir = matches.get_one::<String>("artifact-dir").map(PathBuf::from);
         if let Some(val) = matches.get_one::<String>("energy-baseline") {
             options.energy_baseline = parse_energy_baseline(val)
                 .map_err(|e| OptionsError::InvalidEnergyBaseline(val.clone(), e))?;
@@ -818,6 +951,19 @@ impl Options {
                     )));
                 }
                 options.output_metrics.push(parsed);
+            }
+        }
+
+        if let Some(names) = matches.get_many::<String>("region") {
+            for name in names {
+                if !crate::region::is_valid_name(name) {
+                    return Err(OptionsError::InvalidRegion(format!(
+                        "invalid region name '{name}': use ASCII letters, digits and '_' (at most 64 characters)"
+                    )));
+                }
+                if !options.regions.contains(name) {
+                    options.regions.push(name.clone());
+                }
             }
         }
 
@@ -874,6 +1020,14 @@ impl Options {
                 return Err(OptionsError::InvalidOutputMetric(format!(
                     "'--metric custom:{name}' needs a matching '--output-metric {name}=<REGEX>'"
                 )));
+            }
+        }
+        // `--metric region:<name>` implies measuring that region
+        if let Some(name) = options.metric.region_name() {
+            if matches.get_one::<String>("import-json").is_none()
+                && !options.regions.iter().any(|r| r == name)
+            {
+                options.regions.push(name.to_string());
             }
         }
         // Only look at the backend choice (and its environment variable) when
@@ -935,6 +1089,14 @@ impl Options {
                 ))
             })?;
         }
+        options.calibrate = matches
+            .get_one::<String>("calibrate")
+            .and_then(|value| crate::calibration::CalibrateMode::parse(value))
+            .unwrap_or_default();
+        options.below_floor = matches
+            .get_one::<String>("below-floor")
+            .and_then(|value| crate::calibration::BelowFloorAction::parse(value))
+            .unwrap_or_default();
         options.show_resource_usage = matches.get_flag("resource-usage");
         let simd = matches.get_flag("simd");
         // `--metric instructions|cycles` collects its own counter
@@ -1035,20 +1197,126 @@ impl Options {
             return Err(OptionsError::OmitFailedRunsRequiresIgnoreFailure);
         }
 
-        options.schedule = if matches.get_flag("round-robin") {
-            ScheduleMode::RoundRobin
+        let explicit = if matches.get_flag("round-robin") {
+            Some(ScheduleMode::RoundRobin)
         } else {
             match matches.get_one::<String>("schedule").map(|s| s.as_str()) {
-                Some("round-robin") | Some("interleaved") => ScheduleMode::RoundRobin,
-                _ => ScheduleMode::Grouped,
+                Some("round-robin") | Some("interleaved") => Some(ScheduleMode::RoundRobin),
+                Some("grouped") => Some(ScheduleMode::Grouped),
+                Some("saturate") => Some(ScheduleMode::Saturate),
+                Some("exclusive") => Some(ScheduleMode::Exclusive),
+                Some("fair") => Some(ScheduleMode::Fair),
+                Some("randomized") => Some(ScheduleMode::Randomized),
+                Some("balanced") => Some(ScheduleMode::Balanced),
+                _ => None,
             }
         };
+        options.schedule = resolve_schedule(explicit, options.jobs)?;
 
         options.allow_setup_with_round_robin = matches.get_flag("allow-setup-with-round-robin");
 
+        options.cpu_partition = options.plan_cpu_partition(matches)?;
         options.warn_concurrency();
+        options.warn_jobs();
 
         Ok(options)
+    }
+
+    /// `--pin-workers` and `--reserve-cpus`: the CPUs of every worker.
+    #[cfg(feature = "cli")]
+    fn plan_cpu_partition<'a>(
+        &self,
+        matches: &ArgMatches,
+    ) -> Result<Option<crate::util::cpu_partition::Partition>, OptionsError<'a>> {
+        use crate::util::cpu_partition as cpus;
+        let pin = matches.get_one::<String>("pin-workers").map(String::as_str);
+        let reserve = matches.get_one::<String>("reserve-cpus");
+        let invalid = |message: String| OptionsError::InvalidPinWorkers(message);
+        if self.jobs <= 1 {
+            return match (pin, reserve) {
+                (None, None) => Ok(None),
+                _ => Err(invalid(
+                    "these options divide the CPUs among the workers and need '--jobs' > 1"
+                        .to_string(),
+                )),
+            };
+        }
+        if pin == Some("none") {
+            return match reserve {
+                None => Ok(None),
+                Some(_) => Err(invalid(
+                    "'--reserve-cpus' keeps CPUs free of workers, which needs pinned workers; \
+                     it cannot be combined with '--pin-workers=none'"
+                        .to_string(),
+                )),
+            };
+        }
+        let explicit = pin.is_some() || reserve.is_some();
+        // The simulated runs of '--debug-mode' start no processes to pin
+        if !explicit && matches.get_flag("debug-mode") {
+            return Ok(None);
+        }
+        let reserve = reserve
+            .map(|value| cpus::Reserve::parse(value))
+            .transpose()
+            .map_err(|e| invalid(format!("{e:#}")))?;
+        if !cpus::supported() {
+            if explicit {
+                eprintln!(
+                    "{} the workers cannot be pinned to CPUs on this platform; '--pin-workers' \
+                     and '--reserve-cpus' are ignored. Use '--affinity p-cores|e-cores' on macOS \
+                     (Apple Silicon) to prefer a core type.",
+                    crate::output::colors::yellow("Warning:")
+                );
+            }
+            return Ok(None);
+        }
+        let topology = cpus::discover(self.affinity.as_deref());
+        cpus::partition(&topology, reserve.as_ref(), self.jobs)
+            .map(Some)
+            .map_err(|e| invalid(format!("{e:#}")))
+    }
+
+    #[cfg(feature = "cli")]
+    /// Warnings for `--jobs N` with N > 1 (printed once, to stderr).
+    fn warn_jobs(&self) {
+        if self.jobs <= 1 {
+            return;
+        }
+        let warning = crate::output::colors::yellow("Warning:");
+        let usable = self.usable_cpus();
+        if self.jobs > usable {
+            eprintln!(
+                "{warning} '--jobs {}' exceeds the {usable} usable CPUs: workers will queue on the \
+                 CPU and the times include that waiting.",
+                self.jobs
+            );
+        }
+        eprintln!(
+            "{warning} '--jobs {}' runs benchmark runs in parallel. They compete for caches, memory \
+             bandwidth and CPUs, so the times differ from sequential sampling; the results are \
+             marked as contended.",
+            self.jobs
+        );
+    }
+
+    /// The `perfratio.execution` metadata of the export (`--jobs` > 1)
+    pub fn execution_info(&self) -> Option<crate::export::metadata::Execution> {
+        let policy = self.schedule.pool_policy()?;
+        (self.jobs > 1).then(|| crate::export::metadata::Execution {
+            jobs: self.jobs,
+            schedule_policy: policy.name(),
+            contended: true,
+            cpu_partition: self.cpu_partition.clone(),
+        })
+    }
+
+    /// Logical CPUs that benchmarked processes may use (after `--affinity`).
+    pub fn usable_cpus(&self) -> usize {
+        match &self.affinity {
+            Some(cpus) => cpus.len(),
+            None => std::thread::available_parallelism().map_or(1, |n| n.get()),
+        }
     }
 
     #[cfg(feature = "cli")]
@@ -1119,7 +1387,7 @@ impl Options {
             }
         }
 
-        if self.schedule == ScheduleMode::RoundRobin && !self.allow_setup_with_round_robin {
+        if self.schedule.interleaves() && !self.allow_setup_with_round_robin {
             // Setup/cleanup differ between benchmarks if they contain a parameter
             // placeholder, or if they are given per command with different values.
             let has_param = |values: &Option<Vec<String>>| {
@@ -1148,9 +1416,10 @@ impl Options {
             if let Some(reason) = reason {
                 bail!(
                     "The '--setup' and/or '--cleanup' options differ between benchmarks ({reason}) \
-                     and cannot be combined with '--schedule round-robin'. \
-                     Setup runs once per benchmark batch, but round-robin interleaves runs across benchmarks. \
-                     Use '--prepare' for per-run state, or use the default grouped schedule."
+                     and cannot be combined with '--schedule {}'. \
+                     Setup runs once per benchmark batch, but this schedule interleaves runs across benchmarks. \
+                     Use '--prepare' for per-run state, or use the default grouped schedule.",
+                    self.schedule.name()
                 );
             }
         }
@@ -1441,4 +1710,49 @@ fn parse_validation<'a>(
         first_only,
         on_invalid: on_invalid.unwrap_or_default(),
     }))
+}
+
+#[cfg(feature = "cli")]
+/// The statistical settings of `--estimator`, `--confidence-level`,
+/// `--significance-level`, `--bootstrap-resamples` and `--seed`.
+fn parse_stat_settings<'a>(
+    matches: &ArgMatches,
+) -> Result<crate::stats::settings::StatSettings, OptionsError<'a>> {
+    let mut settings = crate::stats::settings::StatSettings::default();
+    let err = OptionsError::InvalidStatistics;
+    if let Some(value) = matches.get_one::<String>("estimator") {
+        settings.estimator = value.parse().map_err(err)?;
+    }
+    let number = |name: &str| -> Result<Option<f64>, OptionsError<'a>> {
+        matches
+            .get_one::<String>(name)
+            .map(|v| {
+                v.trim().parse::<f64>().map_err(|_| {
+                    OptionsError::InvalidStatistics(format!(
+                        "invalid --{name} '{v}': expected a number"
+                    ))
+                })
+            })
+            .transpose()
+    };
+    if let Some(v) = number("confidence-level")? {
+        settings.confidence_level = v;
+    }
+    if let Some(v) = number("significance-level")? {
+        settings.significance_level = v;
+    }
+    if let Some(v) = matches.get_one::<String>("bootstrap-resamples") {
+        settings.bootstrap_resamples = v.trim().parse().map_err(|_| {
+            OptionsError::InvalidStatistics(format!(
+                "invalid --bootstrap-resamples '{v}': expected an integer >= 100"
+            ))
+        })?;
+    }
+    if let Some(seed) = matches.get_one::<u64>("seed") {
+        settings.seed = *seed;
+    }
+    settings
+        .validate()
+        .map_err(OptionsError::InvalidStatistics)?;
+    Ok(settings)
 }

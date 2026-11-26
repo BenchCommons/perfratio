@@ -124,6 +124,38 @@ pub fn scheduler_check(config: Option<&crate::perf_counters::CounterConfig>) -> 
     })
 }
 
+/// `--jobs` with pinned workers (#307): the CPUs of the workers, and a warning
+/// when workers share a physical core (more workers than physical cores).
+/// `None` when the workers are not pinned.
+pub fn worker_cpus_check(
+    partition: Option<&crate::util::cpu_partition::Partition>,
+) -> Option<Check> {
+    let partition = partition?;
+    let reserved = if partition.reserved.is_empty() {
+        String::new()
+    } else {
+        format!(", {:?} kept for perfratio", partition.reserved)
+    };
+    Some(
+        match crate::util::cpu_partition::describe_sharing(partition) {
+            Some(sharing) => {
+                Check::new("Worker CPUs", Status::Warn, format!("{sharing}{reserved}")).with_hint(
+                    "use at most as many --jobs as physical cores, or --pin-workers=none",
+                )
+            }
+            None => Check::new(
+                "Worker CPUs",
+                Status::Ok,
+                format!(
+                    "{} workers on disjoint cores {:?}{reserved}",
+                    partition.workers.len(),
+                    partition.workers
+                ),
+            ),
+        },
+    )
+}
+
 /// The report shown before benchmarking.
 pub fn report(checks: &[Check]) -> String {
     let mut out = String::from("System check:\n");

@@ -16,12 +16,68 @@ pub struct ExportMetadata {
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub labels: BTreeMap<String, String>,
     pub system: SystemInfo,
+    /// Hardware and software the benchmarks ran on (new in 1.19, #314)
+    pub environment: crate::environment::Environment,
+    /// `sha256:<hex>` over the documented subset of `environment`
+    pub environment_fingerprint: String,
+    /// `--meta KEY=VALUE` and `--meta git`
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub meta: BTreeMap<String, String>,
     /// Energy backend that produced the samples (`sysfs_powercap` or `perf_pmu`).
     /// Omitted unless `--energy` is given and a backend is usable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub energy_backend: Option<&'static str>,
+    /// Region protocol version perfratio speaks (new in 1.23). Omitted unless
+    /// `--region` or `--metric region:<name>` is given.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region_protocol: Option<u32>,
     /// Which measurement groups were measured, unavailable or not requested
     pub measurements: Measurements,
+    /// How the runs were executed; only with `--jobs` > 1 (new in 1.22)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution: Option<Execution>,
+    /// Estimator, levels and bootstrap settings behind the statistics (new in 1.21, #320)
+    pub statistics: StatisticsInfo,
+}
+
+/// Parallel execution of the runs (`--jobs`, #306).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct Execution {
+    /// Runs executing at the same time
+    pub jobs: usize,
+    /// `saturate`, `exclusive` or `fair` (open enum)
+    pub schedule_policy: &'static str,
+    /// The runs disturbed each other; always `true`
+    pub contended: bool,
+    /// CPUs of every worker and the CPUs kept for perfratio (new in 1.24);
+    /// absent when the workers were not pinned
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_partition: Option<crate::util::cpu_partition::Partition>,
+}
+
+/// The `perfratio.statistics` object: how the ranking, ratios, intervals and
+/// significance of this export were computed.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct StatisticsInfo {
+    /// `mean`, `median` or a percentile such as `p95`; the central value of
+    /// `relative_speed`, `significance` and the comparison
+    pub estimator: String,
+    pub confidence_level: f64,
+    pub significance_level: f64,
+    pub bootstrap_resamples: usize,
+    pub bootstrap_seed: u64,
+}
+
+impl StatisticsInfo {
+    pub fn from_settings(settings: &crate::stats::settings::StatSettings) -> Self {
+        StatisticsInfo {
+            estimator: settings.estimator.name(),
+            confidence_level: settings.confidence_level,
+            significance_level: settings.significance_level,
+            bootstrap_resamples: settings.bootstrap_resamples,
+            bootstrap_seed: settings.seed,
+        }
+    }
 }
 
 /// Status of one measurement group (`schemaVersion` 1.0, open enum).
@@ -74,6 +130,10 @@ pub struct Measurements {
     /// `perf_paranoid`, `no_pmu`, `hybrid_cpu_unpinned` or `other` (open enum)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub simd_unavailable_reason: Option<&'static str>,
+    /// `--region` instrumented region timing (new in 1.23): `measured` when
+    /// requested (a run that did not report a region shows as `null` in
+    /// `results[].regions[]`), otherwise `not_requested`
+    pub region: MeasurementStatus,
 }
 
 impl Measurements {
@@ -106,7 +166,16 @@ impl Measurements {
             topdown_unavailable_reason: None,
             simd: NotRequested,
             simd_unavailable_reason: None,
+            region: NotRequested,
         }
+    }
+
+    /// Records `--region` (`true`: requested).
+    pub fn with_region(mut self, requested: bool) -> Self {
+        if requested {
+            self.region = MeasurementStatus::Measured;
+        }
+        self
     }
 
     /// Records the outcome of `--topdown` (`None`: not requested).
@@ -183,6 +252,7 @@ impl ExportMetadata {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
+        let environment = crate::environment::Environment::collect();
         ExportMetadata {
             version: env!("CARGO_PKG_VERSION"),
             command_line: command_line(std::env::args_os()),
@@ -197,14 +267,20 @@ impl ExportMetadata {
                 cpu_model: cpu_model(),
                 kernel: kernel_release(),
             },
+            environment_fingerprint: environment.fingerprint(),
+            environment,
+            meta: BTreeMap::new(),
             energy_backend: None,
+            region_protocol: None,
             measurements,
+            statistics: StatisticsInfo::from_settings(&crate::stats::settings::current()),
+            execution: None,
         }
     }
 }
 
 /// The CPU model, e.g. "Intel(R) Core(TM) i7-8550U CPU @ 1.80GHz" or "Apple M2".
-fn cpu_model() -> Option<String> {
+pub(crate) fn cpu_model() -> Option<String> {
     #[cfg(target_os = "linux")]
     {
         let cpuinfo = std::fs::read_to_string("/proc/cpuinfo").unwrap_or_default();
@@ -349,7 +425,7 @@ fn arm_cpu_name(implementer: u32, part: Option<u32>) -> String {
 }
 
 /// The kernel release from `uname`, on Unix.
-fn kernel_release() -> Option<String> {
+pub(crate) fn kernel_release() -> Option<String> {
     #[cfg(unix)]
     {
         // SAFETY: an all-zero utsname is valid, and uname fills it in.

@@ -167,7 +167,7 @@ fn json_starts_with_schema_version_and_has_no_joulex_key() {
     let text = std::fs::read_to_string(&path).unwrap();
     // `schemaVersion` must be the first key of the document
     assert!(
-        text.starts_with("{\n  \"schemaVersion\": \"1.19\","),
+        text.starts_with("{\n  \"schemaVersion\": \"1.29\","),
         "{text}"
     );
     let json: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -286,15 +286,21 @@ fn schema_1_1_layout_snapshot() {
       counters: not_requested
       energy: not_requested
       memory: measured
+      region: not_requested
       resources: not_requested
       simd: not_requested
       time: measured
       topdown: not_requested
     perfratio:
       - command_line
+      - environment
+      - environment_fingerprint
       - labels
       - measurements
+      - metrics
+      - schedule
       - started_at
+      - statistics
       - system
       - version
     result_guaranteed:

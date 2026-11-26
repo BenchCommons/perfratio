@@ -81,9 +81,14 @@ trait Exporter {
 
     /// The `optimize` object (`--optimize`); only the JSON export has a place for it
     fn set_optimize(&self, _value: Option<&serde_json::Value>) {}
+    /// The `perfratio.schedule` object (schedule and run order); only the JSON export has it
+    fn set_schedule(&self, _value: Option<&serde_json::Value>) {}
 
     /// The Pareto analysis (`--pareto`) of the results about to be serialized
     fn set_pareto(&self, _analysis: Option<(&ParetoConfig, &Analysis)>) {}
+
+    /// The measured runner floor (`--calibrate`); only the JSON export has a place for it
+    fn set_calibration(&self, _floor: Option<&crate::calibration::Floor>) {}
 }
 
 pub enum ExportTarget {
@@ -125,6 +130,7 @@ impl ExportManager {
         metric: Metric,
         counters: Option<&crate::perf_counters::CounterConfig>,
         topdown: Option<&crate::topdown::TopdownConfig>,
+        execution: Option<metadata::Execution>,
     ) -> Result<Self> {
         let labels = parse_labels(
             matches
@@ -151,13 +157,47 @@ impl ExportManager {
         } else {
             None
         };
+        let region = matches.get_many::<String>("region").is_some() || metric.is_region();
         let mut metadata = ExportMetadata::new(
             labels,
             Measurements::new(energy, matches.get_flag("resource-usage"))
                 .with_counters(counters)
-                .with_topdown(topdown),
+                .with_topdown(topdown)
+                .with_region(region),
         );
+        metadata.region_protocol = region.then_some(crate::region::PROTOCOL_VERSION);
         metadata.energy_backend = energy.and_then(Result::ok).map(|b| b.as_str());
+        let environment = &mut metadata.environment;
+        environment.backends.energy = metadata.energy_backend.map(str::to_string);
+        if matches!(
+            metadata.measurements.counters,
+            metadata::MeasurementStatus::Measured | metadata::MeasurementStatus::Partial
+        ) {
+            environment.backends.counters = if cfg!(target_os = "linux") {
+                Some("perf_event_open".to_string())
+            } else if cfg!(target_os = "macos") {
+                Some("kperf".to_string())
+            } else {
+                None
+            };
+        }
+        let setting = |name: &str| matches.try_get_one::<String>(name).ok().flatten().cloned();
+        environment.settings = crate::environment::Settings {
+            affinity: setting("affinity"),
+            priority: setting("priority"),
+            concurrency: setting("concurrency"),
+        };
+        let meta_request = crate::environment::parse_meta(
+            matches
+                .try_get_many::<String>("meta")
+                .ok()
+                .flatten()
+                .into_iter()
+                .flatten()
+                .map(String::as_str),
+        )?;
+        metadata.meta = crate::environment::resolve_meta(&meta_request);
+        metadata.execution = execution;
         let mut export_manager = Self {
             exporters: vec![],
             time_unit,
@@ -219,6 +259,11 @@ impl ExportManager {
         Ok(export_manager)
     }
 
+    /// The environment of this run (`perfratio.environment`)
+    pub fn environment(&self) -> &crate::environment::Environment {
+        &self.metadata.environment
+    }
+
     /// Add an additional exporter to the ExportManager
     pub fn add_exporter(&mut self, export_type: ExportType, filename: &str) -> Result<()> {
         let exporter: Box<dyn Exporter> = match export_type {
@@ -269,6 +314,20 @@ impl ExportManager {
     pub fn set_optimize(&self, value: Option<serde_json::Value>) {
         for e in &self.exporters {
             e.exporter.set_optimize(value.as_ref());
+        }
+    }
+
+    /// Hand the measured runner floor to the exporters that include it.
+    pub fn set_calibration(&self, floor: Option<crate::calibration::Floor>) {
+        for e in &self.exporters {
+            e.exporter.set_calibration(floor.as_ref());
+        }
+    }
+
+    /// Hand `perfratio.schedule` (mode, seed, realized order) to the exporters that include it.
+    pub fn set_schedule(&self, value: Option<serde_json::Value>) {
+        for e in &self.exporters {
+            e.exporter.set_schedule(value.as_ref());
         }
     }
 

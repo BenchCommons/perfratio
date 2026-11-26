@@ -1,4 +1,19 @@
-//! `--target-precision`: how precisely the mean run time is known.
+//! `--target-precision`: how precisely the central value (the mean, or with
+//! `--estimator` the median or a percentile) of the run time is known.
+
+use crate::stats::settings::{self, StatSettings};
+
+/// Two-sided critical value of Student's t distribution for `confidence`
+/// (0.95 → `t_975`'s table, kept so that default output is bit-identical).
+pub fn t_critical(confidence: f64, df: usize) -> f64 {
+    if confidence == settings::DEFAULT_CONFIDENCE_LEVEL {
+        t_975(df)
+    } else if df == 0 {
+        f64::INFINITY
+    } else {
+        crate::stats::dist::t_critical(confidence, df as f64)
+    }
+}
 
 /// Two-sided 95% (i.e. the 97.5% quantile) of Student's t distribution with
 /// `df` degrees of freedom.
@@ -25,6 +40,67 @@ pub fn relative_ci_half_width_with_baseline(
     xs: &[f64],
     baseline_stddev: Option<f64>,
     baseline_runs: usize,
+) -> Option<f64> {
+    relative_ci_half_width_with_settings(xs, baseline_stddev, baseline_runs, &settings::current())
+}
+
+/// [`relative_ci_half_width_with_baseline`] with explicit settings. The mean
+/// uses Student's t at `confidence_level`; the median and percentiles use a
+/// bootstrap percentile interval (the subtracted baseline's variance only
+/// enters the mean's interval).
+pub fn relative_ci_half_width_with_settings(
+    xs: &[f64],
+    baseline_stddev: Option<f64>,
+    baseline_runs: usize,
+    settings: &StatSettings,
+) -> Option<f64> {
+    if settings.estimator.is_mean() {
+        mean_ci_half_width(
+            xs,
+            baseline_stddev,
+            baseline_runs,
+            settings.confidence_level,
+        )
+    } else {
+        bootstrap_ci_half_width(xs, settings)
+    }
+}
+
+/// Relative half-width of the bootstrap interval of the estimator.
+fn bootstrap_ci_half_width(xs: &[f64], settings: &StatSettings) -> Option<f64> {
+    use rand::{rngs::StdRng, Rng, SeedableRng};
+    let n = xs.len();
+    if n < 2 {
+        return None;
+    }
+    let center = settings.estimator.estimate(xs);
+    if center.is_nan() || center <= 0.0 {
+        return None;
+    }
+    if xs.iter().all(|&x| x == xs[0]) {
+        return Some(0.0);
+    }
+    let mut rng = StdRng::seed_from_u64(settings.seed);
+    let mut resample = Vec::with_capacity(n);
+    let mut estimates: Vec<f64> = (0..settings.bootstrap_resamples)
+        .map(|_| {
+            resample.clear();
+            resample.extend((0..n).map(|_| xs[rng.gen_range(0..n)]));
+            settings.estimator.estimate(&resample)
+        })
+        .collect();
+    estimates.sort_by(f64::total_cmp);
+    let tail = 50.0 * (1.0 - settings.confidence_level);
+    let lower = crate::stats::summary::percentile(&estimates, tail)?;
+    let upper = crate::stats::summary::percentile(&estimates, 100.0 - tail)?;
+    Some((upper - lower) / 2.0 / center)
+}
+
+fn mean_ci_half_width(
+    xs: &[f64],
+    baseline_stddev: Option<f64>,
+    baseline_runs: usize,
+    confidence: f64,
 ) -> Option<f64> {
     let n = xs.len();
     if n < 2 {
@@ -69,7 +145,7 @@ pub fn relative_ci_half_width_with_baseline(
         .max(1)
     };
 
-    Some(t_975(df) * combined_se / mean)
+    Some(t_critical(confidence, df) * combined_se / mean)
 }
 
 /// Half-width of the 95% confidence interval of the mean, relative to the
@@ -127,5 +203,50 @@ mod tests {
         let const_with_noise =
             relative_ci_half_width_with_baseline(&[10.0, 10.0, 10.0], Some(1.0), 4).unwrap();
         assert!(const_with_noise > 0.0);
+    }
+
+    // SciPy 1.18.1, xs below, n = 10:
+    //   t.ppf(0.5 + c / 2, 9) * xs.std(ddof=1) / sqrt(10) / xs.mean()
+    //   = 0.06285079862708454 at c = 0.90, 0.11142508219598748 at c = 0.99
+    //   (t.ppf(0.995, 9) = 3.2498355415921254)
+    #[test]
+    fn half_width_at_other_confidence_levels_matches_scipy() {
+        let xs = [1.0, 1.1, 0.9, 1.05, 0.95, 1.2, 0.8, 1.0, 1.02, 0.98];
+        for (level, expected) in [(0.90, 0.06285079862708454), (0.99, 0.11142508219598748)] {
+            let settings = StatSettings {
+                confidence_level: level,
+                ..Default::default()
+            };
+            let got = relative_ci_half_width_with_settings(&xs, None, 0, &settings).unwrap();
+            assert!((got / expected - 1.0).abs() < 1e-9, "{level}: {got}");
+        }
+        assert!((t_critical(0.99, 9) - 3.2498355415921254).abs() < 1e-8);
+        // the default keeps the table value
+        assert_eq!(t_critical(0.95, 9), t_975(9));
+    }
+
+    #[test]
+    fn median_precision_is_a_bootstrap_interval() {
+        use crate::stats::settings::Estimator;
+        let xs = [1.0, 1.1, 0.9, 1.05, 0.95, 1.2, 0.8, 1.0, 1.02, 0.98];
+        let settings = StatSettings {
+            estimator: Estimator::Median,
+            ..Default::default()
+        };
+        let width = relative_ci_half_width_with_settings(&xs, Some(1.0), 4, &settings).unwrap();
+        assert!(width > 0.0 && width < 0.2, "{width}");
+        // reproducible
+        assert_eq!(
+            width,
+            relative_ci_half_width_with_settings(&xs, None, 0, &settings).unwrap()
+        );
+        assert_eq!(
+            relative_ci_half_width_with_settings(&[3.0; 5], None, 0, &settings),
+            Some(0.0)
+        );
+        assert_eq!(
+            relative_ci_half_width_with_settings(&[1.0], None, 0, &settings),
+            None
+        );
     }
 }

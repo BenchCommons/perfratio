@@ -115,10 +115,13 @@ pub fn build_command() -> Command {
         .arg(
             Arg::new("seed")
                 .long("seed")
+                .visible_alias("bootstrap-seed")
                 .action(ArgAction::Set)
                 .value_name("NUM")
                 .value_parser(clap::value_parser!(u64))
-                .help("Seed for '--parameter-sample' (default: 0, so runs are reproducible)."),
+                .help("Seed for '--parameter-sample' (default: 0) and for the bootstrap \
+                       resampling of intervals and tests (default: a fixed seed). Defaults make \
+                       runs reproducible; the same seed gives the same output."),
         )
         .arg(
             Arg::new("compare")
@@ -556,6 +559,43 @@ pub fn build_command() -> Command {
                 .help("Give up 'until-temp' after this long (default: 5m)."),
         )
         .arg(
+            Arg::new("calibrate")
+                .long("calibrate")
+                .action(ArgAction::Set)
+                .value_name("MODE")
+                .num_args(0..=1)
+                .require_equals(true)
+                .default_missing_value("auto")
+                .value_parser(["auto", "off"])
+                .help("Measure the runner floor with a trivial command: auto (default) or off.")
+                .long_help(
+                    "Measure the runner floor before benchmarking: the wall time and peak memory \
+                     of a trivial command ('true', or 'exit 0' through a shell) started the same \
+                     way as the benchmarks (shell, affinity, priority, output policy). About 20 \
+                     runs, at most about 0.2 s, once per session and shell.\n\n  \
+                     auto  Measure the floor (default)\n  \
+                     off   Do not measure it\n\n\
+                     A command is 'below resolution' when its mean is less than 3 floors, or the \
+                     lower end of its 95% CI reaches the floor. It is flagged in the quality \
+                     report ('measurement_floor') and in the summary; the numbers are still \
+                     shown. The floor is exported as 'perfratio.calibration'.",
+                ),
+        )
+        .arg(
+            Arg::new("below-floor")
+                .long("below-floor")
+                .action(ArgAction::Set)
+                .value_name("ACTION")
+                .value_parser(["warn", "fail"])
+                .help("Action for a result within the runner floor: warn (default) or fail.")
+                .long_help(
+                    "What to do when a result is within the runner floor (see '--calibrate').\n\n  \
+                     warn  The quality check warns (default)\n  \
+                     fail  The quality check fails and perfratio exits with code 6 after \
+                     printing and exporting the statistics",
+                ),
+        )
+        .arg(
             Arg::new("fail-on-quality")
                 .long("fail-on-quality")
                 .action(ArgAction::Set)
@@ -702,6 +742,40 @@ pub fn build_command() -> Command {
                 .help("Perform deep statistical analysis (bootstrapped confidence intervals for mean, median, and stddev, plus hypothesis testing)."),
         )
         .arg(
+            Arg::new("estimator")
+                .long("estimator")
+                .action(ArgAction::Set)
+                .value_name("ESTIMATOR")
+                .help("Central value used for ranking, relative speed, significance, the delta \
+                       table, '--compare' and '--target-precision': 'mean' (default), \
+                       'median' or a percentile such as 'p95'. Prefer the median or a \
+                       percentile for skewed timings (GC pauses, page-cache effects); with few \
+                       runs a percentile is noisy. Other than the mean, intervals are bootstrap \
+                       intervals and the ratio carries a bootstrap interval instead of ± σ."),
+        )
+        .arg(
+            Arg::new("confidence-level")
+                .long("confidence-level")
+                .action(ArgAction::Set)
+                .value_name("LEVEL")
+                .help("Confidence level of intervals, strictly between 0 and 1 (default: 0.95)."),
+        )
+        .arg(
+            Arg::new("significance-level")
+                .long("significance-level")
+                .action(ArgAction::Set)
+                .value_name("ALPHA")
+                .help("Level of hypothesis tests and significance markers, strictly between 0 \
+                       and 1 (default: 0.05)."),
+        )
+        .arg(
+            Arg::new("bootstrap-resamples")
+                .long("bootstrap-resamples")
+                .action(ArgAction::Set)
+                .value_name("N")
+                .help("Number of bootstrap resamples, at least 100 (default: 5000)."),
+        )
+        .arg(
             Arg::new("metric")
                 .long("metric")
                 .action(ArgAction::Set)
@@ -720,7 +794,10 @@ pub fn build_command() -> Command {
                        * 'instructions': retired instructions (auto-enables '--counters', Linux)\n  \
                        * 'cycles': CPU cycles (auto-enables '--counters', Linux)\n  \
                        * 'custom:<name>': a value extracted with '--output-metric <name>=<regex>' \
-                         (lower is better; every run needs a value)\n"
+                         (lower is better; every run needs a value)\n  \
+                       * 'region:<name>': the time inside the region <name> that the program \
+                         brackets with the region SDK (implies '--region=<name>'; every run \
+                         needs the region)\n"
                 ),
         )
         .arg(
@@ -763,6 +840,20 @@ pub fn build_command() -> Command {
                        95% confidence interval of its mean is at most PCT of the mean (e.g. \
                        '1%'), within '--min-runs' / '--max-runs' and '--max-benchmarking-time'. \
                        Low-noise commands then finish early and noisy ones get more runs."),
+        )
+        .arg(
+            Arg::new("target-precision-method")
+                .long("target-precision-method")
+                .action(ArgAction::Set)
+                .value_name("METHOD")
+                .value_parser(["fixed", "sequential"])
+                .requires("target-precision")
+                .help("How '--target-precision' decides that the interval is narrow enough: \
+                       'fixed' (default) re-checks the Student-t interval of the mean after \
+                       every run, which stops too early more often than the confidence level \
+                       says; 'sequential' uses an anytime-valid confidence sequence of the \
+                       mean, valid however the run count was chosen, at the cost of about 2.5x \
+                       the runs. Assumes independent runs with finite variance."),
         )
         .arg(
             Arg::new("max-benchmarking-time")
@@ -809,6 +900,48 @@ pub fn build_command() -> Command {
                        maximum of any instance. The JSON export gains per-instance times \
                        and a throughput. N may contain a parameter, e.g. '-L c 1,2,4,8 \
                        --concurrency {c}', for one benchmark per value. Default: 1."),
+        )
+        .arg(
+            Arg::new("region")
+                .long("region")
+                .action(ArgAction::Append)
+                .value_name("NAME")
+                .num_args(0..=1)
+                .require_equals(true)
+                .default_missing_value("default")
+                .conflicts_with_all(["concurrency", "subtract"])
+                .help("Measure only the region(s) the program brackets with the region SDK \
+                       (perfratio_region_start/stop, see sdk/ and docs/specs/region-protocol.md). \
+                       Without NAME the region 'default' is measured. Can be given several \
+                       times. The JSON export lists the region times next to the whole-process \
+                       time; use '--metric region:NAME' to rank on a region. CPU time, memory, \
+                       counters and energy still cover the whole process. A command that \
+                       reports no region fails."),
+        )
+        .arg(
+            Arg::new("jobs")
+                .short('j')
+                .long("jobs")
+                .action(ArgAction::Set)
+                .value_name("N|auto")
+                .conflicts_with_all(["concurrency", "energy", "optimize", "subtract"])
+                .help("Run up to N independent invocations at the same time to collect \
+                       samples faster. Every run is still timed on its own, unlike with \
+                       '--concurrency'. Parallel runs compete for caches, memory bandwidth \
+                       and CPUs, so the results are marked 'contended' and are not \
+                       equivalent to sequential samples. 'auto' uses the number of logical \
+                       CPUs. See '--schedule'. Default: 1."),
+        )
+        .arg(
+            Arg::new("artifact-dir")
+                .long("artifact-dir")
+                .action(ArgAction::Set)
+                .value_name("DIR")
+                .value_hint(ValueHint::DirPath)
+                .help("Create DIR/run-<id> for every run and export its path as \
+                       PERFRATIO_RUN_DIR to --prepare, the command and --conclude of \
+                       that run (and to --setup/--cleanup), so that parallel runs \
+                       never share artifact files. The directories are kept."),
         )
         .arg(
             Arg::new("until")
@@ -930,6 +1063,36 @@ pub fn build_command() -> Command {
                 .help("Attach a label to the JSON and CSV exports (can be given multiple times), \
                        e.g. --label commit=$GITHUB_SHA --label runner=graviton3. Labels appear \
                        under 'perfratio.labels' in JSON and as 'label_KEY' columns in CSV."),
+        )
+        .arg(
+            Arg::new("meta")
+                .long("meta")
+                .action(ArgAction::Append)
+                .value_name("KEY=VALUE|git")
+                .help("Record build provenance in the JSON export: KEY=VALUE, or 'git' for the \
+                       commit and dirty flag of the current directory.")
+                .long_help(
+                    "Record provenance of the benchmarked program under 'perfratio.meta' in the \
+                     JSON export (can be given multiple times).\n\n  \
+                     KEY=VALUE  A string, e.g. --meta compiler=gcc-14 --meta flags=-O3\n  \
+                     git        'git_commit' and 'git_dirty' (uncommitted changes) of the git \
+                                repository in the current directory\n\n\
+                     Nothing else about the host is exported by default: no host name, user name, \
+                     environment variables or working directory. Do not put secrets in values.",
+                ),
+        )
+        .arg(
+            Arg::new("require-compatible-env")
+                .long("require-compatible-env")
+                .action(ArgAction::SetTrue)
+                .help("Fail when '--compare' or '--import-json' files come from a different \
+                       environment.")
+                .long_help(
+                    "Fail instead of warning when the environment of a '--compare' baseline or \
+                     an '--import-json' file differs from this machine (CPU model, architecture, \
+                     OS, kernel major version, governor, SMT, container), or when the file records \
+                     no environment. See 'perfratio.environment_fingerprint'.",
+                ),
         )
         .arg(
             Arg::new("export-markdown-runs")
@@ -1190,6 +1353,32 @@ pub fn build_command() -> Command {
                        'p-cores' or 'e-cores' (Apple Silicon) to prefer a core type."),
         )
         .arg(
+            Arg::new("pin-workers")
+                .long("pin-workers")
+                .action(ArgAction::Set)
+                .value_name("MODE")
+                .num_args(0..=1)
+                .require_equals(true)
+                .default_missing_value("auto")
+                .value_parser(["auto", "none"])
+                .help("With '--jobs' > 1: give every worker its own CPUs, one physical core \
+                       (with its SMT siblings) per worker, within '--affinity'. Default with \
+                       '--jobs' > 1: auto; 'none' leaves the workers unpinned. Fails when \
+                       there are fewer usable CPUs than jobs. Linux and Windows; elsewhere \
+                       an explicit flag warns and the workers are not pinned. The partition \
+                       is recorded in the JSON export."),
+        )
+        .arg(
+            Arg::new("reserve-cpus")
+                .long("reserve-cpus")
+                .action(ArgAction::Set)
+                .value_name("N|LIST")
+                .help("With '--jobs' > 1: keep N CPUs (the highest ones, with their SMT \
+                       siblings) or the CPUs of an explicit list such as '0' written as \
+                       '0-0' or '0,1' for perfratio's own threads. Workers never run there. \
+                       Linux and Windows."),
+        )
+        .arg(
             Arg::new("check-system")
                 .long("check-system")
                 .action(ArgAction::Set)
@@ -1396,9 +1585,8 @@ pub fn build_command() -> Command {
             Arg::new("schedule")
                 .long("schedule")
                 .value_name("MODE")
-                .value_parser(["grouped", "round-robin", "interleaved"])
-                .default_value("grouped")
-                .help("Set benchmark execution schedule: 'grouped' (run all iterations per command) or 'round-robin' / 'interleaved' (interleave iterations across commands to mitigate temporal bias).")
+                .value_parser(["grouped", "round-robin", "interleaved", "saturate", "exclusive", "fair", "randomized", "balanced"])
+                .help("Set benchmark execution schedule: 'grouped' (run all iterations per command; default) or 'round-robin' / 'interleaved' (interleave iterations across commands to mitigate temporal bias), 'randomized' (interleaved, with a seeded shuffle of the command order in every round; '--seed' sets the seed) or 'balanced' (interleaved, order rotated every round so each command takes each position equally often). With '--jobs' > 1: 'saturate' (keep every worker busy; default), 'exclusive' (a command never runs concurrently with itself) or 'fair' (every command keeps the same number of runs).")
         )
         .arg(
             Arg::new("round-robin")
@@ -1452,8 +1640,21 @@ fn parse_metric_arg(s: &str) -> Result<String, String> {
         }
         return Err("expected 'custom:<name>' with a name of letters, digits and '_'".into());
     }
+    if let Some(name) = s
+        .get(..7)
+        .filter(|p| p.eq_ignore_ascii_case("region:"))
+        .map(|_| &s[7..])
+    {
+        if !name.is_empty()
+            && name.len() <= 64
+            && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            return Ok(s.to_string());
+        }
+        return Err("expected 'region:<name>' with a name of letters, digits and '_'".into());
+    }
     Err(format!(
-        "possible values are {}, custom:<name>",
+        "possible values are {}, custom:<name>, region:<name>",
         BUILTIN.join(", ")
     ))
 }

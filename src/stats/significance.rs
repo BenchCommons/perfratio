@@ -28,10 +28,16 @@ pub struct Assessment {
     pub p_value: f64,
 }
 
-/// Classify a change of the mean (`rel_change` = other / reference − 1) with test result `p_value`.
+/// Classify a change of the mean (`rel_change` = other / reference − 1) with
+/// test result `p_value`, at the default level of 0.05.
 pub fn classify(rel_change: f64, p_value: f64) -> Significance {
+    classify_with(rel_change, p_value, MAX_P_VALUE)
+}
+
+/// [`classify`] at significance level `alpha` (`--significance-level`).
+pub fn classify_with(rel_change: f64, p_value: f64, alpha: f64) -> Significance {
     // NaN comparisons are false, so undefined input falls through to `Noise`.
-    let significant = p_value < MAX_P_VALUE && rel_change.abs() >= MIN_EFFECT;
+    let significant = p_value < alpha && rel_change.abs() >= MIN_EFFECT;
     if !significant {
         Significance::Noise
     } else if rel_change < 0.0 {
@@ -41,15 +47,37 @@ pub fn classify(rel_change: f64, p_value: f64) -> Significance {
     }
 }
 
-/// Assess `other` against `reference`. `None` if either has no per-run times,
-/// fewer than three runs, or the test is undefined.
+/// Assess `other` against `reference` with the installed settings. `None` if
+/// either has no per-run times, fewer than three runs, or the test is undefined.
 pub fn assess(reference: &BenchmarkResult, other: &BenchmarkResult) -> Option<Assessment> {
+    assess_with(reference, other, &crate::stats::settings::current())
+}
+
+/// [`assess`] with explicit settings: the change is that of the estimator
+/// and the level is `significance_level`.
+pub fn assess_with(
+    reference: &BenchmarkResult,
+    other: &BenchmarkResult,
+    settings: &crate::stats::settings::StatSettings,
+) -> Option<Assessment> {
+    use crate::metric::Metric;
     if reference.timed_out || other.timed_out || reference.mean <= 0.0 {
         return None;
     }
-    let p_value = crate::compare::p_value(reference, other)?;
+    let p_value = crate::compare::p_value_with(reference, other, settings)?;
+    let (ref_center, other_center) = (
+        reference.primary_center_with(Metric::Wall, settings.estimator)?,
+        other.primary_center_with(Metric::Wall, settings.estimator)?,
+    );
+    if ref_center <= 0.0 {
+        return None;
+    }
     Some(Assessment {
-        significance: classify(other.mean / reference.mean - 1.0, p_value),
+        significance: classify_with(
+            other_center / ref_center - 1.0,
+            p_value,
+            settings.significance_level,
+        ),
         p_value,
     })
 }
@@ -104,6 +132,20 @@ mod tests {
         assert_eq!(classify(0.2, 0.42), Significance::Noise);
         assert_eq!(classify(0.2, 0.05), Significance::Noise);
         assert_eq!(classify(0.2, f64::NAN), Significance::Noise);
+    }
+
+    #[test]
+    fn the_significance_level_is_configurable() {
+        assert_eq!(
+            classify_with(0.2, 0.03, 0.01),
+            Significance::Noise,
+            "stricter alpha"
+        );
+        assert_eq!(
+            classify_with(0.2, 0.03, 0.10),
+            Significance::SignificantRegression
+        );
+        assert_eq!(classify_with(0.2, 0.03, 0.05), classify(0.2, 0.03));
     }
 
     #[test]

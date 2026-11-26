@@ -10,8 +10,10 @@
 use serde::{Deserialize, Serialize};
 
 use crate::benchmark::benchmark_result::BenchmarkResult;
+use crate::calibration::{BelowFloorAction, FloorState};
 use crate::metric::Metric;
 use crate::outlier_detection::MIN_OUTLIER_SAMPLE;
+use crate::output::format::format_duration;
 use crate::stats::diagnostics::MIN_TREND_SAMPLES;
 
 /// Below this many runs the spread of the run times cannot be estimated
@@ -102,6 +104,10 @@ pub struct Check {
 pub struct QualityReport {
     pub grade: Grade,
     pub checks: Vec<Check>,
+    /// The mean is within the runner floor (`measurement_floor`, #313).
+    /// Absent when no floor was measured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub below_resolution: Option<bool>,
 }
 
 /// What `--quality` prints
@@ -139,6 +145,10 @@ pub struct QualityContext {
     pub counters_requested: bool,
     /// `--energy` was requested
     pub energy_requested: bool,
+    /// The runner floor of the benchmark's executor (`--calibrate`)
+    pub floor: FloorState,
+    /// `--below-floor`
+    pub below_floor: BelowFloorAction,
 }
 
 impl QualityReport {
@@ -157,6 +167,7 @@ impl QualityReport {
         QualityReport {
             grade: Self::grade_of(&checks),
             checks,
+            below_resolution: None,
         }
     }
 
@@ -171,10 +182,14 @@ impl QualityReport {
         checks.push(trend(result));
         checks.push(interference(result));
         checks.push(environment_stability(result));
+        let (floor_check, below_resolution) = measurement_floor(result, context);
+        checks.push(floor_check);
         checks.push(counter_coverage(result, context));
         checks.push(energy_coverage(result, context));
         checks.push(workload_validation(result));
-        Self::from_checks(checks)
+        let mut report = Self::from_checks(checks);
+        report.below_resolution = below_resolution;
+        report
     }
 
     /// Whether the terminal shows this report in `mode`
@@ -231,6 +246,72 @@ fn check(
         status,
         detail: detail.into(),
     }
+}
+
+/// Mean wall time vs. the runner floor (`--calibrate`). The second value is
+/// `below_resolution`, `None` when there is no floor to compare with.
+fn measurement_floor(result: &BenchmarkResult, context: &QualityContext) -> (Check, Option<bool>) {
+    let id = "measurement_floor";
+    let metric = Some("wall");
+    let floor = match context.floor {
+        FloorState::Off => return (check(id, metric, CheckStatus::NotApplicable, None), None),
+        FloorState::Unavailable => {
+            return (
+                check(
+                    id,
+                    metric,
+                    CheckStatus::Unavailable,
+                    "the runner floor could not be measured".to_string(),
+                ),
+                None,
+            )
+        }
+        FloorState::Measured(floor) => floor,
+    };
+    let Some(times) = result.times.as_deref().filter(|t| !t.is_empty()) else {
+        return (
+            check(
+                id,
+                metric,
+                CheckStatus::Unavailable,
+                "no completed run".to_string(),
+            ),
+            None,
+        );
+    };
+    let half_width = crate::stats::precision::relative_ci_half_width(times);
+    let verdict = floor.classify(result.mean, half_width);
+    let unit = |t: f64| format_duration(t, None);
+    let how_many = match verdict.ratio {
+        Some(ratio) => format!("{ratio:.1} floors"),
+        None => "a floor of 0".to_string(),
+    };
+    let summary = format!(
+        "mean {} is {how_many} (runner floor {} ± {} MAD)",
+        unit(result.mean),
+        unit(floor.wall_floor),
+        unit(floor.wall_floor_mad),
+    );
+    if !verdict.below {
+        return (check(id, metric, CheckStatus::Pass, summary), Some(false));
+    }
+    let status = match context.below_floor {
+        BelowFloorAction::Warn => CheckStatus::Warn,
+        BelowFloorAction::Fail => CheckStatus::Fail,
+    };
+    (
+        check(
+            id,
+            metric,
+            status,
+            format!(
+                "{summary}; below resolution (under {} floors or the CI reaches the floor), \
+                 spawn cost and timer resolution dominate",
+                crate::calibration::BELOW_FLOOR_FACTOR
+            ),
+        ),
+        Some(true),
+    )
 }
 
 fn runs_of(result: &BenchmarkResult) -> usize {
@@ -328,7 +409,13 @@ fn statistical_precision(result: &BenchmarkResult, context: &QualityContext) -> 
             "fewer than 2 runs or a mean of 0".to_string(),
         );
     };
-    let detail = format!("±{} (95% CI of the mean)", percent(half_width));
+    let stat = crate::stats::settings::current();
+    let detail = format!(
+        "±{} ({}% CI of the {})",
+        percent(half_width),
+        stat.confidence_percent(),
+        stat.estimator.name()
+    );
     let status = if half_width > PRECISION_FAIL {
         CheckStatus::Fail
     } else if half_width > PRECISION_WARN {
@@ -694,6 +781,8 @@ mod tests {
             metric: Metric::Wall,
             counters_requested: false,
             energy_requested: false,
+            floor: FloorState::Off,
+            below_floor: BelowFloorAction::Warn,
         }
     }
 
@@ -799,6 +888,8 @@ mod tests {
             reached: Some(0.004),
             confidence: 0.95,
             met: true,
+            stopping_rule: None,
+            achieved_half_width: None,
         });
         let report = QualityReport::assess(&result, &ctx);
         assert_eq!(
@@ -810,6 +901,8 @@ mod tests {
             reached: Some(0.03),
             confidence: 0.95,
             met: false,
+            stopping_rule: None,
+            achieved_half_width: None,
         });
         let report = QualityReport::assess(&result, &ctx);
         assert_eq!(
