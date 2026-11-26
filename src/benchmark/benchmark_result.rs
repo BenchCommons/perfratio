@@ -128,6 +128,11 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub omitted_failed_runs: Vec<OmittedRun>,
 
+    /// Output validation (`--expect-output-sha256`, `--validate`); absent
+    /// without those options. See `docs/specs/workload-validation.md`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validation: Option<crate::validation::ValidationSummary>,
+
     /// Zero-based indices of the runs excluded from the statistics by
     /// --discard-outliers
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -495,6 +500,18 @@ impl BenchmarkResult {
     /// Returns true if any run had a non-zero or missing exit code.
     pub fn has_failure(&self) -> bool {
         self.exit_codes.iter().any(|code| *code != Some(0))
+    }
+
+    /// A note when runs failed output validation (`--expect-output-sha256`,
+    /// `--validate`), for the delta table and `--compare`: such a result may
+    /// have been fast because it computed the wrong thing.
+    pub fn validation_note(&self) -> Option<String> {
+        let v = self.validation.as_ref().filter(|v| v.runs_invalid > 0)?;
+        Some(format!(
+            "'{}': {} of {} validated runs failed output validation ({} omitted); the \
+             comparison may not be meaningful.",
+            self.command, v.runs_invalid, v.runs_checked, v.runs_omitted
+        ))
     }
 
     /// Extracts samples corresponding to the specified metric.

@@ -117,6 +117,13 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR NAME ]
 .RB [ \-\-filter\-failed ]
 .RB [ \-\-omit\-failed\-runs ]
+.RB [ \-\-expect\-output\-sha256
+.IR HEX ]
+.RB [ \-\-validate
+.IR CMD ]
+.RB [ \-\-validate\-first\-only ]
+.RB [ \-\-on\-invalid
+.IR MODE ]
 .RB [ \-\-no\-off\-cpu\-warning ]
 .RB [ \-\-suppress\-outlier\-warnings ]
 .RB [ \-\-suppress\-warnings
@@ -386,6 +393,22 @@ Exclude results with non-zero exit codes from the relative speed comparison and 
 \fB\-\-omit\-failed\-runs\fR
 .IP
 Exclude failed runs from summary statistics while still reporting how many failed. Requires \fB\-\-ignore\-failure\fR so that benchmark runs with non-zero exit codes can complete. Failed runs are omitted from mean, median, standard deviation, and exported timing data (and recorded in 'omitted_failed_runs'). When combined with \fB\-\-filter\-failed\fR, the benchmark is kept as long as at least one run succeeded.
+.HP
+\fB\-\-expect\-output\-sha256\fR \fIHEX\fP
+.IP
+Fail when the SHA\-256 of a run's stdout differs from HEX (also \fB\-\-expect\-output\-hash\fR). A wrong output marks the run invalid, which is different from a non\-zero exit code. Stdout is captured (at most 16 MiB) and hashed after the timed window, so validation is never part of the measured time, memory or energy. Failed runs are not validated. Cannot be combined with \fB\-\-output\fR, \fB\-\-show\-output\fR, \fB\-\-until\fR or \fB\-\-concurrency\fR.
+.HP
+\fB\-\-validate\fR \fICMD\fP
+.IP
+Run CMD (through sh \-c, or cmd.exe /C on Windows) after each run, with the stdout of the run on stdin and its number in PERFRATIO_RUN_ID. A non\-zero exit code marks the run invalid. Runs outside the timed window.
+.HP
+\fB\-\-validate\-first\-only\fR
+.IP
+Check only the first timed run.
+.HP
+\fB\-\-on\-invalid\fR \fIMODE\fP
+.IP
+What to do with a run that fails validation: fail (abort, default), omit (drop from the statistics; the count is always printed and exported) or keep (keep and flag).
 .HP
 \fB\-l\fR, \fB\-\-style\fR \fITYPE\fP
 .IP

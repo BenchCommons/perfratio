@@ -484,6 +484,72 @@ pub fn build_command() -> Command {
                 ),
         )
         .arg(
+            Arg::new("expect-output-sha256")
+                .long("expect-output-sha256")
+                .visible_alias("expect-output-hash")
+                .action(ArgAction::Set)
+                .value_name("HEX")
+                .conflicts_with_all(["show-output", "show-output-on-failure", "until", "concurrency", "output"])
+                .help("Fail when the SHA-256 of a run's stdout differs from HEX.")
+                .long_help(
+                    "Fail when the SHA-256 of a run's stdout differs from HEX (64 hex digits).\n\n\
+                     Checks that the benchmarked command produced the right result, so that an \
+                     implementation cannot look fast because it did less work. A run with a wrong \
+                     output is invalid, which is different from a non-zero exit code. Stdout is \
+                     captured (at most 16 MiB) and hashed after the timed window of the run, so \
+                     validation is never part of the measured time, memory or energy. Failed \
+                     runs (non-zero exit code) are not validated. Use '--on-invalid' to choose \
+                     what happens to invalid runs.\n\n\
+                     Example:\n\n  \
+                       perfratio --expect-output-sha256 \
+                       ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad 'printf abc'",
+                ),
+        )
+        .arg(
+            Arg::new("validate")
+                .long("validate")
+                .action(ArgAction::Set)
+                .value_name("CMD")
+                .conflicts_with_all(["show-output", "show-output-on-failure", "until", "concurrency", "output"])
+                .help("Run CMD after each run with the run's stdout on stdin; non-zero marks the run invalid.")
+                .long_help(
+                    "Run CMD (through 'sh -c', or 'cmd.exe /C' on Windows) after each run. It \
+                     receives the stdout of the run on stdin and the run number in the \
+                     environment variable PERFRATIO_RUN_ID (the same number as PERFRATIO_ITERATION). \
+                     A non-zero exit code marks the run invalid, which is different from a \
+                     failure of the benchmarked command. The validator runs outside the timed \
+                     window. Numeric tolerance and structure checks belong in CMD. Combine with \
+                     '--expect-output-sha256' to check both.",
+                ),
+        )
+        .arg(
+            Arg::new("validate-first-only")
+                .long("validate-first-only")
+                .action(ArgAction::SetTrue)
+                .help("Check only the first timed run (for long deterministic workloads).")
+                .long_help(
+                    "Check only the first timed run. Needs '--expect-output-sha256' or \
+                     '--validate'. For long deterministic workloads whose output does not change.",
+                ),
+        )
+        .arg(
+            Arg::new("on-invalid")
+                .long("on-invalid")
+                .action(ArgAction::Set)
+                .value_name("MODE")
+                .value_parser(["fail", "omit", "keep"])
+                .help("What to do with a run that fails validation: fail (default), omit or keep.")
+                .long_help(
+                    "What to do with a run that fails '--expect-output-sha256' or '--validate'.\n\n  \
+                     fail  Abort the benchmark, naming the run (default)\n  \
+                     omit  Drop the run from the statistics. Omitting can hide a failing \
+                     implementation: the number of omitted runs is always printed and exported\n  \
+                     keep  Keep the run and flag it in the output and the export\n\n\
+                     The exit code policy ('--ignore-failure', '--omit-failed-runs') is separate \
+                     and unchanged.",
+                ),
+        )
+        .arg(
             Arg::new("style")
                 .long("style")
                 .short('l')
