@@ -1,7 +1,7 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Partly shipped (schemaVersion 1.4; 1.3 plus the `--concurrency` fields from #53; 1.2 plus per-column `resources` availability from #291 made 1.3; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
+Partly shipped (schemaVersion 1.5; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
@@ -119,7 +119,9 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
   - `"measured"`: requested and the backend works;
   - `"unavailable"`: requested, but the backend could not be used (the reason goes in
     `<group>_unavailable_reason`: `unsupported_platform`, `rapl_not_found`,
-    `rapl_unreadable`, `other`; open enum);
+    `rapl_unreadable`, `unsupported_cpu`, `ioreport_not_found`, `ioreport_frozen`,
+    `emi_not_found`, `emi_unreadable` (1.3), `other`; open enum; `perfratio.energy_backend` is
+    `sysfs_powercap`, `perf_pmu`, `ioreport` or `windows_emi`);
   - `"not_requested"`: the flag was not given.
   Groups in 1.0: `time` (always `measured`), `memory`, `energy` (`-E/--energy`),
   `resources` (`--resource-usage`). New groups are MINOR.
@@ -159,11 +161,11 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `parameters`, `per_run_parameters` | strings / stats | optional (`--parameter-*`) |
 | `omitted_failed_runs`, `discarded_outliers` | indices | optional |
 | `resources` { column: counts[] per run } (**columns individually optional since 1.3**, #291) | counts | when `measurements.resources = "measured"`; a column the OS cannot report is omitted (Windows has no `voluntary_ctx_switches`, `involuntary_ctx_switches`, `major_faults`), see `windows-resource-usage.md` |
-| `concurrency` (**new in 1.4**, #53) | count | only with `--concurrency N`, N > 1. **When present, `times` holds the makespan of each run** (wall time until all N instances finished) and `exit_codes` holds N entries per run, row-major (run 0 instances 0..N-1, ...), i.e. `runs x N` entries instead of `runs` |
-| `instance_times` (**new in 1.4**, #53) | s[][], one row of N per run aligned with `times`, instances in spawn order | with `concurrency` |
-| `throughput` (**new in 1.4**, #53) | instances per second, `N / mean` | with `concurrency` (omitted for a zero mean) |
-| `instance_percentiles` { `p50`, `p95`, `max` } (**new in 1.4**, #53) | s, over all `runs x N` instance times | with `concurrency` |
-| `energy_per_instance_joules` (**new in 1.4**, #53) | J, `mean_energy_joules / N` | with `concurrency` and `mean_energy_joules` |
+| `concurrency` (**new in 1.5**, #53) | count | only with `--concurrency N`, N > 1. **When present, `times` holds the makespan of each run** (wall time until all N instances finished) and `exit_codes` holds N entries per run, row-major (run 0 instances 0..N-1, ...), i.e. `runs x N` entries instead of `runs` |
+| `instance_times` (**new in 1.5**, #53) | s[][], one row of N per run aligned with `times`, instances in spawn order | with `concurrency` |
+| `throughput` (**new in 1.5**, #53) | instances per second, `N / mean` | with `concurrency` (omitted for a zero mean) |
+| `instance_percentiles` { `p50`, `p95`, `max` } (**new in 1.5**, #53) | s, over all `runs x N` instance times | with `concurrency` |
+| `energy_per_instance_joules` (**new in 1.5**, #53) | J, `mean_energy_joules / N` | with `concurrency` and `mean_energy_joules` |
 | `diagnostics`, `precision`, `baseline`, `shell`, `timed_out`, `timeout`, `runs_planned` | see `BenchmarkResult` | optional |
 
 Rules:

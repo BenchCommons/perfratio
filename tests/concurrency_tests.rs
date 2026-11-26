@@ -88,7 +88,7 @@ fn json_has_instance_fields_for_both_schedules() {
             "sleep 0.2",
             "sleep 0.1",
         ]);
-        assert_eq!(json["schemaVersion"], "1.4");
+        assert_eq!(json["schemaVersion"], "1.5");
         for result in json["results"].as_array().unwrap() {
             assert_eq!(result["concurrency"], 4);
             let times = result["times"].as_array().unwrap();
