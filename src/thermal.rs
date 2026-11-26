@@ -140,6 +140,20 @@ impl ThermalMonitor {
         }
     }
 
+    /// The trace so far, without reading the sensors again
+    pub fn trace(&self) -> ThermalTrace {
+        let throttle_events = match (self.throttle_start, throttle_events(&self.root)) {
+            (Some(start), Some(end)) => Some(end.saturating_sub(start)),
+            _ => None,
+        };
+        ThermalTrace {
+            start_c: self.start,
+            end_c: self.last,
+            max_c: self.max,
+            throttle_events,
+        }
+    }
+
     /// The trace of the benchmark, with a final read
     pub fn finish(mut self) -> ThermalTrace {
         self.read();

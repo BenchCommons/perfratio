@@ -2074,35 +2074,3 @@ fn test_ctrlc_unbenchmarked_count_with_imported_json() {
         "stdout was:\n{stdout}"
     );
 }
-
-// TEMPORARY CI diagnostic for #360, to be removed before merge
-#[cfg(target_os = "linux")]
-#[test]
-fn zz_diag_ci_timing_360() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("d.json");
-    let start = std::time::Instant::now();
-    let out = std::process::Command::new(assert_cmd::cargo_bin!("perfratio"))
-        .args(["--runs=5", "--calibrate=off", "--shell=none", "--style=basic", "--export-json"])
-        .arg(&path)
-        .arg("sleep 0.1")
-        .output()
-        .unwrap();
-    let wall = start.elapsed();
-    let json = std::fs::read_to_string(&path).unwrap_or_default();
-    let v: serde_json::Value = serde_json::from_str(&json).unwrap_or_default();
-    let mut zones = String::new();
-    for d in ["/sys/class/thermal", "/sys/class/hwmon", "/sys/fs/cgroup"] {
-        let t = std::time::Instant::now();
-        let n = std::fs::read_dir(d).map(|r| r.count()).unwrap_or(0);
-        zones.push_str(&format!("{d}: {n} entries ({:?}); ", t.elapsed()));
-    }
-    let t = std::time::Instant::now();
-    let temps = perfratio::thermal::temperatures(std::path::Path::new("/"));
-    let temps_t = t.elapsed();
-    panic!(
-        "DIAG wall={wall:?} temps={temps:?} in {temps_t:?} {zones}\ninterference={}\nmean={}\nstderr={}\nstdout={}",
-        v["results"][0]["interference"], v["results"][0]["mean"],
-        String::from_utf8_lossy(&out.stderr), String::from_utf8_lossy(&out.stdout)
-    );
-}

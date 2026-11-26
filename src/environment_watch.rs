@@ -6,6 +6,9 @@
 //! read is left out, never reported as "no throttling".
 
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
@@ -36,7 +39,7 @@ pub struct Watch {
     throttled_usec: u64,
     throttled_runs: usize,
     oom_kills: Option<u64>,
-    thermal: Option<ThermalMonitor>,
+    thermal: Option<BackgroundThermal>,
 }
 
 impl Watch {
@@ -53,7 +56,7 @@ impl Watch {
             throttled_usec: 0,
             throttled_runs: 0,
             oom_kills: None,
-            thermal: ThermalMonitor::start(root),
+            thermal: Some(BackgroundThermal::start(root)),
         }
     }
 
@@ -64,9 +67,6 @@ impl Watch {
 
     /// After a run, with what [`begin`](Self::begin) returned
     pub fn end(&mut self, before: Option<Snapshot>) {
-        if let Some(thermal) = self.thermal.as_mut() {
-            thermal.sample();
-        }
         let (Some(before), Some(cgroup)) = (before, self.cgroup.as_ref()) else {
             return;
         };
@@ -90,9 +90,76 @@ impl Watch {
             cgroup_throttled_usec: observed_cgroup.then_some(self.throttled_usec),
             cgroup_throttled_runs: observed_cgroup.then_some(self.throttled_runs),
             cgroup_oom_kills: self.oom_kills,
-            thermal: self.thermal.map(ThermalMonitor::finish),
+            thermal: self.thermal.and_then(BackgroundThermal::finish),
         };
         (interference != Interference::default()).then_some(interference)
+    }
+}
+
+/// How often the background thread reads the temperature sensors
+const BACKGROUND_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Longest wait in `finish` for a first reading that is still in progress
+const FIRST_READ_WAIT: Duration = Duration::from_millis(200);
+
+/// Reads the temperature on its own thread. Some hosts (cloud VMs) take about
+/// a second per read of `/sys/class/thermal` and `/sys/class/hwmon`; reading
+/// them on the benchmark thread delayed the first run by that much.
+#[derive(Debug)]
+struct BackgroundThermal {
+    stop: Arc<AtomicBool>,
+    latest: Arc<Mutex<Option<ThermalTrace>>>,
+}
+
+impl BackgroundThermal {
+    fn start(root: &Path) -> Self {
+        let stop = Arc::new(AtomicBool::new(false));
+        let latest = Arc::new(Mutex::new(None));
+        let (thread_stop, thread_latest) = (Arc::clone(&stop), Arc::clone(&latest));
+        let root = root.to_path_buf();
+        let spawned = std::thread::Builder::new()
+            .name("perfratio-thermal".into())
+            .spawn(move || {
+                let Some(mut monitor) = ThermalMonitor::start(&root) else {
+                    return;
+                };
+                loop {
+                    if let Ok(mut slot) = thread_latest.lock() {
+                        *slot = Some(monitor.trace());
+                    }
+                    // sleep in short steps so the thread ends soon after `finish`
+                    let mut slept = Duration::ZERO;
+                    while slept < BACKGROUND_INTERVAL {
+                        if thread_stop.load(Ordering::Relaxed) {
+                            return;
+                        }
+                        std::thread::sleep(Duration::from_millis(20));
+                        slept += Duration::from_millis(20);
+                    }
+                    monitor.sample();
+                }
+            });
+        if spawned.is_err() {
+            stop.store(true, Ordering::Relaxed);
+        }
+        BackgroundThermal { stop, latest }
+    }
+
+    /// The last trace the thread recorded; never waits for a sensor read.
+    /// `None` when no sensor could be read (yet).
+    fn finish(self) -> Option<ThermalTrace> {
+        // A benchmark shorter than the first read (e.g. `--debug-mode`) waits
+        // briefly for it; this is after the last run, outside every timing.
+        let deadline = std::time::Instant::now() + FIRST_READ_WAIT;
+        let trace = loop {
+            let trace = self.latest.lock().ok().and_then(|slot| *slot);
+            if trace.is_some() || std::time::Instant::now() >= deadline {
+                break trace;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        };
+        self.stop.store(true, Ordering::Relaxed);
+        trace
     }
 }
 
