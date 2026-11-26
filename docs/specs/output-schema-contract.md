@@ -1,12 +1,12 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Partly shipped (schemaVersion 1.10; 1.10 adds `results[].counters_coverage` (#219); 1.9 adds the `:u`/`:k` counter key suffixes, `counters_scope` values `kernel` and `perfratio.measurements.counters_requested_scope` from #218 (`counter-scope-modifiers.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
+Shipped except the `.product` link (schemaVersion 1.11; 1.11 adds `results[].energy_samples` (#240) and the JSON Schema file `docs/schema/perfratio-export.schema.json`, validated by `tests/json_schema_tests.rs`; 1.10 adds `results[].counters_coverage` (#219); 1.9 adds the `:u`/`:k` counter key suffixes, `counters_scope` values `kernel` and `perfratio.measurements.counters_requested_scope` from #218 (`counter-scope-modifiers.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
-Not yet done: `energy_samples`, `schema/perfratio-output.schema.json` with CI validation,
-`doc/understanding-output.md` section, `.product` `CONTRACTS.md` link. Energy status
+Not yet done: the `.product` `CONTRACTS.md` link (a change in that repository). `doc/understanding-output.md` has the
+section "The JSON export". Energy status
 was tested only through the probe against a fake powercap tree and on a host without RAPL
 (macOS: `unsupported_platform`); real RAPL needs bare-metal Linux.
 
@@ -171,7 +171,7 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `mean_energy_joules` | J | only when `measurements.energy = "measured"` and ≥ 1 sample |
 | `mean_watts` | W (`mean_energy_joules / mean`) | same as above |
 | `energy_joules` | J[] | only when every run has a sample |
-| `energy_samples` | count (**new**) | when `measurements.energy = "measured"`: runs with a sample, so partial coverage is visible |
+| `energy_samples` (**new in 1.11**, #240) | count | whenever an energy sampler was active (`--energy` and a usable backend): the number of runs that produced a sample, so `energy_samples < len(times)` shows partial coverage. Absent when energy was not requested or unavailable |
 | `idle_watts` (**new in 1.1**, #59) | W | optional (`--energy-baseline` and the idle measurement succeeded) |
 | `energy_domains_joules` (**new in 1.7**, #59) | object `{package,core,uncore,dram,psys: J per run[]}`, aligned with `times`; overlapping domains, not additive, `energy_joules` is the package total | optional (with `--energy-domains` on sysfs RAPL, when every run has the same domains) |
 | `mean_net_energy_joules` (**new in 1.1**, #59) | J, per run `max(energy - idle_watts * time, 0)` | optional (with `idle_watts` and ≥ 1 energy sample) |
@@ -246,25 +246,30 @@ perfratio -N --warmup auto --first-run=separate \
   `Options` and the energy sampler's `is_available()` (`src/energy/mod.rs`).
   `LinuxRaplSampler::try_new` returns the reason it failed.
 - `src/benchmark/benchmark_result.rs`: `energy_samples: Option<usize>`.
-- `schema/perfratio-output.schema.json` (JSON Schema 2020-12) describing 1.0, published with
-  the release assets (#93) so images that pin a perfratio version can pin the schema too.
+- `docs/schema/perfratio-export.schema.json` (JSON Schema 2020-12) describes the current
+  `SCHEMA_VERSION` (its `schemaVersion` is a `const`); it is published with the release assets
+  (#93) so images that pin a perfratio version can pin the schema too. It allows unknown keys,
+  as §1 requires of consumers. `tests/json_schema_tests.rs` validates exports of about 40 flag
+  combinations against a strict copy of it (no undeclared keys), checks that every schema
+  property is produced by some case and that the `const` equals `SCHEMA_VERSION`. **A change to
+  the export must update the schema in the same PR.**
 - The deprecation steps of §4, which cover only the JSON key of #225. The other #225
   items are not part of this spec.
 
 ## Acceptance Criteria
-- [x] Every `--export-json` file starts with `"schemaVersion": "1.1"`.
-- [ ] `schema/perfratio-output.schema.json` exists, and CI validates the export of the
-      integration tests against it (with and without `--energy`, `--output-metric`,
-      `--first-run=separate`, `--parameter-scan`, Ctrl-C).
+- [x] Every `--export-json` file starts with `"schemaVersion"` (currently `"1.11"`).
+- [x] `docs/schema/perfratio-export.schema.json` exists, and `cargo test` validates exports
+      against it (with and without `--energy`, `--output-metric`, `--first-run=separate`,
+      `--parameter-scan`, Ctrl-C and more).
 - [x] `perfratio.measurements` is present; `energy` is `"unavailable"` with a reason when
       `--energy` is given on a host without readable RAPL, and `"not_requested"` without
       `--energy`.
-- [ ] No result contains `0` in place of an unmeasured value.
-- [ ] `energy_samples` makes partial energy coverage visible.
+- [x] No result contains `0` in place of an unmeasured value (fields are omitted; the schema has no default values).
+- [x] `energy_samples` makes partial energy coverage visible (1.11).
 - [x] `"joulex"` is removed in one step (§4); old exports with only `"joulex"`
       still import.
-- [ ] `doc/understanding-output.md` documents the schema, units, compatibility rules and
-      the recommended cross-language flags.
+- [x] `doc/understanding-output.md` documents the schema, units, compatibility rules and
+      the recommended cross-language flags (section "The JSON export").
 - [ ] `BenchCommons/.product` `CONTRACTS.md` row "Measurement output" links this spec.
 
 ## Out of Scope
@@ -281,5 +286,5 @@ perfratio -N --warmup auto --first-run=separate \
   availability; `energy_samples` with full, partial and no samples.
 - Integration (`tests/export_metadata_tests.rs`): `schemaVersion`, `measurements`, absence
   of `"joulex"` after step 2; import of a legacy file with only `"joulex"`.
-- Schema: every JSON produced by the test suite validates against
-  `schema/perfratio-output.schema.json`.
+- Schema: the exports of `tests/json_schema_tests.rs` validate against
+  `docs/schema/perfratio-export.schema.json`.
