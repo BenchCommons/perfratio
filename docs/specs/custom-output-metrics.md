@@ -10,7 +10,8 @@ Currently, users can only benchmark wall-clock time (and OS rusage/energy). To m
 ## Contract
 
 ```
---output-metric <NAME=REGEX>   Extract a custom numeric metric from the command's stdout.
+--output-metric <NAME[unit,higher]=REGEX>
+                               Extract a custom numeric metric from the command's stdout.
                                NAME must be alphanumeric/underscores.
                                REGEX must contain at least one capture group.
                                The metric value is parsed as a float from the first
@@ -21,7 +22,7 @@ Currently, users can only benchmark wall-clock time (and OS rusage/energy). To m
 ```
 
 ### 1. CLI Validation & Format
-- Argument syntax: `<NAME>=<REGEX>`.
+- Argument syntax: `<NAME>=<REGEX>` or `<NAME>[unit,higher]=<REGEX>`: the optional brackets declare a unit and `higher` (larger is better) or `lower` (default), see `metric-descriptors.md` (#317, `schemaVersion` 1.30).
   - `NAME`: non-empty, ASCII alphanumeric and underscores only (`[a-zA-Z0-9_]+`).
   - `REGEX`: valid regular expression containing at least one capturing group (`captures_len() >= 2`).
 - Invalid name, missing `=`, invalid regex, or missing capture group causes `OptionsError::InvalidOutputMetric(String)` with an actionable explanation.
@@ -63,7 +64,7 @@ Every list in `custom_metrics` has exactly one entry per recorded run, in the sa
 `custom_metrics` elements changed from `f64` to `f64 | null` and the lists are now aligned with `times`. `schemaVersion` is not emitted yet (see `output-schema-contract.md`), so this is part of the shape that `1.0` will freeze: consumers (tools-benchmark) must accept `null` elements. `output-schema-contract.md` is updated accordingly.
 
 ## Primary metric: `--metric custom:<name>` (#90, #48)
-A metric extracted with `--output-metric` can be the primary metric for ranking, relative speed, summary and exports. Lower is better. Every recorded run needs a value: an undefined `<name>` is an options error, and a metric that no run (or only some runs, with `-i`) produced fails the benchmark, reusing the alignment rules above. Full contract in `metric-target.md` §8; JSON `schemaVersion` `1.2` (`output-schema-contract.md`).
+A metric extracted with `--output-metric` can be the primary metric for ranking, relative speed, summary and exports. Lower is better unless declared `higher`. Every recorded run needs a value: an undefined `<name>` is an options error, and a metric that no run (or only some runs, with `-i`) produced fails the benchmark, reusing the alignment rules above. Full contract in `metric-target.md` §8; JSON `schemaVersion` `1.2` (`output-schema-contract.md`).
 
 ## Verification Plan
 - Unit tests:
