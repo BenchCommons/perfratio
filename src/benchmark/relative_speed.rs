@@ -8,6 +8,9 @@ pub struct BenchmarkResultWithRelativeSpeed<'a> {
     pub result: &'a BenchmarkResult,
     pub relative_speed: Scalar,
     pub relative_speed_stddev: Option<Scalar>,
+    /// Bootstrap confidence interval of the ratio, for estimators other than
+    /// the mean (whose uncertainty is `relative_speed_stddev`)
+    pub relative_speed_ci: Option<(Scalar, Scalar)>,
     pub is_reference: bool,
     // Less means better (faster, less energy, less memory)
     pub relative_ordering: Ordering,
@@ -18,7 +21,7 @@ pub fn compare_metric(l: &BenchmarkResult, r: &BenchmarkResult, metric: Metric) 
         (true, false) => Ordering::Greater,
         (false, true) => Ordering::Less,
         _ => {
-            match (l.primary_mean(metric), r.primary_mean(metric)) {
+            match (l.primary_center(metric), r.primary_center(metric)) {
                 (Some(l_val), Some(r_val)) => l_val.partial_cmp(&r_val).unwrap_or(Ordering::Equal),
                 // a result without data for the metric never ranks above one with data
                 (None, Some(_)) => Ordering::Greater,
@@ -56,10 +59,18 @@ fn compute_relative_speeds<'a>(
     sort_order: SortOrder,
     metric: Metric,
 ) -> Vec<BenchmarkResultWithRelativeSpeed<'a>> {
-    let Some(ref_mean) = reference.primary_mean(metric) else {
+    let Some(ref_mean) = reference.primary_center(metric) else {
         return compute_without_ratios(results, reference, sort_order, metric);
     };
-    let ref_stddev = reference.primary_stddev(metric);
+    let settings = crate::stats::settings::current();
+    // Error propagation of the ratio is defined for the mean; other
+    // estimators report a bootstrap interval of the ratio instead.
+    let ref_stddev = reference
+        .primary_stddev(metric)
+        .filter(|_| settings.estimator.is_mean());
+    let ref_samples = (!settings.estimator.is_mean())
+        .then(|| reference.primary_samples(metric))
+        .flatten();
 
     let mut results: Vec<_> = results
         .iter()
@@ -72,27 +83,32 @@ fn compute_relative_speeds<'a>(
                     result,
                     relative_speed: f64::NAN,
                     relative_speed_stddev: None,
+                    relative_speed_ci: None,
                     is_reference,
                     relative_ordering: Ordering::Greater,
                 };
             }
 
-            let Some(res_mean) = result.primary_mean(metric) else {
+            let Some(res_mean) = result.primary_center(metric) else {
                 return BenchmarkResultWithRelativeSpeed {
                     result,
                     relative_speed: f64::NAN,
                     relative_speed_stddev: None,
+                    relative_speed_ci: None,
                     is_reference,
                     relative_ordering,
                 };
             };
-            let res_stddev = result.primary_stddev(metric);
+            let res_stddev = result
+                .primary_stddev(metric)
+                .filter(|_| settings.estimator.is_mean());
 
             if res_mean == 0.0 {
                 return BenchmarkResultWithRelativeSpeed {
                     result,
                     relative_speed: if is_reference { 1.0 } else { f64::INFINITY },
                     relative_speed_stddev: None,
+                    relative_speed_ci: None,
                     is_reference,
                     relative_ordering,
                 };
@@ -116,10 +132,28 @@ fn compute_relative_speeds<'a>(
                 _ => None,
             };
 
+            let relative_speed_ci = if is_reference || relative_ordering == Ordering::Equal {
+                None
+            } else {
+                ref_samples
+                    .as_deref()
+                    .zip(result.primary_samples(metric))
+                    .and_then(|(r, o)| {
+                        crate::stats::deep::ratio_confidence_interval(r, &o, &settings)
+                    })
+                    // `ratio` is always >= 1 (how many times better or worse),
+                    // the bootstrap gives other / reference
+                    .map(|(lo, hi)| match relative_ordering {
+                        Ordering::Less => (1.0 / hi, 1.0 / lo),
+                        _ => (lo, hi),
+                    })
+            };
+
             BenchmarkResultWithRelativeSpeed {
                 result,
                 relative_speed: ratio,
                 relative_speed_stddev: ratio_stddev,
+                relative_speed_ci,
                 is_reference,
                 relative_ordering,
             }
@@ -146,7 +180,8 @@ pub fn compute_with_check_from_reference<'a>(
         return Some(Vec::new());
     }
 
-    let is_zero_or_missing = |r: &BenchmarkResult| r.primary_mean(metric).is_none_or(|m| m == 0.0);
+    let is_zero_or_missing =
+        |r: &BenchmarkResult| r.primary_center(metric).is_none_or(|m| m == 0.0);
     if is_zero_or_missing(best_of(results, metric)) || is_zero_or_missing(reference) {
         return None;
     }
@@ -167,7 +202,7 @@ pub fn compute_with_check<'a>(
 
     let fastest = best_of(results, metric);
 
-    if fastest.primary_mean(metric).is_none_or(|m| m == 0.0) {
+    if fastest.primary_center(metric).is_none_or(|m| m == 0.0) {
         return None;
     }
 
@@ -198,6 +233,7 @@ pub fn compute_without_ratios<'a>(
                 result,
                 relative_speed: f64::NAN,
                 relative_speed_stddev: None,
+                relative_speed_ci: None,
                 is_reference,
                 relative_ordering,
             }

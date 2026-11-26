@@ -172,6 +172,11 @@ Per result:
 10. Tests above; README section and `doc/perfratio.1`.
 11. Follow-up (separate issues): `--metric instructions|cycles` (#48), derived rates (#213).
 
+## Validation
+The counters are checked against `perf stat` and for child-tree accounting by
+`scripts/perf_parity.py` (#312, `perf-parity-harness.md`). It runs on bare-metal Linux only and
+reports `skipped` (exit 77) where `perf` or a PMU is missing.
+
 ## Acceptance criteria
 - Per-run counters and summary in JSON, mean line in terminal output.
 - Calibrated overhead subtracted; no negative values.

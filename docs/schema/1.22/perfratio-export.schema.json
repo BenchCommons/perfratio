@@ -1,0 +1,1642 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
+  "title": "perfratio --export-json output",
+  "description": "Schema of the JSON export, schemaVersion 1.22 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "const": "1.22",
+      "description": "MAJOR.MINOR of the contract; first key of the document."
+    },
+    "metric": {
+      "$ref": "#/$defs/metric"
+    },
+    "perfratio": {
+      "$ref": "#/$defs/metadata"
+    },
+    "interrupted": {
+      "const": true,
+      "description": "Only present (true) when Ctrl-C stopped the run."
+    },
+    "optimize": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/optimize"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/optimize"
+          }
+        }
+      ],
+      "description": "Present with --optimize: one object, or an array with one entry per search."
+    },
+    "pareto": {
+      "$ref": "#/$defs/pareto"
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/result"
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "metric",
+    "perfratio",
+    "results"
+  ],
+  "$defs": {
+    "seconds": {
+      "type": "number",
+      "description": "Duration in seconds."
+    },
+    "status": {
+      "type": "string",
+      "examples": [
+        "measured",
+        "partial",
+        "unavailable",
+        "not_requested"
+      ],
+      "description": "Status of one measurement group. Open enum: consumers must tolerate unknown values."
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "mean": {
+          "type": "number"
+        },
+        "stddev": {
+          "type": "number"
+        },
+        "median": {
+          "type": "number"
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "mean",
+        "median",
+        "min",
+        "max"
+      ],
+      "description": "Mean, sample standard deviation (omitted with one value), median and range."
+    },
+    "outlierStats": {
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "percent": {
+          "type": "number"
+        },
+        "lower_fence": {
+          "type": "number"
+        },
+        "upper_fence": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "count",
+        "percent",
+        "lower_fence",
+        "upper_fence"
+      ],
+      "description": "Outliers of one series and the fences outside of which a value counts as one."
+    },
+    "measurements": {
+      "type": "object",
+      "properties": {
+        "time": {
+          "$ref": "#/$defs/status"
+        },
+        "memory": {
+          "$ref": "#/$defs/status"
+        },
+        "energy": {
+          "$ref": "#/$defs/status"
+        },
+        "energy_unavailable_reason": {
+          "type": "string",
+          "description": "Why energy is unavailable. Open enum: unsupported_platform, rapl_not_found, rapl_unreadable, unsupported_cpu, ioreport_not_found, ioreport_frozen, emi_not_found, emi_unreadable, other."
+        },
+        "resources": {
+          "$ref": "#/$defs/status"
+        },
+        "counters": {
+          "$ref": "#/$defs/status",
+          "description": "`measured`, `partial` (some events could not be opened), `unavailable` or `not_requested`."
+        },
+        "counters_unavailable_reason": {
+          "type": "string",
+          "description": "Open enum: unsupported_platform, perf_paranoid, no_pmu, kernel_scope_denied, other."
+        },
+        "counters_unavailable_events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Event keys that could not be opened (status partial), suffixed ones read e.g. `instructions:k`."
+        },
+        "counters_requested_scope": {
+          "type": "string",
+          "description": "Scope that was asked for when it differs from `counters_scope` (e.g. `all` next to `user`)."
+        },
+        "topdown": {
+          "$ref": "#/$defs/status",
+          "description": "`--topdown`: `measured`, `unavailable` or `not_requested`."
+        },
+        "topdown_unavailable_reason": {
+          "type": "string",
+          "description": "Open enum: unsupported_platform, unsupported_cpu, unsupported_kernel, perf_paranoid, no_pmu, hybrid_cpu_unpinned, other."
+        },
+        "simd": {
+          "$ref": "#/$defs/status",
+          "description": "`--simd`: `measured`, `unavailable` or `not_requested`."
+        },
+        "simd_unavailable_reason": {
+          "type": "string",
+          "description": "Open enum: unsupported_platform, unsupported_cpu, perf_paranoid, no_pmu, hybrid_cpu_unpinned, other."
+        }
+      },
+      "required": [
+        "time",
+        "memory",
+        "energy",
+        "resources",
+        "counters",
+        "topdown",
+        "simd"
+      ],
+      "description": "Host-level status per measurement group, identical for every result."
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string",
+          "description": "perfratio crate version."
+        },
+        "command_line": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "argv; the program is reduced to its file name."
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Start of the run, RFC 3339 UTC, second precision."
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "From --label KEY=VALUE."
+        },
+        "system": {
+          "type": "object",
+          "properties": {
+            "os": {
+              "type": "string"
+            },
+            "arch": {
+              "type": "string"
+            },
+            "cpus": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "cpu_model": {
+              "type": "string"
+            },
+            "kernel": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "os",
+            "arch",
+            "cpus"
+          ],
+          "description": "No hostname or user name is exported, by design."
+        },
+        "energy_backend": {
+          "type": "string",
+          "description": "Backend that produced the energy samples. Open enum: sysfs_powercap, perf_pmu, ioreport, windows_emi."
+        },
+        "measurements": {
+          "$ref": "#/$defs/measurements"
+        },
+        "execution": {
+          "type": "object",
+          "properties": {
+            "jobs": {
+              "type": "integer",
+              "minimum": 2,
+              "description": "Runs executing at the same time (--jobs N, N > 1)."
+            },
+            "schedule_policy": {
+              "type": "string",
+              "description": "Open enum: saturate, exclusive, fair."
+            },
+            "contended": {
+              "const": true,
+              "description": "The runs disturbed each other; always true."
+            }
+          },
+          "required": [
+            "jobs",
+            "schedule_policy",
+            "contended"
+          ],
+          "description": "Only with --jobs > 1 (new in 1.22, #306)."
+        },
+        "metrics": {
+          "type": "array",
+          "description": "Descriptor of every metric of this export, generated from one registry (new in 1.20, #317). A metric that could not be measured keeps its descriptor with a `status` other than `available` and has no values in `results`; it is never written as 0. `status`, `reason`, `kind`, `scope` and `direction` are open enums.",
+          "items": {
+            "$ref": "#/$defs/metricDescriptor"
+          }
+        },
+        "statistics": {
+          "type": "object",
+          "properties": {
+            "estimator": {
+              "type": "string",
+              "description": "mean, median or a percentile such as p95: the central value behind relative_speed, significance and the comparisons."
+            },
+            "confidence_level": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1
+            },
+            "significance_level": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1
+            },
+            "bootstrap_resamples": {
+              "type": "integer",
+              "minimum": 100
+            },
+            "bootstrap_seed": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Unsigned 64-bit; may exceed 2^53, so read it as an integer, not a double."
+            }
+          },
+          "required": [
+            "estimator",
+            "confidence_level",
+            "significance_level",
+            "bootstrap_resamples",
+            "bootstrap_seed"
+          ],
+          "description": "New in 1.21 (#320): how the ranking, ratios, intervals and significance were computed. Always written by 1.21 and later; not required here, so that a MINOR addition is not a breaking change for consumers of older exports."
+        }
+      },
+      "required": [
+        "version",
+        "command_line",
+        "started_at",
+        "system",
+        "measurements"
+      ],
+      "description": "Run metadata."
+    },
+    "metric": {
+      "type": "string",
+      "pattern": "^(wall|cpu|user|system|energy|memory|instructions|cycles|custom:[A-Za-z0-9_]+)$",
+      "description": "Metric used for ranking. The built-in set is closed; `custom:<name>` is a pattern (unitless, lower is better)."
+    },
+    "primaryMetric": {
+      "type": "object",
+      "properties": {
+        "metric": {
+          "$ref": "#/$defs/metric"
+        },
+        "mean": {
+          "type": "number"
+        },
+        "stddev": {
+          "type": "number"
+        },
+        "samples": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        }
+      },
+      "required": [
+        "metric",
+        "mean"
+      ],
+      "description": "Statistics of the ranking metric (only with --metric other than wall)."
+    },
+    "percentiles": {
+      "type": "object",
+      "properties": {
+        "p05": {
+          "type": "number"
+        },
+        "p25": {
+          "type": "number"
+        },
+        "p75": {
+          "type": "number"
+        },
+        "p95": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "p05",
+        "p25",
+        "p75",
+        "p95"
+      ],
+      "description": "Percentiles of the run times in seconds."
+    },
+    "firstRun": {
+      "type": "object",
+      "properties": {
+        "time": {
+          "type": "number"
+        },
+        "user": {
+          "type": "number"
+        },
+        "system": {
+          "type": "number"
+        },
+        "memory_usage_byte": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "energy_joules": {
+          "type": "number"
+        },
+        "exit_code": {
+          "type": "integer"
+        },
+        "warmup": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "time"
+      ],
+      "description": "Cold first run reported separately with --first-run=separate; not part of any other field."
+    },
+    "diagnostics": {
+      "type": "object",
+      "properties": {
+        "trend_rel": {
+          "type": "number"
+        },
+        "trend_p": {
+          "type": "number"
+        },
+        "bimodality": {
+          "type": "number"
+        },
+        "separated_modes": {
+          "type": "boolean"
+        },
+        "outlier_variance_fraction": {
+          "type": "number"
+        },
+        "outlier_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "description": "Interference diagnostics of the run times."
+    },
+    "outliers": {
+      "type": "object",
+      "properties": {
+        "method": {
+          "enum": [
+            "iqr",
+            "modified-z"
+          ]
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "percent": {
+          "type": "number"
+        },
+        "lower_fence": {
+          "type": "number"
+        },
+        "upper_fence": {
+          "type": "number"
+        },
+        "memory_usage_byte": {
+          "$ref": "#/$defs/outlierStats"
+        },
+        "energy_joules": {
+          "$ref": "#/$defs/outlierStats"
+        }
+      },
+      "required": [
+        "method",
+        "count",
+        "percent",
+        "lower_fence",
+        "upper_fence"
+      ],
+      "description": "Outliers of the run times (flattened) and, when measured, memory (bytes) and energy (J)."
+    },
+    "resources": {
+      "type": "object",
+      "properties": {
+        "voluntary_ctx_switches": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "involuntary_ctx_switches": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "minor_faults": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "major_faults": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "block_input_ops": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "block_output_ops": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "description": "Per-run OS counters aligned with `times`. A column the OS cannot report is omitted."
+    },
+    "topdownRuns": {
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "minimum": 0
+      }
+    },
+    "efficiency": {
+      "type": "object",
+      "properties": {
+        "ipc": {
+          "type": "number"
+        },
+        "cpi": {
+          "type": "number"
+        },
+        "cache_miss_rate": {
+          "type": "number"
+        },
+        "branch_miss_rate": {
+          "type": "number"
+        }
+      },
+      "description": "Derived counter metrics; rates are fractions."
+    },
+    "precision": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "number"
+        },
+        "reached": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "confidence": {
+          "type": "number"
+        },
+        "met": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "target",
+        "reached",
+        "confidence",
+        "met"
+      ],
+      "description": "--target-precision outcome."
+    },
+    "baseline": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "mean": {
+          "type": "number"
+        },
+        "stddev": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "user": {
+          "type": "number"
+        },
+        "system": {
+          "type": "number"
+        },
+        "runs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "clamped_runs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "net_mean_stderr": {
+          "type": "number"
+        },
+        "energy_joules": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "command",
+        "mean",
+        "user",
+        "system",
+        "runs"
+      ],
+      "description": "--subtract: the baseline whose mean was subtracted from every run."
+    },
+    "perRunParameters": {
+      "type": "object",
+      "properties": {
+        "values": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "stats": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "mean": {
+                  "type": "number"
+                },
+                "stddev": {
+                  "type": "number"
+                },
+                "runs": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "mean",
+                "runs"
+              ]
+            }
+          }
+        }
+      },
+      "required": [
+        "values",
+        "stats"
+      ],
+      "description": "--parameter-sample / --aggregate-parameter-runs."
+    },
+    "instancePercentiles": {
+      "type": "object",
+      "properties": {
+        "p50": {
+          "type": "number"
+        },
+        "p95": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "p50",
+        "p95",
+        "max"
+      ],
+      "description": "Percentiles over all runs x N instance times."
+    },
+    "omittedRun": {
+      "type": "object",
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exit_code": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "index"
+      ],
+      "description": "Run omitted by --omit-failed-runs."
+    },
+    "validation": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "enum": [
+            "output_sha256",
+            "command",
+            "output_sha256+command"
+          ]
+        },
+        "on_invalid": {
+          "enum": [
+            "fail",
+            "omit",
+            "keep"
+          ]
+        },
+        "first_only": {
+          "type": "boolean"
+        },
+        "runs_checked": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runs_invalid": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runs_omitted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "omitted_runs": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "output_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "mode",
+        "on_invalid",
+        "first_only",
+        "runs_checked",
+        "runs_invalid",
+        "runs_omitted"
+      ],
+      "description": "Output validation (--expect-output-sha256, --validate). runs_invalid > 0 means the workload did not produce the expected result."
+    },
+    "quality": {
+      "type": "object",
+      "properties": {
+        "grade": {
+          "enum": [
+            "comparable",
+            "with_caveats",
+            "unreliable"
+          ]
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Open enum: ignore ids you do not know."
+              },
+              "metric": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "pass",
+                  "warn",
+                  "fail",
+                  "not_applicable",
+                  "unavailable"
+                ]
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "status"
+            ]
+          }
+        }
+      },
+      "required": [
+        "grade",
+        "checks"
+      ],
+      "description": "Measurement quality report. grade: any fail -> unreliable, else any warn -> with_caveats, else comparable."
+    },
+    "result": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "mean": {
+          "type": "number",
+          "description": "Mean wall time, seconds."
+        },
+        "stddev": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Sample standard deviation in seconds; null with fewer than 2 runs."
+        },
+        "median": {
+          "type": "number"
+        },
+        "user": {
+          "type": "number"
+        },
+        "system": {
+          "type": "number"
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "times": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "Wall time per run in seconds. With `concurrency`, the makespan of each run."
+        },
+        "user_times": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "system_times": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "memory_usage_byte": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "Peak RSS per run in bytes; maximum of any instance with `concurrency`."
+        },
+        "exit_codes": {
+          "type": "array",
+          "items": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "description": "Exit code per run (null: killed by a signal). With `concurrency`, N entries per run, row-major."
+        },
+        "primary_metric": {
+          "$ref": "#/$defs/primaryMetric"
+        },
+        "relative_speed": {
+          "type": "number",
+          "description": "Ratio to the fastest result or the reference (1.0 = baseline)."
+        },
+        "relative_speed_stddev": {
+          "type": "number"
+        },
+        "relative_speed_ci": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "New in 1.21 (#320): [low, high] bootstrap interval of relative_speed at statistics.confidence_level, for estimators other than the mean."
+        },
+        "significance": {
+          "enum": [
+            "significant_speedup",
+            "significant_regression",
+            "noise"
+          ],
+          "description": "Difference to the reference; omitted for the reference and when the test is undefined."
+        },
+        "p_value": {
+          "type": "number",
+          "description": "p-value of the bootstrap Welch test against the reference."
+        },
+        "percentiles": {
+          "$ref": "#/$defs/percentiles"
+        },
+        "geometric_mean": {
+          "type": "number"
+        },
+        "cpu_percent": {
+          "type": "number"
+        },
+        "warmup_runs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "target_duration_seconds": {
+          "type": "number"
+        },
+        "total_sampling_seconds": {
+          "type": "number"
+        },
+        "runs_done": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "runs_planned": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "mean_energy_joules": {
+          "type": "number"
+        },
+        "mean_watts": {
+          "type": "number"
+        },
+        "energy_joules": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "Energy per run in joules; only when every run has a sample."
+        },
+        "energy_samples": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Runs that produced an energy sample, whenever an energy sampler was active. Below the run count means partial coverage."
+        },
+        "idle_watts": {
+          "type": "number"
+        },
+        "mean_net_energy_joules": {
+          "type": "number"
+        },
+        "energy_domains_joules": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "description": "Joules per RAPL domain and run (keys package, core, uncore, dram, psys). Domains overlap and are not additive."
+        },
+        "custom_metrics": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "description": "Values extracted with --output-metric, one per run; null where not extracted."
+        },
+        "custom_metrics_summary": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/summary"
+          }
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "per_run_parameters": {
+          "$ref": "#/$defs/perRunParameters"
+        },
+        "omitted_failed_runs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/omittedRun"
+          }
+        },
+        "validation": {
+          "$ref": "#/$defs/validation"
+        },
+        "quality": {
+          "$ref": "#/$defs/quality"
+        },
+        "discarded_outliers": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "Zero-based indices of runs excluded by --discard-outliers."
+        },
+        "resources": {
+          "$ref": "#/$defs/resources"
+        },
+        "counters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            }
+          },
+          "description": "Raw counts per run aligned with `times`; null = not readable. Keys are event names (hardware events, and the software events cpu-migrations, context-switches, page-faults, task-clock in ns), optionally suffixed :u or :k."
+        },
+        "counters_summary": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/summary"
+          }
+        },
+        "counters_coverage": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "description": "Lowest time_running / time_enabled (0..1) over the runs, only for events that were multiplexed or never scheduled."
+        },
+        "counters_multiplexed_runs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "counters_scope": {
+          "type": "string",
+          "description": "Effective scope of unsuffixed counter keys: all, user or kernel."
+        },
+        "effective_frequency_hz": {
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "exclusiveMinimum": 0
+          },
+          "description": "Effective CPU frequency of each run in Hz (cycles / time on CPU), aligned with `times`; null where it could not be computed."
+        },
+        "mean_effective_frequency_hz": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Mean of `effective_frequency_hz` over the runs with at least 5 ms on CPU."
+        },
+        "stddev_effective_frequency_hz": {
+          "type": "number",
+          "minimum": 0
+        },
+        "effective_frequency_basis": {
+          "type": "string",
+          "description": "Time that divides `cycles`. Open enum: task_clock, user_time, system_time."
+        },
+        "topdown": {
+          "type": "object",
+          "properties": {
+            "level": {
+              "type": "integer",
+              "const": 1
+            },
+            "source": {
+              "type": "string",
+              "description": "Open enum: intel_perf_metrics, amd_pipeline_util."
+            },
+            "retiring": {
+              "$ref": "#/$defs/topdownRuns"
+            },
+            "bad_speculation": {
+              "$ref": "#/$defs/topdownRuns"
+            },
+            "frontend_bound": {
+              "$ref": "#/$defs/topdownRuns"
+            },
+            "backend_bound": {
+              "$ref": "#/$defs/topdownRuns"
+            },
+            "smt_contention": {
+              "$ref": "#/$defs/topdownRuns",
+              "description": "AMD only."
+            }
+          },
+          "required": [
+            "level",
+            "source",
+            "retiring",
+            "bad_speculation",
+            "frontend_bound",
+            "backend_bound"
+          ],
+          "description": "Top-down level 1 (--topdown): per-run fractions of all issue slots aligned with `times`; null = run not measured. A hypothesis about the stall class, not a diagnosis."
+        },
+        "topdown_summary": {
+          "type": "object",
+          "properties": {
+            "retiring": {
+              "$ref": "#/$defs/summary"
+            },
+            "bad_speculation": {
+              "$ref": "#/$defs/summary"
+            },
+            "frontend_bound": {
+              "$ref": "#/$defs/summary"
+            },
+            "backend_bound": {
+              "$ref": "#/$defs/summary"
+            },
+            "smt_contention": {
+              "$ref": "#/$defs/summary"
+            },
+            "bottleneck": {
+              "type": "string",
+              "description": "Largest non-retiring class. Open enum: backend_bound, frontend_bound, bad_speculation, smt_contention."
+            }
+          },
+          "required": [
+            "retiring",
+            "bad_speculation",
+            "frontend_bound",
+            "backend_bound",
+            "bottleneck"
+          ]
+        },
+        "efficiency": {
+          "$ref": "#/$defs/efficiency"
+        },
+        "first_run": {
+          "$ref": "#/$defs/firstRun"
+        },
+        "diagnostics": {
+          "$ref": "#/$defs/diagnostics"
+        },
+        "outliers": {
+          "$ref": "#/$defs/outliers"
+        },
+        "precision": {
+          "$ref": "#/$defs/precision"
+        },
+        "baseline": {
+          "$ref": "#/$defs/baseline"
+        },
+        "shell": {
+          "type": "string"
+        },
+        "timed_out": {
+          "type": "boolean",
+          "description": "Only present when true."
+        },
+        "timeout": {
+          "type": "number"
+        },
+        "concurrency": {
+          "type": "integer",
+          "minimum": 2,
+          "description": "Instances per run (--concurrency N, N > 1). Changes the meaning of `times` and `exit_codes`."
+        },
+        "instance_times": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "throughput": {
+          "type": "number"
+        },
+        "instance_percentiles": {
+          "$ref": "#/$defs/instancePercentiles"
+        },
+        "energy_per_instance_joules": {
+          "type": "number",
+          "description": "No longer written since 1.19: package energy is not divided per instance."
+        },
+        "energy_scope": {
+          "type": "string",
+          "description": "Scope of the energy values (1.19): `system` (package counter, covers the whole machine) or `batch` (--concurrency: energy of the whole batch over the makespan).",
+          "enum": [
+            "system",
+            "batch"
+          ]
+        },
+        "run_ids": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "description": "PERFRATIO_RUN_ID of every run in `times` (1.19). With --concurrency: the id of instance 0."
+        },
+        "instance_run_ids": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "description": "--concurrency: PERFRATIO_RUN_ID of every instance, one row per run aligned with `instance_times`; the position in the row is PERFRATIO_WORKER_ID (1.19)."
+        },
+        "leftover_processes": {
+          "type": "boolean",
+          "description": "Only present when true (1.19): processes started by the command outlived it in at least one run and were killed."
+        },
+        "workers_used": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Workers that executed at least one timed run (--jobs N, N > 1; new in 1.22)."
+        },
+        "contended": {
+          "const": true,
+          "description": "Runs were executed in parallel (--jobs N, N > 1) and may have disturbed each other; do not compare with sequential samples (new in 1.22)."
+        },
+        "simd": {
+          "type": "object",
+          "properties": {
+            "unit": {
+              "type": "string",
+              "description": "`instructions` (Intel) or `uops` (AMD); not comparable across vendors."
+            },
+            "arch": {
+              "type": "string"
+            },
+            "scalar_fp": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            },
+            "simd_128": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            },
+            "simd_256": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            },
+            "simd_512": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            },
+            "vectorization_ratio": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 1
+              }
+            }
+          },
+          "required": [
+            "unit",
+            "arch",
+            "scalar_fp",
+            "vectorization_ratio"
+          ],
+          "description": "Per-run floating-point breakdown (`--simd`) aligned with `times`; null = not readable. A bucket the CPU lacks is absent."
+        },
+        "simd_summary": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/summary"
+          },
+          "description": "Summary of every SIMD bucket and of `vectorization_ratio`."
+        },
+        "simd_scope": {
+          "type": "string",
+          "description": "Scope counted for `simd`: all, user or kernel."
+        },
+        "simd_scaling": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "scaled_runs": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "coverage": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "required": [
+              "scaled_runs",
+              "coverage"
+            ]
+          },
+          "description": "Buckets scaled for multiplexing: runs and lowest coverage."
+        }
+      },
+      "required": [
+        "command",
+        "mean",
+        "stddev",
+        "median",
+        "user",
+        "system",
+        "min",
+        "max",
+        "exit_codes"
+      ],
+      "description": "One benchmarked command."
+    },
+    "optimize": {
+      "type": "object",
+      "properties": {
+        "var": {
+          "type": "string"
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "metric": {
+          "type": "string"
+        },
+        "algorithm": {
+          "type": "string"
+        },
+        "budget": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "evaluations": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "best": {
+          "type": "number"
+        },
+        "best_value": {
+          "type": "number"
+        },
+        "best_command": {
+          "type": "string"
+        },
+        "runner_up": {
+          "type": "number"
+        },
+        "p_value": {
+          "type": "number"
+        },
+        "significant": {
+          "type": "boolean"
+        },
+        "unimodal_warning": {
+          "type": "boolean"
+        },
+        "at_boundary": {
+          "type": "boolean"
+        },
+        "evaluated": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "fixed": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "interrupted": {
+          "type": "boolean"
+        },
+        "reevaluated": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "Values run a second time by --optimize-confirm (1.15)."
+        }
+      },
+      "required": [
+        "var",
+        "min",
+        "max",
+        "metric",
+        "algorithm",
+        "budget",
+        "evaluations",
+        "best",
+        "best_value",
+        "best_command",
+        "unimodal_warning",
+        "at_boundary",
+        "evaluated"
+      ],
+      "description": "Result of one --optimize search."
+    },
+    "pareto": {
+      "type": "object",
+      "properties": {
+        "metrics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "metric": {
+                "type": "string",
+                "description": "Metric with optional statistic, e.g. wall or wall.p95."
+              },
+              "direction": {
+                "enum": [
+                  "lower_is_better",
+                  "higher_is_better"
+                ]
+              }
+            },
+            "required": [
+              "metric",
+              "direction"
+            ]
+          }
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Constraints as written."
+        },
+        "noise_threshold": {
+          "type": "number",
+          "description": "Relative threshold of --noise-threshold (0.05 = 5%); absent for strict comparison."
+        },
+        "frontier": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Index into results."
+          }
+        },
+        "dominated": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "command_index": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Index into results."
+              },
+              "by": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Index into results."
+                }
+              }
+            },
+            "required": [
+              "command_index",
+              "by"
+            ]
+          }
+        },
+        "within_noise": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Index into results."
+          },
+          "description": "Frontier members strictly dominated within the noise threshold."
+        },
+        "excluded": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "command_index": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Index into results."
+              },
+              "reason": {
+                "enum": [
+                  "metric_unavailable",
+                  "constraint_violated"
+                ]
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "command_index",
+              "reason",
+              "detail"
+            ]
+          }
+        },
+        "objective": {
+          "type": "object",
+          "properties": {
+            "direction": {
+              "enum": [
+                "lower_is_better",
+                "higher_is_better"
+              ]
+            },
+            "metric": {
+              "type": "string"
+            },
+            "best": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "value": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "direction",
+            "metric",
+            "best"
+          ]
+        }
+      },
+      "required": [
+        "metrics",
+        "frontier",
+        "dominated",
+        "excluded"
+      ],
+      "description": "Result of --pareto (1.16, #326)."
+    },
+    "metricDescriptor": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Dotted lowercase id, e.g. `time.wall`, `cpu.ipc`, `counter.instructions`, `custom.<name>`."
+        },
+        "unit": {
+          "type": "string",
+          "description": "`s`, `bytes`, `J`, `W`, `Hz`, `count`, `ns`, `ratio`, `percent`, `runs/s` or `unitless` (custom metrics)."
+        },
+        "direction": {
+          "type": "string",
+          "description": "`lower_is_better`, `higher_is_better` or `neutral`."
+        },
+        "scope": {
+          "type": "string",
+          "description": "`process`, `process_tree`, `batch`, `package`, `system` or `region`."
+        },
+        "source": {
+          "type": "string",
+          "description": "Where the value comes from, e.g. `perfratio.timer`, `os.rusage`, `linux.perf_event_open`, `sysfs_powercap`, `command_output`."
+        },
+        "kind": {
+          "type": "string",
+          "description": "`measured`, `estimated`, `simulated` or `derived`."
+        },
+        "status": {
+          "type": "string",
+          "description": "`available`, `partial`, `unsupported`, `permission_denied`, `below_resolution`, `contaminated`, `invalid` or `not_requested`."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why the status is not `available` (same tokens as `perfratio.measurements.*_unavailable_reason`)."
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Keys of `results[]` that hold the values."
+        }
+      },
+      "required": [
+        "id",
+        "unit",
+        "direction",
+        "scope",
+        "source",
+        "kind",
+        "status",
+        "fields"
+      ]
+    }
+  }
+}

@@ -155,7 +155,9 @@ impl<'a> Scheduler<'a> {
             .collect::<Result<_>>()?;
         let commands_to_run: Vec<(usize, &Command)> = resolved.iter().enumerate().collect();
 
-        if self.options.schedule == ScheduleMode::RoundRobin && commands_to_run.len() > 1 {
+        if (self.options.schedule == ScheduleMode::RoundRobin && commands_to_run.len() > 1)
+            || self.options.schedule.pool_policy().is_some()
+        {
             let mut runners: Vec<BenchmarkRunner> = commands_to_run
                 .iter()
                 .map(|&(number, cmd)| {
@@ -332,67 +334,111 @@ impl<'a> Scheduler<'a> {
                 None
             };
 
-            // 4. Interleaved timing iterations. With --target-precision, each
-            // command keeps running until its mean is precise enough; the
-            // commands share the wall-clock time, and so the time budget.
-            let adaptive =
-                self.options.target_precision.is_some() || self.options.duration.is_some();
-            let started = std::time::Instant::now();
-            let budget = self.options.max_benchmarking_time * runners.len() as f64;
-            let multiple_runners = runners.len() > 1;
-            let mut i = 1;
-            'timing: loop {
-                if adaptive {
-                    if !runners.iter().any(|r| r.needs_more_runs(started, budget)) {
-                        break;
-                    }
-                } else if i >= max_count {
-                    break;
-                }
-                for runner in &mut runners {
-                    if crate::util::interrupt::interrupted() {
-                        break 'timing;
-                    }
-                    let run = if adaptive {
-                        !runner.timed_out && runner.needs_more_runs(started, budget)
-                    } else {
-                        !runner.timed_out && i < runner.count
-                    };
-                    if run {
+            // 4. Timing iterations: on the worker pool with `--jobs`, otherwise
+            // interleaved
+            if let Some(policy) = self.options.schedule.pool_policy() {
+                let adaptive =
+                    self.options.target_precision.is_some() || self.options.duration.is_some();
+                let budget = self.options.max_benchmarking_time * runners.len() as f64;
+                let multiple_runners = runners.len() > 1;
+                let time_unit = self.options.time_unit;
+                let measure_energy = self.options.measure_energy;
+                let pooled = super::pool::run_pool(
+                    &mut runners,
+                    policy,
+                    self.options.jobs,
+                    adaptive,
+                    budget,
+                    |runner| {
+                        let Some(bar) = progress_bar.as_ref() else {
+                            return;
+                        };
+                        bar.inc(1);
                         let msg = format_progress_estimate(
                             &runner.times_real,
-                            self.options.time_unit,
-                            if self.options.measure_energy {
-                                Some(&runner.energy_measurements)
-                            } else {
-                                None
-                            },
+                            time_unit,
+                            measure_energy.then_some(&runner.energy_measurements),
                         );
-                        if let Some(bar) = progress_bar.as_ref() {
-                            if multiple_runners {
-                                bar.set_message(format!("{}: {}", runner.command.get_name(), msg));
-                            } else {
-                                bar.set_message(msg);
-                            }
+                        if multiple_runners {
+                            bar.set_message(format!("{}: {}", runner.command.get_name(), msg));
+                        } else {
+                            bar.set_message(msg);
                         }
-
-                        match runner.run_timed_iteration(i) {
-                            Ok(()) => {
-                                if let Some(bar) = progress_bar.as_ref() {
-                                    bar.inc(1);
+                    },
+                );
+                if let Err(e) = pooled {
+                    if let Some(bar) = progress_bar.as_ref() {
+                        bar.finish_and_clear();
+                    }
+                    return Err(e);
+                }
+            } else {
+                // 4. Interleaved timing iterations. With --target-precision, each
+                // command keeps running until its mean is precise enough; the
+                // commands share the wall-clock time, and so the time budget.
+                let adaptive =
+                    self.options.target_precision.is_some() || self.options.duration.is_some();
+                let started = std::time::Instant::now();
+                let budget = self.options.max_benchmarking_time * runners.len() as f64;
+                let multiple_runners = runners.len() > 1;
+                let mut i = 1;
+                'timing: loop {
+                    if adaptive {
+                        if !runners.iter().any(|r| r.needs_more_runs(started, budget)) {
+                            break;
+                        }
+                    } else if i >= max_count {
+                        break;
+                    }
+                    for runner in &mut runners {
+                        if crate::util::interrupt::interrupted() {
+                            break 'timing;
+                        }
+                        let run = if adaptive {
+                            !runner.timed_out && runner.needs_more_runs(started, budget)
+                        } else {
+                            !runner.timed_out && i < runner.count
+                        };
+                        if run {
+                            let msg = format_progress_estimate(
+                                &runner.times_real,
+                                self.options.time_unit,
+                                if self.options.measure_energy {
+                                    Some(&runner.energy_measurements)
+                                } else {
+                                    None
+                                },
+                            );
+                            if let Some(bar) = progress_bar.as_ref() {
+                                if multiple_runners {
+                                    bar.set_message(format!(
+                                        "{}: {}",
+                                        runner.command.get_name(),
+                                        msg
+                                    ));
+                                } else {
+                                    bar.set_message(msg);
                                 }
                             }
-                            Err(e) if e.is::<crate::error::Interrupted>() => break 'timing,
-                            Err(e) => {
-                                if let Some(bar) = progress_bar.as_ref() {
-                                    bar.finish_and_clear();
+
+                            match runner.run_timed_iteration(i) {
+                                Ok(()) => {
+                                    if let Some(bar) = progress_bar.as_ref() {
+                                        bar.inc(1);
+                                    }
                                 }
-                                return Err(e);
+                                Err(e) if e.is::<crate::error::Interrupted>() => break 'timing,
+                                Err(e) => {
+                                    if let Some(bar) = progress_bar.as_ref() {
+                                        bar.finish_and_clear();
+                                    }
+                                    return Err(e);
+                                }
                             }
                         }
                     }
+                    i += 1;
                 }
-                i += 1;
             }
 
             if let Some(bar) = progress_bar.as_ref() {
@@ -752,6 +798,8 @@ impl<'a> Scheduler<'a> {
                         };
                         let stddev = if let Some(stddev) = item.relative_speed_stddev {
                             format!(" ± {}", colors::green(format!("{stddev:.2}")))
+                        } else if let Some((lo, hi)) = item.relative_speed_ci {
+                            format!(" [{lo:.2}, {hi:.2}]")
                         } else {
                             "".into()
                         };
@@ -829,13 +877,24 @@ impl<'a> Scheduler<'a> {
                                     var_base_item,
                                 ) {
                                     Some(cmp) => {
-                                        let sig_str = if cmp.is_significant_01 {
-                                            colors::cyan("statistically significant (p < 0.01)")
-                                        } else if cmp.is_significant_05 {
-                                            colors::cyan("statistically significant (p < 0.05)")
+                                        let alpha =
+                                            crate::stats::settings::current().significance_level;
+                                        // the stricter of 1% and the chosen level is
+                                        // reported when it is met
+                                        let strict = alpha.min(0.01);
+                                        let sig_str = if cmp.p_value < strict {
+                                            colors::cyan(format!(
+                                                "statistically significant (p < {strict})"
+                                            ))
+                                        } else if cmp.p_value < alpha {
+                                            colors::cyan(format!(
+                                                "statistically significant (p < {alpha})"
+                                            ))
                                         } else {
-                                            "no statistically significant difference (p ≥ 0.05)"
-                                                .dimmed()
+                                            format!(
+                                                "no statistically significant difference (p ≥ {alpha})"
+                                            )
+                                            .dimmed()
                                         };
                                         crate::outln!(
                                             "      [Bootstrap t-test: t = {:.2}, p = {:.4} -> {}]",
@@ -1009,12 +1068,12 @@ pub fn raw_ratio_lines(
         return Vec::new();
     }
     let reference = reference.unwrap_or_else(|| relative_speed::best_of(results, metric));
-    let Some(reference_mean) = reference.primary_mean(metric).filter(|m| *m != 0.0) else {
+    let Some(reference_mean) = reference.primary_center(metric).filter(|m| *m != 0.0) else {
         return results.iter().map(|_| "nan".to_string()).collect();
     };
     results
         .iter()
-        .map(|r| match r.primary_mean(metric) {
+        .map(|r| match r.primary_center(metric) {
             Some(mean) if !r.timed_out => format!("{:.6}", mean / reference_mean),
             _ => "nan".to_string(),
         })
@@ -1042,6 +1101,7 @@ fn generate_results(args: &[&'static str]) -> Result<Vec<BenchmarkResult>> {
         options.metric,
         options.counters.as_ref(),
         options.topdown.as_ref(),
+        options.execution_info(),
     )?;
 
     options.validate_against_command_list(&commands)?;
@@ -1346,7 +1406,10 @@ fn custom_difference(
     item: &BenchmarkResult,
     metric: Metric,
 ) -> String {
-    match (item.primary_mean(metric), reference.primary_mean(metric)) {
+    match (
+        item.primary_center(metric),
+        reference.primary_center(metric),
+    ) {
         (Some(value), Some(base)) => {
             let diff = value - base;
             let sign = if diff >= 0.0 { '+' } else { '−' };
@@ -1375,9 +1438,12 @@ fn absolute_difference(
             format!("−{formatted}")
         }
     };
-    let time_diff = item.mean - reference.mean;
+    // the central value of `--estimator` (the mean unless set)
+    let center = |r: &BenchmarkResult| r.primary_center(Metric::Wall).unwrap_or(r.mean);
+    let (item_value, reference_value) = (center(item), center(reference));
+    let time_diff = item_value - reference_value;
     let mut parts = vec![
-        format_duration(item.mean, Some(unit)),
+        format_duration(item_value, Some(unit)),
         signed(time_diff, format_duration(time_diff.abs(), Some(unit))),
     ];
     if let (Some(e_ref), Some(e_item)) = (reference.mean_energy_joules, item.mean_energy_joules) {

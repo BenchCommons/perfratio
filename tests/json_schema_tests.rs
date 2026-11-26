@@ -222,6 +222,17 @@ const CASES: &[(&str, &[&str])] = &[
         "concurrency with energy",
         &["--runs=2", "--concurrency", "3", "--energy", "sleep 0.1"],
     ),
+    ("jobs", &["--runs=4", "--jobs", "2", "sleep 0.1"]),
+    (
+        "jobs with an exclusive policy",
+        &[
+            "--runs=4",
+            "--jobs=2",
+            "--schedule=exclusive",
+            "sleep 0.1",
+            "sleep 0.05",
+        ],
+    ),
     (
         "optimize",
         &["--runs=3", "--optimize", "n", "1", "40", "sleep {n}"],
@@ -255,6 +266,10 @@ const CASES: &[(&str, &[&str])] = &[
         ],
     ),
     ("duration", &["--duration=1s", "sleep 0.5"]),
+    (
+        "estimator median",
+        &["--runs=3", "--estimator=median", "sleep 0.1", "sleep 0.2"],
+    ),
     ("target precision", &["--target-precision=1%", "sleep 0.1"]),
     (
         "discard outliers",

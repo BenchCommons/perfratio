@@ -20,12 +20,53 @@ pub struct ExportMetadata {
     /// Omitted unless `--energy` is given and a backend is usable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub energy_backend: Option<&'static str>,
-    /// Region protocol version perfratio speaks (new in 1.21). Omitted unless
+    /// Region protocol version perfratio speaks (new in 1.23). Omitted unless
     /// `--region` or `--metric region:<name>` is given.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub region_protocol: Option<u32>,
     /// Which measurement groups were measured, unavailable or not requested
     pub measurements: Measurements,
+    /// How the runs were executed; only with `--jobs` > 1 (new in 1.22)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution: Option<Execution>,
+    /// Estimator, levels and bootstrap settings behind the statistics (new in 1.21, #320)
+    pub statistics: StatisticsInfo,
+}
+
+/// Parallel execution of the runs (`--jobs`, #306).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct Execution {
+    /// Runs executing at the same time
+    pub jobs: usize,
+    /// `saturate`, `exclusive` or `fair` (open enum)
+    pub schedule_policy: &'static str,
+    /// The runs disturbed each other; always `true`
+    pub contended: bool,
+}
+
+/// The `perfratio.statistics` object: how the ranking, ratios, intervals and
+/// significance of this export were computed.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct StatisticsInfo {
+    /// `mean`, `median` or a percentile such as `p95`; the central value of
+    /// `relative_speed`, `significance` and the comparison
+    pub estimator: String,
+    pub confidence_level: f64,
+    pub significance_level: f64,
+    pub bootstrap_resamples: usize,
+    pub bootstrap_seed: u64,
+}
+
+impl StatisticsInfo {
+    pub fn from_settings(settings: &crate::stats::settings::StatSettings) -> Self {
+        StatisticsInfo {
+            estimator: settings.estimator.name(),
+            confidence_level: settings.confidence_level,
+            significance_level: settings.significance_level,
+            bootstrap_resamples: settings.bootstrap_resamples,
+            bootstrap_seed: settings.seed,
+        }
+    }
 }
 
 /// Status of one measurement group (`schemaVersion` 1.0, open enum).
@@ -78,7 +119,7 @@ pub struct Measurements {
     /// `perf_paranoid`, `no_pmu`, `hybrid_cpu_unpinned` or `other` (open enum)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub simd_unavailable_reason: Option<&'static str>,
-    /// `--region` instrumented region timing (new in 1.21): `measured` when
+    /// `--region` instrumented region timing (new in 1.23): `measured` when
     /// requested (a run that did not report a region shows as `null` in
     /// `results[].regions[]`), otherwise `not_requested`
     pub region: MeasurementStatus,
@@ -217,6 +258,8 @@ impl ExportMetadata {
             energy_backend: None,
             region_protocol: None,
             measurements,
+            statistics: StatisticsInfo::from_settings(&crate::stats::settings::current()),
+            execution: None,
         }
     }
 }

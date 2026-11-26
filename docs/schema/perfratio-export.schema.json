@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.21 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.23 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.21",
+      "const": "1.23",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -172,7 +172,7 @@
         },
         "region": {
           "$ref": "#/$defs/status",
-          "description": "`--region` (1.21): `measured` when requested, otherwise `not_requested`. A run that did not report a region shows as null in `results[].regions[]`."
+          "description": "`--region` (1.23): `measured` when requested, otherwise `not_requested`. A run that did not report a region shows as null in `results[].regions[]`."
         }
       },
       "required": [
@@ -182,8 +182,7 @@
         "resources",
         "counters",
         "topdown",
-        "simd",
-        "region"
+        "simd"
       ],
       "description": "Host-level status per measurement group, identical for every result."
     },
@@ -247,10 +246,34 @@
         "region_protocol": {
           "type": "integer",
           "minimum": 1,
-          "description": "Region protocol version perfratio speaks (1.21). Present only with --region or --metric region:<name>."
+          "description": "Region protocol version perfratio speaks (1.23). Present only with --region or --metric region:<name>."
         },
         "measurements": {
           "$ref": "#/$defs/measurements"
+        },
+        "execution": {
+          "type": "object",
+          "properties": {
+            "jobs": {
+              "type": "integer",
+              "minimum": 2,
+              "description": "Runs executing at the same time (--jobs N, N > 1)."
+            },
+            "schedule_policy": {
+              "type": "string",
+              "description": "Open enum: saturate, exclusive, fair."
+            },
+            "contended": {
+              "const": true,
+              "description": "The runs disturbed each other; always true."
+            }
+          },
+          "required": [
+            "jobs",
+            "schedule_policy",
+            "contended"
+          ],
+          "description": "Only with --jobs > 1 (new in 1.22, #306)."
         },
         "metrics": {
           "type": "array",
@@ -258,6 +281,42 @@
           "items": {
             "$ref": "#/$defs/metricDescriptor"
           }
+        },
+        "statistics": {
+          "type": "object",
+          "properties": {
+            "estimator": {
+              "type": "string",
+              "description": "mean, median or a percentile such as p95: the central value behind relative_speed, significance and the comparisons."
+            },
+            "confidence_level": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1
+            },
+            "significance_level": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1
+            },
+            "bootstrap_resamples": {
+              "type": "integer",
+              "minimum": 100
+            },
+            "bootstrap_seed": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Unsigned 64-bit; may exceed 2^53, so read it as an integer, not a double."
+            }
+          },
+          "required": [
+            "estimator",
+            "confidence_level",
+            "significance_level",
+            "bootstrap_resamples",
+            "bootstrap_seed"
+          ],
+          "description": "New in 1.21 (#320): how the ranking, ratios, intervals and significance were computed. Always written by 1.21 and later; not required here, so that a MINOR addition is not a breaking change for consumers of older exports."
         }
       },
       "required": [
@@ -829,6 +888,15 @@
         "relative_speed_stddev": {
           "type": "number"
         },
+        "relative_speed_ci": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "New in 1.21 (#320): [low, high] bootstrap interval of relative_speed at statistics.confidence_level, for estimators other than the mean."
+        },
         "significance": {
           "enum": [
             "significant_speedup",
@@ -1171,7 +1239,16 @@
           "items": {
             "$ref": "#/$defs/region"
           },
-          "description": "`--region` (1.21): time inside each instrumented region. `mean`, `times` and the other time fields keep measuring the whole process."
+          "description": "`--region` (1.23): time inside each instrumented region. `mean`, `times` and the other time fields keep measuring the whole process."
+        },
+        "workers_used": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Workers that executed at least one timed run (--jobs N, N > 1; new in 1.22)."
+        },
+        "contended": {
+          "const": true,
+          "description": "Runs were executed in parallel (--jobs N, N > 1) and may have disturbed each other; do not compare with sequential samples (new in 1.22)."
         },
         "simd": {
           "type": "object",

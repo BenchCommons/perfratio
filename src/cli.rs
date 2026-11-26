@@ -115,10 +115,13 @@ pub fn build_command() -> Command {
         .arg(
             Arg::new("seed")
                 .long("seed")
+                .visible_alias("bootstrap-seed")
                 .action(ArgAction::Set)
                 .value_name("NUM")
                 .value_parser(clap::value_parser!(u64))
-                .help("Seed for '--parameter-sample' (default: 0, so runs are reproducible)."),
+                .help("Seed for '--parameter-sample' (default: 0) and for the bootstrap \
+                       resampling of intervals and tests (default: a fixed seed). Defaults make \
+                       runs reproducible; the same seed gives the same output."),
         )
         .arg(
             Arg::new("compare")
@@ -677,6 +680,40 @@ pub fn build_command() -> Command {
                 .help("Perform deep statistical analysis (bootstrapped confidence intervals for mean, median, and stddev, plus hypothesis testing)."),
         )
         .arg(
+            Arg::new("estimator")
+                .long("estimator")
+                .action(ArgAction::Set)
+                .value_name("ESTIMATOR")
+                .help("Central value used for ranking, relative speed, significance, the delta \
+                       table, '--compare' and '--target-precision': 'mean' (default), \
+                       'median' or a percentile such as 'p95'. Prefer the median or a \
+                       percentile for skewed timings (GC pauses, page-cache effects); with few \
+                       runs a percentile is noisy. Other than the mean, intervals are bootstrap \
+                       intervals and the ratio carries a bootstrap interval instead of ± σ."),
+        )
+        .arg(
+            Arg::new("confidence-level")
+                .long("confidence-level")
+                .action(ArgAction::Set)
+                .value_name("LEVEL")
+                .help("Confidence level of intervals, strictly between 0 and 1 (default: 0.95)."),
+        )
+        .arg(
+            Arg::new("significance-level")
+                .long("significance-level")
+                .action(ArgAction::Set)
+                .value_name("ALPHA")
+                .help("Level of hypothesis tests and significance markers, strictly between 0 \
+                       and 1 (default: 0.05)."),
+        )
+        .arg(
+            Arg::new("bootstrap-resamples")
+                .long("bootstrap-resamples")
+                .action(ArgAction::Set)
+                .value_name("N")
+                .help("Number of bootstrap resamples, at least 100 (default: 5000)."),
+        )
+        .arg(
             Arg::new("metric")
                 .long("metric")
                 .action(ArgAction::Set)
@@ -804,6 +841,20 @@ pub fn build_command() -> Command {
                        time; use '--metric region:NAME' to rank on a region. CPU time, memory, \
                        counters and energy still cover the whole process. A command that \
                        reports no region fails."),
+        )
+        .arg(
+            Arg::new("jobs")
+                .short('j')
+                .long("jobs")
+                .action(ArgAction::Set)
+                .value_name("N|auto")
+                .conflicts_with_all(["concurrency", "energy", "optimize", "subtract"])
+                .help("Run up to N independent invocations at the same time to collect \
+                       samples faster. Every run is still timed on its own, unlike with \
+                       '--concurrency'. Parallel runs compete for caches, memory bandwidth \
+                       and CPUs, so the results are marked 'contended' and are not \
+                       equivalent to sequential samples. 'auto' uses the number of logical \
+                       CPUs. See '--schedule'. Default: 1."),
         )
         .arg(
             Arg::new("artifact-dir")
@@ -1402,9 +1453,8 @@ pub fn build_command() -> Command {
             Arg::new("schedule")
                 .long("schedule")
                 .value_name("MODE")
-                .value_parser(["grouped", "round-robin", "interleaved"])
-                .default_value("grouped")
-                .help("Set benchmark execution schedule: 'grouped' (run all iterations per command) or 'round-robin' / 'interleaved' (interleave iterations across commands to mitigate temporal bias).")
+                .value_parser(["grouped", "round-robin", "interleaved", "saturate", "exclusive", "fair"])
+                .help("Set benchmark execution schedule: 'grouped' (run all iterations per command; default) or 'round-robin' / 'interleaved' (interleave iterations across commands to mitigate temporal bias). With '--jobs' > 1: 'saturate' (keep every worker busy; default), 'exclusive' (a command never runs concurrently with itself) or 'fair' (every command keeps the same number of runs).")
         )
         .arg(
             Arg::new("round-robin")
