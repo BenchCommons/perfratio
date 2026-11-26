@@ -72,6 +72,15 @@ impl ResourceSeries {
     }
 }
 
+/// One instance of a `--concurrency N` batch.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct InstanceTiming {
+    /// Wall clock time of this instance, from its own start to its own exit
+    pub time_real: Second,
+    /// Exit code of this instance (`None` if killed by a signal)
+    pub exit_code: Option<i32>,
+}
+
 /// Results from timing a single command
 #[derive(Debug, Default, Clone)]
 pub struct TimingResult {
@@ -104,6 +113,11 @@ pub struct TimingResult {
 
     /// Custom metrics extracted via --output-metric
     pub custom_metrics: BTreeMap<String, f64>,
+
+    /// `--concurrency N` with N > 1: one entry per instance, in spawn order.
+    /// The other fields are then the aggregate of the batch (see
+    /// `docs/specs/concurrency.md`). Empty for a single instance.
+    pub instances: Vec<InstanceTiming>,
 }
 
 #[test]

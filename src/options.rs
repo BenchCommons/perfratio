@@ -391,6 +391,9 @@ pub struct Options {
     /// Kill a benchmark run that exceeds this duration (--timeout)
     pub timeout: Option<std::time::Duration>,
 
+    /// `--concurrency`: instances of the command started simultaneously per run
+    pub concurrency: usize,
+
     /// `--until`: stop timer upon readiness output pattern
     pub until: Option<UntilSettings>,
 
@@ -446,6 +449,7 @@ impl Default for Options {
             subtract_command: None,
             allow_setup_with_round_robin: false,
             timeout: None,
+            concurrency: 1,
             until: None,
             output_metrics: Vec::new(),
             output_metrics_stderr: false,
@@ -695,6 +699,13 @@ impl Options {
                     .map_err(|e| OptionsError::InvalidTimeout(val.clone(), e))?,
             );
         }
+        if let Some(val) = matches.get_one::<String>("concurrency") {
+            options.concurrency = val
+                .parse::<usize>()
+                .ok()
+                .filter(|&n| n >= 1)
+                .ok_or_else(|| OptionsError::InvalidConcurrency(val.clone()))?;
+        }
         if let Some(val) = matches.get_one::<String>("energy-baseline") {
             options.energy_baseline = parse_energy_baseline(val)
                 .map_err(|e| OptionsError::InvalidEnergyBaseline(val.clone(), e))?;
@@ -869,7 +880,35 @@ impl Options {
 
         options.allow_setup_with_round_robin = matches.get_flag("allow-setup-with-round-robin");
 
+        options.warn_concurrency();
+
         Ok(options)
+    }
+
+    /// Warnings for `--concurrency N` with N > 1 (printed once, to stderr).
+    fn warn_concurrency(&self) {
+        if self.concurrency <= 1 {
+            return;
+        }
+        let warning = crate::output::colors::yellow("Warning:");
+        let cpus = std::thread::available_parallelism().map_or(1, |n| n.get());
+        if self.concurrency > cpus {
+            eprintln!(
+                "{warning} '--concurrency {}' exceeds the {cpus} logical CPUs: instances will \
+                 queue on the CPU and the times include that waiting.",
+                self.concurrency
+            );
+        }
+        if self
+            .command_output_policies
+            .iter()
+            .any(|p| matches!(p, CommandOutputPolicy::Inherit))
+        {
+            eprintln!(
+                "{warning} with '--concurrency {}' the output of the instances interleaves.",
+                self.concurrency
+            );
+        }
     }
 
     pub fn validate_against_command_list(&mut self, commands: &Commands) -> Result<()> {

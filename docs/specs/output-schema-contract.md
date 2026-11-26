@@ -1,7 +1,7 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Partly shipped (schemaVersion 1.5; 1.5 adds `--counters` fields from #49; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
+Partly shipped (schemaVersion 1.6; 1.6 adds `--counters` fields from #49; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
@@ -100,7 +100,7 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
       "energy": "unavailable",
       "energy_unavailable_reason": "rapl_unreadable",
       "resources": "not_requested",
-      "counters": "measured"                                  // new in 1.5, #49
+      "counters": "measured"                                  // new in 1.6, #49
     }
   },
   "interrupted": true,                                        // optional
@@ -125,7 +125,7 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
     `sysfs_powercap`, `perf_pmu`, `ioreport` or `windows_emi`);
   - `"not_requested"`: the flag was not given.
   Groups in 1.0: `time` (always `measured`), `memory`, `energy` (`-E/--energy`),
-  `resources` (`--resource-usage`), `counters` (`--counters`, new in 1.5). New groups are MINOR.
+  `resources` (`--resource-usage`), `counters` (`--counters`, new in 1.6). New groups are MINOR.
   `counters` also has the value `"partial"` (some events could not be opened, listed in
   `counters_unavailable_events`) and the reasons `unsupported_platform`, `perf_paranoid`,
   `no_pmu`, `other` in `counters_unavailable_reason`.
@@ -165,16 +165,22 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `parameters`, `per_run_parameters` | strings / stats | optional (`--parameter-*`) |
 | `omitted_failed_runs`, `discarded_outliers` | indices | optional |
 | `resources` { column: counts[] per run } (**columns individually optional since 1.3**, #291) | counts | when `measurements.resources = "measured"`; a column the OS cannot report is omitted (Windows has no `voluntary_ctx_switches`, `involuntary_ctx_switches`, `major_faults`), see `windows-resource-usage.md` |
-| `counters` (**new in 1.5**, #49) | { event: (u64 \| null)[] } raw counts per run aligned with `times`; `null` = not readable; events `instructions`, `cycles`, `cache-references`, `cache-misses`, `branches`, `branch-misses` (open set) | when `measurements.counters` is `measured` or `partial` |
-| `counters_summary` (**new in 1.5**) | { event: { `mean`, `stddev`?, `median`, `min`, `max` } } | with `counters` |
-| `counters_scope` (**new in 1.5**) | `"all"` (user + kernel) or `"user"` (kernel counting was denied); the meaning of an event name never changes | with `counters` |
-| `counters_multiplexed_runs` (**new in 1.5**) | count of runs with a scaled counter | optional (> 0) |
+| `concurrency` (**new in 1.5**, #53) | count | only with `--concurrency N`, N > 1. **When present, `times` holds the makespan of each run** (wall time until all N instances finished) and `exit_codes` holds N entries per run, row-major (run 0 instances 0..N-1, ...), i.e. `runs x N` entries instead of `runs` |
+| `instance_times` (**new in 1.5**, #53) | s[][], one row of N per run aligned with `times`, instances in spawn order | with `concurrency` |
+| `throughput` (**new in 1.5**, #53) | instances per second, `N / mean` | with `concurrency` (omitted for a zero mean) |
+| `instance_percentiles` { `p50`, `p95`, `max` } (**new in 1.5**, #53) | s, over all `runs x N` instance times | with `concurrency` |
+| `energy_per_instance_joules` (**new in 1.5**, #53) | J, `mean_energy_joules / N` | with `concurrency` and `mean_energy_joules` |
+| `counters` (**new in 1.6**, #49) | { event: (u64 \| null)[] } raw counts per run aligned with `times`; `null` = not readable; events `instructions`, `cycles`, `cache-references`, `cache-misses`, `branches`, `branch-misses` (open set) | when `measurements.counters` is `measured` or `partial` |
+| `counters_summary` (**new in 1.6**) | { event: { `mean`, `stddev`?, `median`, `min`, `max` } } | with `counters` |
+| `counters_scope` (**new in 1.6**) | `"all"` (user + kernel) or `"user"` (kernel counting was denied); the meaning of an event name never changes | with `counters` |
+| `counters_multiplexed_runs` (**new in 1.6**) | count of runs with a scaled counter | optional (> 0) |
 | `efficiency` { `ipc`, `cpi`, `cache_miss_rate`, `branch_miss_rate` } (#213) | ratios | optional (with the needed counters) |
 | `diagnostics`, `precision`, `baseline`, `shell`, `timed_out`, `timeout`, `runs_planned` | see `BenchmarkResult` | optional |
 
 Rules:
 - An unavailable or unrequested value is **omitted**, never written as `0`. `null` is used
   only where the table says so (`stddev`, `exit_codes[i]`).
+- `concurrency` is the discriminator for the changed meaning of `times` and `exit_codes` (see the table). Without it, nothing changes. `user`/`system` are then sums over the instances of a run, `memory_usage_byte` is the maximum of any instance.
 - `custom_metrics` units are whatever the command prints; perfratio does not interpret them.
   Names follow `[A-Za-z0-9_]+`. A consumer that needs units encodes them in the name
   (e.g. `algo_ns`) or in a `--label`.
