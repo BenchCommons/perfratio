@@ -119,7 +119,7 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
   values is closed (a new built-in value is MAJOR); the `custom:` prefix is a pattern, so
   consumers must accept any `custom:<name>` and treat it as unitless.
 - `perfratio` (object, guaranteed): run metadata, as `ExportMetadata` today.
-- `perfratio.statistics` (object, guaranteed, **new in 1.21**, #320): `{estimator, confidence_level,
+- `perfratio.statistics` (object, **new in 1.21**, #320; written by every export of 1.21 and later, absent from older ones): `{estimator, confidence_level,
   significance_level, bootstrap_resamples, bootstrap_seed}`. `estimator` is `mean`, `median` or a
   percentile such as `p95` and is the central value behind `relative_speed`, `significance`,
   `p_value` and the delta table. With the defaults (`mean`, 0.95, 0.05, 5000 and the fixed

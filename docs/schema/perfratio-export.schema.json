@@ -283,7 +283,7 @@
             "bootstrap_resamples",
             "bootstrap_seed"
           ],
-          "description": "New in 1.21 (#320): how the ranking, ratios, intervals and significance were computed."
+          "description": "New in 1.21 (#320): how the ranking, ratios, intervals and significance were computed. Always written by 1.21 and later; not required here, so that a MINOR addition is not a breaking change for consumers of older exports."
         }
       },
       "required": [
@@ -291,8 +291,7 @@
         "command_line",
         "started_at",
         "system",
-        "measurements",
-        "statistics"
+        "measurements"
       ],
       "description": "Run metadata."
     },
