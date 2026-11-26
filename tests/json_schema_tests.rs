@@ -75,6 +75,14 @@ fn export(args: &[&str]) -> Value {
 const CASES: &[(&str, &[&str])] = &[
     ("default", &["--runs=3", "sleep 0.1"]),
     (
+        "sequential stopping",
+        &[
+            "--target-precision=5%",
+            "--target-precision-method=sequential",
+            "sleep 0.1",
+        ],
+    ),
+    (
         "randomized order",
         &[
             "--runs=3",
