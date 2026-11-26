@@ -543,11 +543,15 @@ Show the mean voluntary/involuntary context switches, minor/major page faults an
 .HP
 \fB\-\-counters\fR[=\fILIST\fP]
 .IP
-Collect hardware performance counters per run (Linux): instructions, cycles, cache\-references, cache\-misses, branches, branch\-misses (default: all; give a list with \fB\-\-counters\fR=cycles,instructions). Counts user and kernel space, or user space only when perf_event_paranoid > 1 ('counters_scope' in JSON). Adds counts, a summary, IPC/CPI and miss rates, and one terminal line. Unavailable counters (no PMU, permissions, macOS, Windows) give one warning and status 'unavailable' in perfratio.measurements.counters.
+Collect hardware performance counters per run (Linux): instructions, cycles, cache\-references, cache\-misses, branches, branch\-misses (default: all; give a list with \fB\-\-counters\fR=cycles,instructions). An event takes a ':u' (user) or ':k' (kernel) modifier, e.g. instructions:u,instructions:k; the JSON key keeps the suffix. Counts user and kernel space, or user space only when perf_event_paranoid > 1 ('counters_scope' in JSON). Adds counts, a summary, IPC/CPI and miss rates, and one terminal line. Unavailable counters (no PMU, permissions, macOS, Windows) give one warning and status 'unavailable' in perfratio.measurements.counters.
+.HP
+\fB\-\-scope\fR \fISCOPE\fP
+.IP
+Privilege levels that \fB\-\-counters\fR counts: user, kernel, all (default, like 'perf stat') or split (every event as ':u' plus ':k'). Kernel counting needs perf_event_paranoid <= 1 or CAP_PERFMON: the default falls back to user space with one warning, while kernel, split or a ':k' modifier fail with an error. Requires \fB\-\-counters\fR.
 .HP
 \fB\-\-simd\fR
 .IP
-Collect a floating\-point scalar/vector breakdown per run (Linux, x86_64): retired scalar, 128\-, 256\- and 512\-bit packed floating\-point arithmetic and the vectorization ratio ('simd' and 'simd_summary' in JSON, one terminal block). Intel counts instructions, AMD Zen 4/5 counts uops, so compare ratios only within one vendor. Integer SIMD is not counted. Works with or without \fB\-\-counters\fR. Unsupported CPUs (including AArch64), hybrid Intel CPUs, VMs without a PMU, permissions and other platforms give one warning and status 'unavailable' in perfratio.measurements.simd.
+Collect a floating\-point scalar/vector breakdown per run (Linux, x86_64): retired scalar, 128\-, 256\- and 512\-bit packed floating\-point arithmetic and the vectorization ratio ('simd' and 'simd_summary' in JSON, one terminal block). Intel counts instructions, AMD Zen 4/5 counts uops, so compare ratios only within one vendor. Integer SIMD is not counted. Works with or without \fB\-\-counters\fR and honors \fB\-\-scope\fR (except split). Unsupported CPUs (including AArch64), hybrid Intel CPUs, VMs without a PMU, permissions and other platforms give one warning and status 'unavailable' in perfratio.measurements.simd.
 .HP
 \fB\-\-first\-run\fR \fIMODE\fP
 .IP

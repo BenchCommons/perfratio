@@ -181,6 +181,8 @@ pub struct SimdState {
     pub unit: Unit,
     pub events: Vec<(Bucket, u64)>,
     pub status: Status,
+    /// Privilege levels counted (`simd_scope`)
+    pub scope: Scope,
 }
 
 impl SimdState {
@@ -190,11 +192,12 @@ impl SimdState {
             unit: Unit::Instructions,
             events: vec![],
             status: Status::Unavailable(reason),
+            scope: Scope::All,
         }
     }
 
     /// `--debug-mode`: a fixed Intel AVX-512 event set, whatever the host is.
-    pub fn mock() -> Self {
+    pub fn mock(scope: Scope) -> Self {
         let cpu = CpuId {
             vendor: Vendor::Intel,
             family: 6,
@@ -207,6 +210,7 @@ impl SimdState {
             unit: s.unit,
             events: s.events,
             status: Status::Measured,
+            scope,
         }
     }
 }
@@ -214,16 +218,18 @@ impl SimdState {
 const EPERM: i32 = 1;
 const EACCES: i32 = 13;
 
-/// Pure planning step. `forced_scope` is the scope `--counters` already
-/// settled on (so the fallback warning appears once). `probe` tries to open
-/// one raw event. Returns the state, the scope used and the warnings.
+/// Pure planning step. `requested_scope` is the default scope of `--scope`;
+/// `settled` is the scope `--counters` already ended up with (so the fallback
+/// warning appears once). `probe` tries to open one raw event. Returns the
+/// state and the warnings.
 pub fn plan(
     cpu: &CpuId,
     paranoid: Option<i32>,
-    forced_scope: Option<Scope>,
+    requested_scope: Scope,
+    settled: Option<Scope>,
     mut probe: impl FnMut(u64, Scope) -> Result<(), i32>,
-) -> (SimdState, Scope, Vec<String>) {
-    let mut scope = forced_scope.unwrap_or(Scope::All);
+) -> (SimdState, Vec<String>) {
+    let mut scope = settled.unwrap_or(requested_scope);
     let selection = match select(cpu) {
         Ok(s) => s,
         Err(reason) => {
@@ -236,7 +242,6 @@ pub fn plan(
             };
             return (
                 SimdState::unavailable(reason),
-                scope,
                 vec![format!(
                     "'--simd' is not available: {why}. Continuing without the SIMD breakdown."
                 )],
@@ -244,7 +249,7 @@ pub fn plan(
         }
     };
     let mut warnings = Vec::new();
-    if forced_scope.is_none() {
+    if settled.is_none() && scope == Scope::All {
         if let Some(&(_, first)) = selection.events.first() {
             if matches!(probe(first, Scope::All), Err(EPERM | EACCES)) {
                 scope = Scope::User;
@@ -271,7 +276,7 @@ pub fn plan(
                     .unwrap_or_else(|| pmu::summary(&status))
                     .trim_end()
             ));
-            return (SimdState::unavailable(reason), scope, warnings);
+            return (SimdState::unavailable(reason), warnings);
         }
     }
     (
@@ -280,8 +285,8 @@ pub fn plan(
             unit: selection.unit,
             events: selection.events,
             status: Status::Measured,
+            scope,
         },
-        scope,
         warnings,
     )
 }
@@ -618,13 +623,13 @@ mod tests {
     #[test]
     fn plan_measures_when_all_events_open() {
         let mut opened = Vec::new();
-        let (state, scope, warnings) = plan(&intel(0x55), Some(1), None, |c, s| {
+        let (state, warnings) = plan(&intel(0x55), Some(1), Scope::All, None, |c, s| {
             opened.push((c, s));
             Ok(())
         });
         assert_eq!(state.status, Status::Measured);
         assert_eq!(state.events.len(), 4);
-        assert_eq!(scope, Scope::All);
+        assert_eq!(state.scope, Scope::All);
         assert!(warnings.is_empty());
         // one fallback probe plus one per event
         assert_eq!(opened.len(), 5);
@@ -633,17 +638,41 @@ mod tests {
     #[test]
     fn plan_falls_back_to_user_scope_once() {
         let probe = |_: u64, s: Scope| if s == Scope::All { Err(13) } else { Ok(()) };
-        let (state, scope, warnings) = plan(&intel(0x55), Some(2), None, probe);
-        assert_eq!((state.status, scope), (Status::Measured, Scope::User));
+        let (state, warnings) = plan(&intel(0x55), Some(2), Scope::All, None, probe);
+        assert_eq!((state.status, state.scope), (Status::Measured, Scope::User));
         assert_eq!(warnings.len(), 1);
         assert!(
             warnings[0].contains("perf_event_paranoid=2"),
             "{warnings:?}"
         );
         // `--counters` already fell back: no second warning, no extra probe
-        let (state, scope, warnings) = plan(&intel(0x55), Some(2), Some(Scope::User), probe);
-        assert_eq!((state.status, scope), (Status::Measured, Scope::User));
+        let (state, warnings) = plan(&intel(0x55), Some(2), Scope::All, Some(Scope::User), probe);
+        assert_eq!((state.status, state.scope), (Status::Measured, Scope::User));
         assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn plan_honors_an_explicit_scope() {
+        let mut seen = Vec::new();
+        let (state, _) = plan(&intel(0x55), Some(0), Scope::User, None, |_, s| {
+            seen.push(s);
+            Ok(())
+        });
+        assert_eq!(state.scope, Scope::User);
+        assert!(seen.iter().all(|&s| s == Scope::User));
+        // `--scope kernel` denied: unavailable, not a silent downgrade
+        let (state, warnings) = plan(&intel(0x55), Some(2), Scope::Kernel, None, |_, s| {
+            if s == Scope::Kernel {
+                Err(13)
+            } else {
+                Ok(())
+            }
+        });
+        assert_eq!(
+            state.status,
+            Status::Unavailable(UnavailableReason::PerfParanoid)
+        );
+        assert_eq!(warnings.len(), 1);
     }
 
     #[test]
@@ -654,8 +683,13 @@ mod tests {
             (95, UnavailableReason::NoPmu),
             (22, UnavailableReason::Other),
         ] {
-            let (state, _, warnings) =
-                plan(&intel(0x55), Some(3), Some(Scope::User), |_, _| Err(errno));
+            let (state, warnings) = plan(
+                &intel(0x55),
+                Some(3),
+                Scope::All,
+                Some(Scope::User),
+                |_, _| Err(errno),
+            );
             assert_eq!(state.status, Status::Unavailable(reason), "{errno}");
             assert!(state.events.is_empty());
             assert_eq!(warnings.len(), 1);
@@ -664,13 +698,19 @@ mod tests {
 
     #[test]
     fn plan_partial_failure_is_all_or_nothing() {
-        let (state, _, warnings) = plan(&intel(0x55), Some(1), Some(Scope::All), |c, _| {
-            if c == raw_config(0xC7, 0xc0) {
-                Err(2)
-            } else {
-                Ok(())
-            }
-        });
+        let (state, warnings) = plan(
+            &intel(0x55),
+            Some(1),
+            Scope::All,
+            Some(Scope::All),
+            |c, _| {
+                if c == raw_config(0xC7, 0xc0) {
+                    Err(2)
+                } else {
+                    Ok(())
+                }
+            },
+        );
         assert_eq!(state.status, Status::Unavailable(UnavailableReason::NoPmu));
         assert!(state.events.is_empty());
         assert_eq!(warnings.len(), 1);
@@ -678,7 +718,7 @@ mod tests {
 
     #[test]
     fn plan_unsupported_cpu_never_probes() {
-        let (state, _, warnings) = plan(&intel(0x3C), Some(1), None, |_, _| {
+        let (state, warnings) = plan(&intel(0x3C), Some(1), Scope::All, None, |_, _| {
             panic!("an unknown model must not be probed")
         });
         assert_eq!(
@@ -689,7 +729,13 @@ mod tests {
             warnings[0].contains("Intel family 0x6 model 0x3c"),
             "{warnings:?}"
         );
-        let (state, _, warnings) = plan(&intel(0x97), Some(1), None, |_, _| unreachable!());
+        let (state, warnings) = plan(
+            &intel(0x97),
+            Some(1),
+            Scope::All,
+            None,
+            |_, _| unreachable!(),
+        );
         assert_eq!(
             state.status,
             Status::Unavailable(UnavailableReason::HybridCpuUnpinned)
@@ -718,7 +764,7 @@ mod tests {
 
     #[test]
     fn export_series_summary_and_block() {
-        let state = SimdState::mock();
+        let state = SimdState::mock(Scope::All);
         let runs = vec![
             run(1_000_000, 100_000, 32_000_000, 0),
             None,
@@ -759,6 +805,7 @@ mod tests {
             unit: s.unit,
             events: s.events,
             status: Status::Measured,
+            scope: Scope::All,
         };
         let runs = vec![Some(vec![sc(10, 1, 1), sc(5, 1, 1), sc(85, 1, 1)])];
         let e = export(&state, 0, &runs).unwrap();
@@ -772,7 +819,7 @@ mod tests {
 
     #[test]
     fn export_without_fp_arithmetic_says_so() {
-        let state = SimdState::mock();
+        let state = SimdState::mock(Scope::All);
         let e = export(&state, 0, &[Some(vec![sc(0, 1, 1); 4])]).unwrap();
         assert_eq!(e.series.vectorization_ratio, vec![None]);
         assert!(!e.summary.contains_key("vectorization_ratio"));
@@ -786,7 +833,7 @@ mod tests {
 
     #[test]
     fn export_ratio_needs_every_bucket() {
-        let state = SimdState::mock();
+        let state = SimdState::mock(Scope::All);
         let mut broken = run(10, 10, 10, 10).unwrap();
         broken[4] = None; // 512 unreadable in this run
         let e = export(&state, 1, &[Some(broken)]).unwrap();
@@ -796,7 +843,7 @@ mod tests {
 
     #[test]
     fn export_reports_multiplexing_per_bucket() {
-        let state = SimdState::mock();
+        let state = SimdState::mock(Scope::All);
         let mut r = run(100, 10, 10, 0).unwrap();
         r[3] = sc(500, 10, 5); // simd_256 scaled x2
         let e = export(&state, 1, &[Some(r)]).unwrap();
@@ -816,12 +863,12 @@ mod tests {
     fn export_is_none_when_unavailable() {
         let state = SimdState::unavailable(UnavailableReason::NoPmu);
         assert!(export(&state, 0, &[Some(vec![])]).is_none());
-        assert!(export(&SimdState::mock(), 0, &[]).is_none());
+        assert!(export(&SimdState::mock(Scope::All), 0, &[]).is_none());
     }
 
     #[test]
     fn series_round_trips_through_json() {
-        let state = SimdState::mock();
+        let state = SimdState::mock(Scope::All);
         let e = export(&state, 1, &[run(1, 2, 3, 0), run(2, 2, 4, 0)]).unwrap();
         let text = serde_json::to_string(&e.series).unwrap();
         let back: SimdSeries = serde_json::from_str(&text).unwrap();

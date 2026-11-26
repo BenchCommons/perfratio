@@ -1777,7 +1777,8 @@ impl<'a> BenchmarkRunner<'a> {
             simd_scope: simd_export
                 .as_ref()
                 .and(self.options.counters.as_ref())
-                .map(|c| c.scope.as_str().to_string()),
+                .and_then(|c| c.simd.as_ref())
+                .map(|s| s.scope.as_str().to_string()),
             counters_scope: hw_export
                 .as_ref()
                 .and(self.options.counters.as_ref())

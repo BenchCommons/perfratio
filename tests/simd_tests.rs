@@ -23,7 +23,7 @@ fn export(args: &[&str]) -> serde_json::Value {
 #[test]
 fn simd_alone_exports_series_summary_and_status() {
     let json = export(&["--runs=3", "--simd", "sleep 0.5"]);
-    assert_eq!(json["schemaVersion"], "1.9");
+    assert_eq!(json["schemaVersion"], "1.10");
     let m = &json["perfratio"]["measurements"];
     assert_eq!(m["simd"], "measured");
     assert_eq!(m["counters"], "not_requested");
@@ -199,4 +199,17 @@ fn unsupported_platform_warns_once_and_continues() {
         v["perfratio"]["measurements"]["simd_unavailable_reason"],
         "unsupported_platform"
     );
+}
+
+#[test]
+fn scope_applies_to_simd_and_split_is_rejected() {
+    let json = export(&["--runs=2", "--simd", "--scope=user", "sleep 0.1"]);
+    assert_eq!(json["results"][0]["simd_scope"], "user");
+    perfratio()
+        .args(["--debug-mode", "--simd", "--scope=split", "sleep 0.1"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "'--simd' cannot be combined with '--scope split'",
+        ));
 }

@@ -847,17 +847,29 @@ impl Options {
         options.show_resource_usage = matches.get_flag("resource-usage");
         let simd = matches.get_flag("simd");
         if matches.contains_id("counters") || simd {
+            let mode = matches
+                .get_one::<String>("scope")
+                .and_then(|v| crate::perf_counters::ScopeMode::parse(v))
+                .unwrap_or_default();
+            if simd && mode == crate::perf_counters::ScopeMode::Split {
+                return Err(OptionsError::InvalidCounters(
+                    "'--simd' cannot be combined with '--scope split': its four events are one \
+                     unit and count in a single scope"
+                        .to_string(),
+                ));
+            }
             let requested = match matches.get_one::<String>("counters") {
-                Some(list) => {
-                    crate::perf_counters::parse_list(list).map_err(OptionsError::InvalidCounters)?
-                }
+                Some(list) => crate::perf_counters::parse_list(list, mode)
+                    .map_err(OptionsError::InvalidCounters)?,
                 None => Vec::new(),
             };
             let (config, warnings) = crate::perf_counters::resolve_with_simd(
                 requested,
+                mode.default_scope(),
                 simd,
                 matches.get_flag("debug-mode"),
-            );
+            )
+            .map_err(OptionsError::InvalidCounters)?;
             for warning in warnings {
                 eprintln!("{} {warning}", crate::output::colors::yellow("Warning:"));
             }

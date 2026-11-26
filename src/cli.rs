@@ -5,7 +5,7 @@ use clap::{
         styling::{AnsiColor, Effects},
         NonEmptyStringValueParser, PossibleValuesParser, Styles,
     },
-    crate_version, Arg, ArgAction, ArgMatches, Command, ValueHint,
+    crate_version, Arg, ArgAction, ArgGroup, ArgMatches, Command, ValueHint,
 };
 
 pub const SHELLS: [&str; 5] = ["bash", "zsh", "fish", "powershell", "elvish"];
@@ -45,6 +45,8 @@ pub fn build_command() -> Command {
         .styles(STYLES)
         .next_line_help(true)
         .hide_possible_values(true)
+        // `--scope` applies to both of these
+        .group(ArgGroup::new("pmu-request").args(["counters", "simd"]).multiple(true))
         .about("A multi-dimensional command-line benchmarking tool with Performance per Watt, Hardware Counter Ratios, and Deep Statistics.")
         .help_expected(true)
         .max_term_width(80)
@@ -1017,9 +1019,23 @@ pub fn build_command() -> Command {
                 .help("Collect hardware performance counters per run (Linux). LIST is \
                        comma-separated: instructions, cycles, cache-references, cache-misses, \
                        branches, branch-misses (default: all). Use '--counters=cycles' to \
-                       give a list. Counts user and kernel space, or user space only when \
-                       perf_event_paranoid > 1. Unavailable counters give one warning, never \
-                       an error. Not available on macOS and Windows."),
+                       give a list. An event takes a ':u' (user) or ':k' (kernel) modifier, \
+                       e.g. 'instructions:u,instructions:k' (see '--scope'). Counts user and \
+                       kernel space by default, or user space only when perf_event_paranoid > 1. \
+                       Unavailable counters give one warning, never an error. Not available on \
+                       macOS and Windows."),
+        )
+        .arg(
+            Arg::new("scope")
+                .long("scope")
+                .value_name("SCOPE")
+                .value_parser(["user", "kernel", "all", "split"])
+                .requires("pmu-request")
+                .help("Privilege levels that '--counters' counts: user, kernel, all (default, \
+                       like 'perf stat') or split (every event as ':u' plus ':k'). Counting \
+                       kernel space needs perf_event_paranoid <= 1 or CAP_PERFMON: with the \
+                       default it falls back to user space with a warning ('counters_scope' \
+                       in JSON), with 'kernel', 'split' or a ':k' modifier it is an error."),
         )
         .arg(
             Arg::new("simd")
@@ -1029,7 +1045,8 @@ pub fn build_command() -> Command {
                        x86_64): retired scalar, 128-, 256- and 512-bit packed floating-point \
                        arithmetic and the vectorization ratio. Intel counts instructions, \
                        AMD Zen 4/5 counts uops, so compare ratios only within one vendor. \
-                       Integer SIMD is not counted. Works with or without '--counters'. \
+                       Integer SIMD is not counted. Works with or without '--counters' \
+                       and honors '--scope' (except 'split'). \
                        Unsupported CPUs, hybrid Intel CPUs, VMs without PMU and denied \
                        permissions give one warning, never an error."),
         )
