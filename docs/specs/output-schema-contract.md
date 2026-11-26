@@ -1,7 +1,7 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Partly shipped (schemaVersion 1.9; 1.9 adds `--topdown` fields from #221 (`topdown-tma.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
+Partly shipped (schemaVersion 1.10; 1.10 adds `--topdown` fields from #221 (`topdown-tma.md`); 1.9 adds the `:u`/`:k` counter key suffixes, `counters_scope` values `kernel` and `perfratio.measurements.counters_requested_scope` from #218 (`counter-scope-modifiers.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
@@ -132,7 +132,10 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
   `unsupported_kernel`, `perf_paranoid`, `no_pmu`, `hybrid_cpu_unpinned`, `other`). New groups are MINOR.
   `counters` also has the value `"partial"` (some events could not be opened, listed in
   `counters_unavailable_events`) and the reasons `unsupported_platform`, `perf_paranoid`,
-  `no_pmu`, `other` in `counters_unavailable_reason`.
+  `no_pmu`, `other` in `counters_unavailable_reason`. `counters_requested_scope` (**new in 1.9**,
+  optional, string) is the scope that was asked for when it differs from `counters_scope`:
+  `"all"` next to `"user"` means kernel counting was denied (`perf_event_paranoid >= 2`).
+  `counters_unavailable_events` lists keys, so suffixed ones read `instructions:k`.
 - `interrupted` (bool, optional, only `true`): the run was stopped by Ctrl-C.
 - `optimize` (object or array of objects, optional, **new in 1.6**, #98): present with
   `--optimize <VAR> <MIN> <MAX>`. One object per search (an array when other parameters
@@ -187,7 +190,7 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `energy_per_instance_joules` (**new in 1.5**, #53) | J, `mean_energy_joules / N` | with `concurrency` and `mean_energy_joules` |
 | `counters` (**new in 1.8**, #49) | { event: (u64 \| null)[] } raw counts per run aligned with `times`; `null` = not readable; events `instructions`, `cycles`, `cache-references`, `cache-misses`, `branches`, `branch-misses` (open set) | when `measurements.counters` is `measured` or `partial` |
 | `counters_summary` (**new in 1.8**) | { event: { `mean`, `stddev`?, `median`, `min`, `max` } } | with `counters` |
-| `counters_scope` (**new in 1.8**) | `"all"` (user + kernel) or `"user"` (kernel counting was denied); the meaning of an event name never changes | with `counters` |
+| `counters_scope` (**new in 1.8**, `"kernel"` new in 1.9) | effective scope of unsuffixed event names: `"all"` (user + kernel), `"user"` (also when kernel counting was denied and `--scope` was implicit) or `"kernel"` (`--scope kernel`); `--scope split` reports `"all"`. A name with a `:u` / `:k` suffix (**new in 1.9**, #218) has that scope, e.g. `instructions:u`; the `split` total is `:u` + `:k` and is not stored | with `counters` |
 | `counters_multiplexed_runs` (**new in 1.8**) | count of runs with a scaled counter | optional (> 0) |
 | `topdown` (**new in 1.9**, #221) | { `level`: 1, `source`: `intel_perf_metrics` \| `amd_pipeline_util`, `retiring`, `bad_speculation`, `frontend_bound`, `backend_bound`, `smt_contention` (AMD only): (0..1 \| null)[] } per run, aligned with `times`; `null` = run not measured. Hypothesis about the stall class, not a diagnosis | with `--topdown` |
 | `topdown_summary` (**new in 1.9**) | { class: { `mean`, `stddev`?, `median`, `min`, `max` }, `bottleneck`: `backend_bound` \| `frontend_bound` \| `bad_speculation` \| `smt_contention` (open enum; retiring is never named) } | with `topdown` |

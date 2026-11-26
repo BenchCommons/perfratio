@@ -56,7 +56,11 @@ pub struct Measurements {
     pub counters_unavailable_reason: Option<&'static str>,
     /// Requested events that could not be opened (status `partial`)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub counters_unavailable_events: Option<Vec<&'static str>>,
+    pub counters_unavailable_events: Option<Vec<String>>,
+    /// Scope of unsuffixed counter keys that was asked for, only when the
+    /// kernel scope was denied and `counters_scope` fell back to `user`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub counters_requested_scope: Option<&'static str>,
     /// Top-down analysis (`--topdown`)
     pub topdown: MeasurementStatus,
     /// Why topdown is `unavailable`: `unsupported_platform`, `unsupported_cpu`,
@@ -91,6 +95,7 @@ impl Measurements {
             counters: NotRequested,
             counters_unavailable_reason: None,
             counters_unavailable_events: None,
+            counters_requested_scope: None,
             topdown: NotRequested,
             topdown_unavailable_reason: None,
         }
@@ -117,11 +122,15 @@ impl Measurements {
         let Some(config) = config else {
             return self;
         };
+        if config.requested_scope != config.scope {
+            self.counters_requested_scope = Some(config.requested_scope.as_str());
+        }
         match &config.availability {
             Availability::Measured => self.counters = MeasurementStatus::Measured,
             Availability::Partial(events) => {
                 self.counters = MeasurementStatus::Partial;
-                self.counters_unavailable_events = Some(events.iter().map(|k| k.name()).collect());
+                self.counters_unavailable_events =
+                    Some(events.iter().map(|s| s.key(config.scope)).collect());
             }
             Availability::Unavailable(reason) => {
                 self.counters = MeasurementStatus::Unavailable;
