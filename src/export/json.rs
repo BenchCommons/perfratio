@@ -24,7 +24,7 @@ pub struct PrimaryMetricStats {
 }
 
 /// Version of the JSON output contract (`docs/specs/output-schema-contract.md`).
-pub const SCHEMA_VERSION: &str = "1.26";
+pub const SCHEMA_VERSION: &str = "1.27";
 
 #[derive(Serialize, Debug)]
 struct PerfratioSummary<'a> {
@@ -71,7 +71,7 @@ struct ResultEntry<'a> {
     /// p-value of the bootstrap Welch test against the reference
     #[serde(skip_serializing_if = "Option::is_none")]
     p_value: Option<f64>,
-    /// `p_value` after `--correction` (new in 1.26, #321); `significance`
+    /// `p_value` after `--correction` (new in 1.27, #321); `significance`
     /// is decided on this value. Omitted without a correction.
     #[serde(skip_serializing_if = "Option::is_none")]
     p_value_adjusted: Option<f64>,
@@ -96,7 +96,7 @@ fn with_metrics(
     value
 }
 
-/// `perfratio.statistics.correction` (new in 1.26, #321), only with `--correction`.
+/// `perfratio.statistics.correction` (new in 1.27, #321), only with `--correction`.
 fn add_correction(
     perfratio: &mut serde_json::Value,
     settings: &crate::stats::settings::StatSettings,
