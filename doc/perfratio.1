@@ -196,6 +196,8 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR CMD ]
 .RB [ \-\-target\-precision
 .IR PCT ]
+.RB [ \-\-target\-precision\-method
+.IR METHOD ]
 .RB [ \-\-max\-benchmarking\-time
 .IR SECONDS ]
 .RB [ \-\-duration
@@ -520,6 +522,10 @@ Measure CMD first (with the same warmup and number of runs) and subtract its mea
 \fB\-\-target\-precision\fR \fIPCT\fP
 .IP
 Instead of a fixed number of runs, keep running each command until the 95% confidence interval of its mean is at most PCT of the mean (e.g. 1%), within \fB\-\-min\-runs\fR / \fB\-\-max\-runs\fR and \fB\-\-max\-benchmarking\-time\fR. Low-noise commands then finish early and noisy ones get more runs.
+.HP
+\fB\-\-target\-precision\-method\fR \fIMETHOD\fP
+.IP
+How \fB\-\-target\-precision\fR decides that the interval is narrow enough: \fBfixed\fR (default) re-checks the Student-t interval of the mean after every run, which stops too early more often than the confidence level says; \fBsequential\fR uses an anytime-valid confidence sequence of the mean, valid however the run count was chosen, at the cost of about 2.5x the runs. Assumes independent runs with finite variance. Not with \fB\-\-subtract\fR or an \fB\-\-estimator\fR other than the mean.
 .HP
 \fB\-\-max\-benchmarking\-time\fR \fISECONDS\fP
 .IP

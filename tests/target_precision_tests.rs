@@ -176,3 +176,81 @@ mod unix {
             .stdout(predicate::str::contains("11 runs (±").count(2));
     }
 }
+
+#[test]
+fn the_json_export_names_the_stopping_rule() {
+    let fixed = &result(&["--debug-mode", "--target-precision=1%", "sleep 0.1"])["precision"];
+    assert_eq!(fixed["stopping_rule"], "fixed_ci");
+    assert_eq!(fixed["achieved_half_width"], 0.0);
+
+    let sequential = &result(&[
+        "--debug-mode",
+        "--target-precision=1%",
+        "--target-precision-method=sequential",
+        "sleep 0.1",
+    ])["precision"];
+    assert_eq!(sequential["stopping_rule"], "confidence_sequence");
+    assert_eq!(sequential["achieved_half_width"], 0.0);
+    assert_eq!(sequential["met"], true);
+}
+
+#[test]
+fn fixed_is_the_default_method() {
+    let explicit = run_count(&[
+        "--debug-mode",
+        "--target-precision=1%",
+        "--target-precision-method=fixed",
+        "sleep 0.1",
+    ]);
+    assert_eq!(
+        explicit,
+        run_count(&["--debug-mode", "--target-precision=1%", "sleep 0.1"])
+    );
+}
+
+#[test]
+fn the_sequential_method_has_requirements() {
+    perfratio()
+        .args([
+            "--debug-mode",
+            "--target-precision-method=sequential",
+            "sleep 0.1",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--target-precision"));
+    for extra in [["--estimator", "median"], ["--subtract", "sleep 0.01"]] {
+        perfratio()
+            .args([
+                "--debug-mode",
+                "--target-precision=5%",
+                "--target-precision-method=sequential",
+            ])
+            .args(extra)
+            .arg("sleep 0.1")
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("sequential"));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn the_sequential_method_needs_more_runs_on_noisy_commands() {
+    // Random 10-50 ms sleeps: the confidence sequence is wider than the fixed interval
+    let noisy = "sleep 0.0$((RANDOM % 4 + 1))";
+    let shell = ["--shell=bash", "--max-runs=400", "--min-runs=5"];
+    let fixed = run_count(&[&shell[..], &["--target-precision=15%", noisy]].concat());
+    let sequential = run_count(
+        &[
+            &shell[..],
+            &[
+                "--target-precision=15%",
+                "--target-precision-method=sequential",
+                noisy,
+            ],
+        ]
+        .concat(),
+    );
+    assert!(sequential > fixed, "{sequential} vs {fixed}");
+}

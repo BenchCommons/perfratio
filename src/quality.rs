@@ -806,6 +806,8 @@ mod tests {
             reached: Some(0.004),
             confidence: 0.95,
             met: true,
+            stopping_rule: None,
+            achieved_half_width: None,
         });
         let report = QualityReport::assess(&result, &ctx);
         assert_eq!(
@@ -817,6 +819,8 @@ mod tests {
             reached: Some(0.03),
             confidence: 0.95,
             met: false,
+            stopping_rule: None,
+            achieved_half_width: None,
         });
         let report = QualityReport::assess(&result, &ctx);
         assert_eq!(
