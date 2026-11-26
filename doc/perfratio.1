@@ -198,6 +198,14 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .RB [ \-\-export\-html
 .IR FILE ]
 .RB [ \-\-delta\-table ]
+.RB [ \-\-pareto
+.IR METRICS ]
+.RB [ \-\-constraint
+.IR EXPR ]
+.RB [ \-\-objective
+.IR DIRECTION:METRIC ]
+.RB [ \-\-noise\-threshold
+.IR PERCENT ]
 .RB [ \-\-show\-output\-on\-failure ]
 .RB [ \-\-generate\-completions
 .IR SHELL ]
@@ -515,6 +523,22 @@ Print the stdout and stderr of the benchmark instead of suppressing it. This wil
 \fB\-\-delta\-table\fR
 .IP
 Print a table comparing every measured dimension (wall time, peak memory, energy, power, CPU time) of each command with the reference command: mean ± σ, the relative delta with its 95% confidence interval, and the p-value. Dimensions that were not measured are left out. With \fB\-\-export\-markdown\fR, the tables are appended to the exported file.
+.HP
+\fB\-\-pareto\fR \fIMETRICS\fR
+.IP
+Mark the commands on the Pareto frontier of the comma\-separated metrics, e.g. \fIwall,energy,memory\fR: the commands that no other command beats in one metric without being worse in another. A metric takes an optional statistic (\fIwall.p95\fR, \fImemory.max\fR). Commands without data for a metric are excluded, never counted as 0. Printed after the summary, and added to the JSON, Markdown and HTML exports.
+.HP
+\fB\-\-constraint\fR \fIEXPR\fR
+.IP
+Only commands that satisfy the constraint are candidates for \fB\-\-pareto\fR and \fB\-\-objective\fR. EXPR is \(aq<METRIC> <op> <VALUE>\(aq with <=, <, >= or >, e.g. \(aqmemory <= 256MiB\(aq or \(aqwall.p95 <= 20ms\(aq. Repeatable.
+.HP
+\fB\-\-objective\fR \fIDIRECTION:METRIC\fR
+.IP
+Pick the single best candidate under the constraints, e.g. \fIminimize:energy\fR. Without \fB\-\-pareto\fR the frontier is taken over this metric alone.
+.HP
+\fB\-\-noise\-threshold\fR \fIPERCENT\fR
+.IP
+With \fB\-\-pareto\fR: a command counts as dominated only if another is better by more than PERCENT of the value on some metric and not worse beyond it on any. Default: strict comparison.
 .HP
 \fB\-\-show\-output\-on\-failure\fR
 .IP

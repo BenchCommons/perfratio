@@ -1,6 +1,6 @@
 # Spec: Region timing protocol (`--region`) (#310)
 
-**Status:** Implemented (protocol 1, schemaVersion 1.16). Reference clients for C/C++, Rust and
+**Status:** Implemented (protocol 1, schemaVersion 1.17). Reference clients for C/C++, Rust and
 Python are specified in `region-sdks.md` (#311).
 
 ## Problem / Motivation
@@ -88,7 +88,7 @@ User and system CPU time, peak RSS, hardware counters, resource usage and energy
 process**. Only the metrics under `regions` and `--metric region:<name>` are region scoped. A
 later issue may add region-scoped collection.
 
-### JSON (schemaVersion 1.16, additive)
+### JSON (schemaVersion 1.17, additive)
 ```jsonc
 "perfratio": { "region_protocol": 1, "measurements": { "region": "measured" } },
 "results": [{

@@ -1,7 +1,7 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Shipped except the `.product` link (schemaVersion 1.16; 1.16 adds `results[].regions[]`, `perfratio.region_protocol`, `measurements.region` and `region:<name>` metrics from #310 (`region-protocol.md`); 1.15 adds `optimize.reevaluated` and fractional `optimize` values with `-D` (#98); 1.14 adds `--simd` fields from #211 (`simd-breakdown.md`); 1.13 adds the software events and the effective frequency fields of #220 and #222; 1.12 adds `--topdown` fields from #221 (`topdown-tma.md`); 1.11 adds `results[].energy_samples` (#240) and the JSON Schema file `docs/schema/perfratio-export.schema.json`, validated by `tests/json_schema_tests.rs`; 1.10 adds `results[].counters_coverage` (#219); 1.9 adds the `:u`/`:k` counter key suffixes, `counters_scope` values `kernel` and `perfratio.measurements.counters_requested_scope` from #218 (`counter-scope-modifiers.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
+Shipped except the `.product` link (schemaVersion 1.17; 1.17 adds `results[].regions[]`, `perfratio.region_protocol`, `measurements.region` and `region:<name>` metrics from #310 (`region-protocol.md`); 1.16 adds the optional `pareto` object from #326 (`pareto.md`); 1.15 adds `optimize.reevaluated` and fractional `optimize` values with `-D` (#98); 1.14 adds `--simd` fields from #211 (`simd-breakdown.md`); 1.13 adds the software events and the effective frequency fields of #220 and #222; 1.12 adds `--topdown` fields from #221 (`topdown-tma.md`); 1.11 adds `results[].energy_samples` (#240) and the JSON Schema file `docs/schema/perfratio-export.schema.json`, validated by `tests/json_schema_tests.rs`; 1.10 adds `results[].counters_coverage` (#219); 1.9 adds the `:u`/`:k` counter key suffixes, `counters_scope` values `kernel` and `perfratio.measurements.counters_requested_scope` from #218 (`counter-scope-modifiers.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
@@ -107,6 +107,7 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
   },
   "interrupted": true,                                        // optional
   "optimize": { "var": "j", "best": 24, "...": "..." },       // optional, new in 1.6 (#98)
+  "pareto": { "frontier": [0, 2], "...": "..." },             // optional, new in 1.16 (#326)
   "results": [ /* one entry per benchmarked command */ ]
 }
 ```
@@ -137,7 +138,7 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
   optional, string) is the scope that was asked for when it differs from `counters_scope`:
   `"all"` next to `"user"` means kernel counting was denied (`perf_event_paranoid >= 2`).
   `counters_unavailable_events` lists keys, so suffixed ones read `instructions:k`.
-  `region` (`--region`, new in 1.16) has the values `measured`, `not_requested`, and
+  `region` (`--region`, new in 1.17) has the values `measured`, `not_requested`, and
   `perfratio.region_protocol` (integer) is present when it is `measured`.
   `simd` (`--simd`, new in 1.14) has the values `measured`, `unavailable`, `not_requested`, and
   `simd_unavailable_reason` is one of `unsupported_platform`, `unsupported_cpu`,
@@ -157,6 +158,14 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
   and `reevaluated` are then JSON numbers that may be fractional (integers stay integers). Every evaluated value is
   also an ordinary `results[]` entry with `parameters: { "<var>": "<value>" }`, in
   evaluation order. See `optimize.md`.
+- `pareto` (object, optional, **new in 1.16**, #326): present with `--pareto`, `--constraint`
+  or `--objective`. Fields: `metrics` (`[{metric, direction}]`, direction `lower_is_better` or
+  `higher_is_better`), `frontier` (indices into `results`), `dominated` (`[{command_index, by}]`),
+  `excluded` (`[{command_index, reason, detail}]`, reason `metric_unavailable` or
+  `constraint_violated`); optional `constraints` (as written), `noise_threshold` (fraction),
+  `within_noise` (frontier members strictly dominated within the threshold) and `objective`
+  (`{direction, metric, best, value}`, `best` null if no candidate). A command without data
+  for a metric is excluded, never read as 0. See `pareto.md`.
 - `results` (array, guaranteed, may be empty).
 
 ### 3. `results[]` fields and units
@@ -212,7 +221,7 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `simd` (**new in 1.14**, #211) | { `unit` (`instructions` \| `uops`), `arch`, `scalar_fp`, `simd_128`, `simd_256`, `simd_512`?, `vectorization_ratio` }: per-run arrays aligned with `times`, `null` = not readable (or no FP arithmetic for the ratio); `simd_512` only on CPUs that have the bucket; Intel and AMD units are not comparable | when `measurements.simd` is `measured` |
 | `simd_summary` (**new in 1.14**) | { bucket or `vectorization_ratio`: { `mean`, `stddev`?, `median`, `min`, `max` } } | with `simd` |
 | `simd_scope` (**new in 1.14**) | `"all"`, `"user"` or `"kernel"`, like `counters_scope` | with `simd` |
-| `regions` (**new in 1.16**, #310) | [ { `name`, `status` (`measured` \| `region_missing`), `mean`, `stddev`?, `min`, `max`, `count_per_run`, `times`, `sdk`? } ]: seconds inside each `--region` per run, `null` where a run did not report the region; `times` of the result keep measuring the whole process | with `--region` |
+| `regions` (**new in 1.17**, #310) | [ { `name`, `status` (`measured` \| `region_missing`), `mean`, `stddev`?, `min`, `max`, `count_per_run`, `times`, `sdk`? } ]: seconds inside each `--region` per run, `null` where a run did not report the region; `times` of the result keep measuring the whole process | with `--region` |
 | `simd_scaling` (**new in 1.14**) | { bucket: { `scaled_runs`, `coverage` (lowest) } } for buckets scaled for multiplexing | optional |
 | `efficiency` { `ipc`, `cpi`, `cache_miss_rate`, `branch_miss_rate` } (#213) | ratios | optional (with the needed counters) |
 | `diagnostics`, `precision`, `baseline`, `shell`, `timed_out`, `timeout`, `runs_planned` | see `BenchmarkResult` | optional |

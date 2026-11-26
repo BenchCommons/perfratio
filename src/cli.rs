@@ -885,6 +885,52 @@ pub fn build_command() -> Command {
                 ),
         )
         .arg(
+            Arg::new("pareto")
+                .long("pareto")
+                .value_name("METRICS")
+                .help(
+                    "Mark the commands on the Pareto frontier of the comma-separated metrics, \
+                     e.g. 'wall,energy,memory': the commands that no other command beats in one \
+                     metric without being worse in another. A metric takes an optional statistic \
+                     ('wall.p95', 'memory.max'). Commands without data for a metric are excluded, \
+                     never counted as 0. Printed after the summary, and added to the JSON, \
+                     Markdown and HTML exports.",
+                ),
+        )
+        .arg(
+            Arg::new("constraint")
+                .long("constraint")
+                .value_name("EXPR")
+                .action(ArgAction::Append)
+                .help(
+                    "Only commands that satisfy the constraint are candidates for '--pareto' \
+                     and '--objective'. EXPR is '<METRIC> <op> <VALUE>' with <=, <, >= or >, \
+                     e.g. 'memory <= 256MiB' or 'wall.p95 <= 20ms'. Repeatable.",
+                ),
+        )
+        .arg(
+            Arg::new("objective")
+                .long("objective")
+                .value_name("DIRECTION:METRIC")
+                .help(
+                    "Pick the single best candidate under the constraints, e.g. \
+                     'minimize:energy' or 'maximize:custom:ops'. Without '--pareto' the \
+                     frontier is taken over this metric alone.",
+                ),
+        )
+        .arg(
+            Arg::new("noise-threshold")
+                .long("noise-threshold")
+                .value_name("PERCENT")
+                .requires("pareto")
+                .help(
+                    "With '--pareto': a command counts as dominated only if another is better \
+                     by more than PERCENT of the value on some metric and not worse beyond it \
+                     on any. Otherwise it stays on the frontier as 'not dominated (within \
+                     noise)'. Default: strict comparison.",
+                ),
+        )
+        .arg(
             Arg::new("show-output-on-failure")
                 .long("show-output-on-failure")
                 .action(ArgAction::SetTrue)

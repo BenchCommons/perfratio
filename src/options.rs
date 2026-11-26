@@ -345,6 +345,9 @@ pub struct Options {
     /// `--optimize`: search a parameter for the best value of the primary metric
     pub optimize: Option<crate::optimize::OptimizeSpec>,
 
+    /// `--pareto`, `--constraint`, `--objective`
+    pub pareto: Option<crate::pareto::ParetoConfig>,
+
     /// Measure energy consumption in Joules and display Performance per Watt
     pub measure_energy: bool,
 
@@ -453,6 +456,7 @@ impl Default for Options {
             command_input_policy: CommandInputPolicy::Null,
             metric: crate::metric::Metric::Wall,
             optimize: None,
+            pareto: None,
             measure_energy: false,
             energy_baseline: None,
             energy_domains: false,
@@ -728,6 +732,19 @@ impl Options {
             );
         }
         options.energy_domains = matches.get_flag("energy-domains");
+        options.pareto = crate::pareto::ParetoConfig::parse(
+            matches.get_one::<String>("pareto").map(String::as_str),
+            matches
+                .get_many::<String>("constraint")
+                .into_iter()
+                .flatten()
+                .map(String::as_str),
+            matches.get_one::<String>("objective").map(String::as_str),
+            matches
+                .get_one::<String>("noise-threshold")
+                .map(String::as_str),
+        )
+        .map_err(OptionsError::InvalidPareto)?;
         if let Some(val) = matches.get_one::<String>("concurrency") {
             if val.contains('{') {
                 // Resolved per parameter combination, once the commands are known

@@ -29,6 +29,7 @@ use self::runs::RunsExporter;
 use crate::benchmark::benchmark_result::BenchmarkResult;
 use crate::metric::Metric;
 use crate::options::SortOrder;
+use crate::pareto::{self, Analysis, ParetoConfig};
 use crate::util::units::Unit;
 
 use anyhow::{Context, Result};
@@ -80,6 +81,9 @@ trait Exporter {
 
     /// The `optimize` object (`--optimize`); only the JSON export has a place for it
     fn set_optimize(&self, _value: Option<&serde_json::Value>) {}
+
+    /// The Pareto analysis (`--pareto`) of the results about to be serialized
+    fn set_pareto(&self, _analysis: Option<(&ParetoConfig, &Analysis)>) {}
 }
 
 pub enum ExportTarget {
@@ -92,6 +96,8 @@ struct ExporterWithTarget {
     target: ExportTarget,
     /// `--delta-table`: append the delta tables (Markdown export only)
     append_delta_table: bool,
+    /// `--pareto`: append the frontier section (Markdown export only)
+    append_pareto: bool,
 }
 
 /// Handles the management of multiple file exporters.
@@ -104,6 +110,8 @@ pub struct ExportManager {
     metadata: ExportMetadata,
     /// `--delta-table`
     delta_table: bool,
+    /// `--pareto`, `--constraint`, `--objective`
+    pareto: Option<ParetoConfig>,
 }
 
 impl ExportManager {
@@ -160,6 +168,31 @@ impl ExportManager {
             metric,
             metadata,
             delta_table: matches.try_get_one::<bool>("delta-table").ok().flatten() == Some(&true),
+            pareto: ParetoConfig::parse(
+                matches
+                    .try_get_one::<String>("pareto")
+                    .ok()
+                    .flatten()
+                    .map(String::as_str),
+                matches
+                    .try_get_many::<String>("constraint")
+                    .ok()
+                    .flatten()
+                    .into_iter()
+                    .flatten()
+                    .map(String::as_str),
+                matches
+                    .try_get_one::<String>("objective")
+                    .ok()
+                    .flatten()
+                    .map(String::as_str),
+                matches
+                    .try_get_one::<String>("noise-threshold")
+                    .ok()
+                    .flatten()
+                    .map(String::as_str),
+            )
+            .map_err(|e| anyhow::anyhow!("Invalid Pareto option: {e}"))?,
         };
 
         if let Some(args) = matches.get_many::<String>("export") {
@@ -211,6 +244,7 @@ impl ExportManager {
         self.exporters.push(ExporterWithTarget {
             exporter,
             append_delta_table: self.delta_table && matches!(export_type, ExportType::Markdown),
+            append_pareto: self.pareto.is_some() && matches!(export_type, ExportType::Markdown),
             target: if filename == "-" {
                 ExportTarget::Stdout
             } else {
@@ -247,7 +281,13 @@ impl ExportManager {
         reference: Option<&BenchmarkResult>,
         intermediate: bool,
     ) -> Result<()> {
+        let analysis = self
+            .pareto
+            .as_ref()
+            .map(|config| (config, pareto::analyze(config, results)));
         for e in &self.exporters {
+            e.exporter
+                .set_pareto(analysis.as_ref().map(|(config, a)| (*config, a)));
             let content = || {
                 let mut bytes = e.exporter.serialize(
                     results,
@@ -258,6 +298,9 @@ impl ExportManager {
                 )?;
                 if e.append_delta_table {
                     bytes.extend(crate::delta_table::markdown(results, reference).into_bytes());
+                }
+                if let (true, Some((config, a))) = (e.append_pareto, &analysis) {
+                    bytes.extend(pareto::markdown(config, a, results).into_bytes());
                 }
                 Ok::<_, anyhow::Error>(bytes)
             };

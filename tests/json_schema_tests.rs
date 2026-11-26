@@ -150,6 +150,17 @@ const CASES: &[(&str, &[&str])] = &[
         ],
     ),
     (
+        "pareto",
+        &[
+            "--runs=3",
+            "--pareto=wall,memory",
+            "--constraint=wall<=10s",
+            "--objective=minimize:wall",
+            "sleep 0.1",
+            "sleep 0.2",
+        ],
+    ),
+    (
         "metric memory",
         &["--runs=3", "--metric=memory", "sleep 0.1", "sleep 0.2"],
     ),

@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.16 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.17 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.16",
+      "const": "1.17",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -32,6 +32,9 @@
         }
       ],
       "description": "Present with --optimize: one object, or an array with one entry per search."
+    },
+    "pareto": {
+      "$ref": "#/$defs/pareto"
     },
     "results": {
       "type": "array",
@@ -169,7 +172,7 @@
         },
         "region": {
           "$ref": "#/$defs/status",
-          "description": "`--region` (1.16): `measured` when requested, otherwise `not_requested`. A run that did not report a region shows as null in `results[].regions[]`."
+          "description": "`--region` (1.17): `measured` when requested, otherwise `not_requested`. A run that did not report a region shows as null in `results[].regions[]`."
         }
       },
       "required": [
@@ -244,7 +247,7 @@
         "region_protocol": {
           "type": "integer",
           "minimum": 1,
-          "description": "Region protocol version perfratio speaks (1.16). Present only with --region or --metric region:<name>."
+          "description": "Region protocol version perfratio speaks (1.17). Present only with --region or --metric region:<name>."
         },
         "measurements": {
           "$ref": "#/$defs/measurements"
@@ -262,7 +265,7 @@
     "metric": {
       "type": "string",
       "pattern": "^(wall|cpu|user|system|energy|memory|instructions|cycles|custom:[A-Za-z0-9_]+|region:[A-Za-z0-9_]+)$",
-      "description": "Metric used for ranking. The built-in set is closed; `custom:<name>` is a pattern (unitless, lower is better); `region:<name>` ranks on the time inside an instrumented region (seconds, lower is better, 1.16)."
+      "description": "Metric used for ranking. The built-in set is closed; `custom:<name>` is a pattern (unitless, lower is better); `region:<name>` ranks on the time inside an instrumented region (seconds, lower is better, 1.17)."
     },
     "primaryMetric": {
       "type": "object",
@@ -1021,7 +1024,7 @@
           "items": {
             "$ref": "#/$defs/region"
           },
-          "description": "`--region` (1.16): time inside each instrumented region. `mean`, `times` and the other time fields keep measuring the whole process."
+          "description": "`--region` (1.17): time inside each instrumented region. `mean`, `times` and the other time fields keep measuring the whole process."
         },
         "simd": {
           "type": "object",
@@ -1296,6 +1299,149 @@
         "evaluated"
       ],
       "description": "Result of one --optimize search."
+    },
+    "pareto": {
+      "type": "object",
+      "properties": {
+        "metrics": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "metric": {
+                "type": "string",
+                "description": "Metric with optional statistic, e.g. wall or wall.p95."
+              },
+              "direction": {
+                "enum": [
+                  "lower_is_better",
+                  "higher_is_better"
+                ]
+              }
+            },
+            "required": [
+              "metric",
+              "direction"
+            ]
+          }
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Constraints as written."
+        },
+        "noise_threshold": {
+          "type": "number",
+          "description": "Relative threshold of --noise-threshold (0.05 = 5%); absent for strict comparison."
+        },
+        "frontier": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Index into results."
+          }
+        },
+        "dominated": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "command_index": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Index into results."
+              },
+              "by": {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Index into results."
+                }
+              }
+            },
+            "required": [
+              "command_index",
+              "by"
+            ]
+          }
+        },
+        "within_noise": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Index into results."
+          },
+          "description": "Frontier members strictly dominated within the noise threshold."
+        },
+        "excluded": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "command_index": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Index into results."
+              },
+              "reason": {
+                "enum": [
+                  "metric_unavailable",
+                  "constraint_violated"
+                ]
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "command_index",
+              "reason",
+              "detail"
+            ]
+          }
+        },
+        "objective": {
+          "type": "object",
+          "properties": {
+            "direction": {
+              "enum": [
+                "lower_is_better",
+                "higher_is_better"
+              ]
+            },
+            "metric": {
+              "type": "string"
+            },
+            "best": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "value": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "direction",
+            "metric",
+            "best"
+          ]
+        }
+      },
+      "required": [
+        "metrics",
+        "frontier",
+        "dominated",
+        "excluded"
+      ],
+      "description": "Result of --pareto (1.16, #326)."
     }
   }
 }

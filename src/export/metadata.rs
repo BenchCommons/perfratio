@@ -20,7 +20,7 @@ pub struct ExportMetadata {
     /// Omitted unless `--energy` is given and a backend is usable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub energy_backend: Option<&'static str>,
-    /// Region protocol version perfratio speaks (new in 1.16). Omitted unless
+    /// Region protocol version perfratio speaks (new in 1.17). Omitted unless
     /// `--region` or `--metric region:<name>` is given.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub region_protocol: Option<u32>,
@@ -78,7 +78,7 @@ pub struct Measurements {
     /// `perf_paranoid`, `no_pmu`, `hybrid_cpu_unpinned` or `other` (open enum)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub simd_unavailable_reason: Option<&'static str>,
-    /// `--region` instrumented region timing (new in 1.16): `measured` when
+    /// `--region` instrumented region timing (new in 1.17): `measured` when
     /// requested (a run that did not report a region shows as `null` in
     /// `results[].regions[]`), otherwise `not_requested`
     pub region: MeasurementStatus,
