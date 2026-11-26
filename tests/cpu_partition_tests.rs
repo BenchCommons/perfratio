@@ -214,7 +214,7 @@ fn workers_run_on_their_own_cpus_and_never_on_reserved_ones() {
     let json_path = dir.path().join("out.json");
     // iteration 0 is the sequential initial measurement and is not pinned
     let command = format!(
-        "echo $PERFRATIO_ITERATION $PERFRATIO_WORKER \
+        "echo $PERFRATIO_ITERATION $PERFRATIO_WORKER_ID \
          $(grep Cpus_allowed_list /proc/self/status) >> {}; sleep 0.05",
         log.display()
     );
