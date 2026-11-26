@@ -81,6 +81,8 @@ trait Exporter {
 
     /// The `optimize` object (`--optimize`); only the JSON export has a place for it
     fn set_optimize(&self, _value: Option<&serde_json::Value>) {}
+    /// The `perfratio.schedule` object (schedule and run order); only the JSON export has it
+    fn set_schedule(&self, _value: Option<&serde_json::Value>) {}
 
     /// The Pareto analysis (`--pareto`) of the results about to be serialized
     fn set_pareto(&self, _analysis: Option<(&ParetoConfig, &Analysis)>) {}
@@ -274,6 +276,13 @@ impl ExportManager {
     pub fn set_optimize(&self, value: Option<serde_json::Value>) {
         for e in &self.exporters {
             e.exporter.set_optimize(value.as_ref());
+        }
+    }
+
+    /// Hand `perfratio.schedule` (mode, seed, realized order) to the exporters that include it.
+    pub fn set_schedule(&self, value: Option<serde_json::Value>) {
+        for e in &self.exporters {
+            e.exporter.set_schedule(value.as_ref());
         }
     }
 

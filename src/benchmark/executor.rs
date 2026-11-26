@@ -142,6 +142,10 @@ fn run_command_and_measure_common(
         }
     };
 
+    // `--pin-workers`: a worker's CPUs replace `--affinity`
+    let worker_cpus = super::pool::current_cpus();
+    let affinity = worker_cpus.as_deref().or(affinity);
+
     let stdin = command_input_policy.get_stdin()?;
     let (stdout, stderr) = match until {
         Some(u) if !u.match_stderr => (std::process::Stdio::piped(), std::process::Stdio::null()),

@@ -266,6 +266,39 @@
             "contended": {
               "const": true,
               "description": "The runs disturbed each other; always true."
+            },
+            "cpu_partition": {
+              "type": "object",
+              "properties": {
+                "workers": {
+                  "type": "array",
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "minItems": 1
+                  },
+                  "description": "CPUs of worker i; disjoint."
+                },
+                "reserved": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "description": "CPUs kept for perfratio's own threads; no worker uses them. Omitted when none."
+                },
+                "shared_siblings": {
+                  "const": true,
+                  "description": "More workers than physical cores: some workers share a core with another worker. Omitted when false."
+                }
+              },
+              "required": [
+                "workers"
+              ],
+              "description": "Only when the workers were pinned (--pin-workers=auto, the default with --jobs > 1 on Linux and Windows). New in 1.24, #307."
             }
           },
           "required": [
@@ -569,14 +602,6 @@
         },
         "met": {
           "type": "boolean"
-        },
-        "stopping_rule": {
-          "type": "string",
-          "description": "New in 1.24 (#322): fixed_ci or confidence_sequence (--target-precision-method). Open enum."
-        },
-        "achieved_half_width": {
-          "type": "number",
-          "description": "New in 1.24 (#322): half-width of the stopping rule's interval, relative to the mean; the same value as reached."
         }
       },
       "required": [

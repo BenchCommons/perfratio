@@ -1,5 +1,6 @@
 use super::benchmark_result::BenchmarkResult;
 use super::executor::{Executor, MockExecutor, RawExecutor, ShellExecutor};
+use super::order::{self, Stream};
 use super::{relative_speed, Benchmark, BenchmarkRunner};
 use colored::Colorize as _;
 use std::cmp::Ordering;
@@ -31,6 +32,19 @@ pub struct Scheduler<'a> {
     imported_count: usize,
     /// One report per `--optimize` search
     optimize_reports: Vec<OptimizeReport>,
+}
+
+/// `perfratio.schedule` (new in 1.23, #324): the schedule, the seed of a
+/// randomized order and, for interleaved schedules, the realized run order.
+fn schedule_json(mode: ScheduleMode, seed: u64, order: Option<&[usize]>) -> serde_json::Value {
+    let mut value = serde_json::json!({ "mode": mode.name() });
+    if mode == ScheduleMode::Randomized {
+        value["seed"] = seed.into();
+    }
+    if let Some(order) = order {
+        value["order"] = serde_json::json!(order);
+    }
+    value
 }
 
 /// The `optimize` JSON value: an object for one search, an array for several.
@@ -155,9 +169,12 @@ impl<'a> Scheduler<'a> {
             .collect::<Result<_>>()?;
         let commands_to_run: Vec<(usize, &Command)> = resolved.iter().enumerate().collect();
 
-        if (self.options.schedule == ScheduleMode::RoundRobin && commands_to_run.len() > 1)
-            || self.options.schedule.pool_policy().is_some()
-        {
+        let mode = self.options.schedule;
+        let order_seed = self.options.stat_settings.seed;
+        self.export_manager
+            .set_schedule(Some(schedule_json(mode, order_seed, None)));
+
+        if (mode.interleaves() && commands_to_run.len() > 1) || mode.pool_policy().is_some() {
             let mut runners: Vec<BenchmarkRunner> = commands_to_run
                 .iter()
                 .map(|&(number, cmd)| {
@@ -172,6 +189,14 @@ impl<'a> Scheduler<'a> {
                     runner
                 })
                 .collect();
+
+            let runner_count = runners.len();
+            let order_of = |stream: Stream, round: u64| {
+                order::round_order(mode, order_seed, stream, round, runner_count)
+            };
+            // Realized order of the measured runs of an interleaved schedule:
+            // `results[]` index per run
+            let mut realized: Vec<usize> = Vec::new();
 
             // 1. Setup phase for all commands
             for runner in &runners {
@@ -227,7 +252,8 @@ impl<'a> Scheduler<'a> {
                 };
 
                 'warmup: for w in 0..self.options.warmup_count {
-                    for runner in &mut runners {
+                    for index in order_of(Stream::Warmup, w) {
+                        let runner = &mut runners[index];
                         if crate::util::interrupt::interrupted() {
                             break 'warmup;
                         }
@@ -268,12 +294,16 @@ impl<'a> Scheduler<'a> {
                 None
             };
 
-            for runner in &mut runners {
+            for index in order_of(Stream::Measure, 0) {
+                let runner = &mut runners[index];
                 if crate::util::interrupt::interrupted() {
                     break;
                 }
                 if runner.timed_out {
                     continue;
+                }
+                if mode.pool_policy().is_none() {
+                    realized.push(runner.display_number);
                 }
                 match runner.run_initial_measurement() {
                     Ok(()) => {
@@ -349,6 +379,7 @@ impl<'a> Scheduler<'a> {
                     self.options.jobs,
                     adaptive,
                     budget,
+                    self.options.cpu_partition.as_ref(),
                     |runner| {
                         let Some(bar) = progress_bar.as_ref() else {
                             return;
@@ -390,7 +421,8 @@ impl<'a> Scheduler<'a> {
                     } else if i >= max_count {
                         break;
                     }
-                    for runner in &mut runners {
+                    for index in order_of(Stream::Measure, i) {
+                        let runner = &mut runners[index];
                         if crate::util::interrupt::interrupted() {
                             break 'timing;
                         }
@@ -421,6 +453,7 @@ impl<'a> Scheduler<'a> {
                                 }
                             }
 
+                            realized.push(runner.display_number);
                             match runner.run_timed_iteration(i) {
                                 Ok(()) => {
                                     if let Some(bar) = progress_bar.as_ref() {
@@ -444,6 +477,13 @@ impl<'a> Scheduler<'a> {
             if let Some(bar) = progress_bar.as_ref() {
                 bar.finish_and_clear();
             }
+
+            // The pool has no round structure: its order is not recorded
+            self.export_manager.set_schedule(Some(schedule_json(
+                mode,
+                order_seed,
+                mode.pool_policy().is_none().then_some(&realized[..]),
+            )));
 
             // 5. Cleanup phase
             for runner in &runners {

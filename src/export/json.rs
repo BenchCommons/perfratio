@@ -24,7 +24,7 @@ pub struct PrimaryMetricStats {
 }
 
 /// Version of the JSON output contract (`docs/specs/output-schema-contract.md`).
-pub const SCHEMA_VERSION: &str = "1.24";
+pub const SCHEMA_VERSION: &str = "1.26";
 
 #[derive(Serialize, Debug)]
 struct PerfratioSummary<'a> {
@@ -74,13 +74,20 @@ struct ResultEntry<'a> {
 }
 
 /// The `perfratio` object: the run metadata plus the descriptor of every metric (#317).
-fn with_metrics(metadata: &ExportMetadata, results: &[BenchmarkResult]) -> serde_json::Value {
+fn with_metrics(
+    metadata: &ExportMetadata,
+    results: &[BenchmarkResult],
+    schedule: Option<serde_json::Value>,
+) -> serde_json::Value {
     let mut value = serde_json::to_value(metadata).unwrap_or(serde_json::Value::Null);
     if let (Some(object), Ok(metrics)) = (
         value.as_object_mut(),
         serde_json::to_value(crate::metric_registry::descriptors(results, metadata)),
     ) {
         object.insert("metrics".into(), metrics);
+    }
+    if let (Some(object), Some(schedule)) = (value.as_object_mut(), schedule) {
+        object.insert("schedule".into(), schedule);
     }
     value
 }
@@ -92,6 +99,8 @@ pub struct JsonExporter {
     pub optimize: std::sync::Mutex<Option<serde_json::Value>>,
     /// Pareto analysis of the results being serialized
     pub pareto: std::sync::Mutex<Option<Analysis>>,
+    /// `perfratio.schedule` (new in 1.23, #324)
+    pub schedule: std::sync::Mutex<Option<serde_json::Value>>,
 }
 
 impl Exporter for JsonExporter {
@@ -116,7 +125,15 @@ impl Exporter for JsonExporter {
         };
         let reference_result = reference
             .or_else(|| (!results.is_empty()).then(|| relative_speed::fastest_of(results)));
-        let perfratio = self.metadata.as_ref().map(|m| with_metrics(m, results));
+        let schedule = self
+            .schedule
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        let perfratio = self
+            .metadata
+            .as_ref()
+            .map(|m| with_metrics(m, results, schedule));
         let results = results
             .iter()
             .enumerate()
@@ -180,6 +197,10 @@ impl Exporter for JsonExporter {
 
     fn set_optimize(&self, value: Option<&serde_json::Value>) {
         *self.optimize.lock().unwrap_or_else(|e| e.into_inner()) = value.cloned();
+    }
+
+    fn set_schedule(&self, value: Option<&serde_json::Value>) {
+        *self.schedule.lock().unwrap_or_else(|e| e.into_inner()) = value.cloned();
     }
 
     fn set_pareto(&self, analysis: Option<(&ParetoConfig, &Analysis)>) {
