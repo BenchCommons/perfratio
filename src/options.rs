@@ -179,6 +179,12 @@ pub enum ScheduleMode {
 
     /// `--jobs`: every command keeps the same number of runs
     Fair,
+
+    /// Interleaved, with an independent seeded shuffle of the command order in every round (#324)
+    Randomized,
+
+    /// Interleaved, with the order rotated every round (cyclic Latin square, #324)
+    Balanced,
 }
 
 impl ScheduleMode {
@@ -189,7 +195,10 @@ impl ScheduleMode {
             ScheduleMode::Saturate => Some(Policy::Saturate),
             ScheduleMode::Exclusive => Some(Policy::Exclusive),
             ScheduleMode::Fair => Some(Policy::Fair),
-            ScheduleMode::Grouped | ScheduleMode::RoundRobin => None,
+            ScheduleMode::Grouped
+            | ScheduleMode::RoundRobin
+            | ScheduleMode::Randomized
+            | ScheduleMode::Balanced => None,
         }
     }
 
@@ -205,6 +214,8 @@ impl ScheduleMode {
             ScheduleMode::Saturate => "saturate",
             ScheduleMode::Exclusive => "exclusive",
             ScheduleMode::Fair => "fair",
+            ScheduleMode::Randomized => "randomized",
+            ScheduleMode::Balanced => "balanced",
         }
     }
 }
@@ -1139,6 +1150,8 @@ impl Options {
                 Some("saturate") => Some(ScheduleMode::Saturate),
                 Some("exclusive") => Some(ScheduleMode::Exclusive),
                 Some("fair") => Some(ScheduleMode::Fair),
+                Some("randomized") => Some(ScheduleMode::Randomized),
+                Some("balanced") => Some(ScheduleMode::Balanced),
                 _ => None,
             }
         };
