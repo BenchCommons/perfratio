@@ -63,6 +63,8 @@ pub mod delta_table;
 #[doc(hidden)]
 pub mod energy;
 #[doc(hidden)]
+pub mod environment;
+#[doc(hidden)]
 pub mod error;
 #[doc(hidden)]
 pub mod export;

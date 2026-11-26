@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.18 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.19 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.18",
+      "const": "1.19",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -241,6 +241,134 @@
         },
         "measurements": {
           "$ref": "#/$defs/measurements"
+        },
+        "environment": {
+          "type": "object",
+          "properties": {
+            "os_family": {
+              "type": "string",
+              "description": "std::env::consts::OS: linux, macos, windows, ..."
+            },
+            "arch": {
+              "type": "string"
+            },
+            "kernel": {
+              "type": "string",
+              "description": "Kernel / OS release."
+            },
+            "kernel_major": {
+              "type": "string",
+              "description": "First component of the release."
+            },
+            "cpu_model": {
+              "type": "string"
+            },
+            "logical_cores": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "physical_cores": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "smt": {
+              "type": "boolean",
+              "description": "Simultaneous multithreading is on."
+            },
+            "governor": {
+              "type": "string",
+              "description": "cpufreq governor; 'mixed' when the CPUs differ."
+            },
+            "turbo": {
+              "type": "boolean"
+            },
+            "numa_nodes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "memory_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "container": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "description": "docker, podman, kubernetes or lxc"
+                }
+              },
+              "description": "Present when a container was detected."
+            },
+            "perfratio": {
+              "type": "object",
+              "properties": {
+                "version": {
+                  "type": "string"
+                },
+                "profile": {
+                  "enum": [
+                    "release",
+                    "debug"
+                  ]
+                },
+                "features": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "version",
+                "profile",
+                "features"
+              ]
+            },
+            "settings": {
+              "type": "object",
+              "properties": {
+                "affinity": {
+                  "type": "string"
+                },
+                "priority": {
+                  "type": "string"
+                },
+                "concurrency": {
+                  "type": "string"
+                }
+              }
+            },
+            "backends": {
+              "type": "object",
+              "properties": {
+                "energy": {
+                  "type": "string"
+                },
+                "counters": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "required": [
+            "os_family",
+            "arch",
+            "perfratio"
+          ],
+          "description": "Hardware and software the benchmarks ran on (new in 1.19, #314). A field the platform cannot report is omitted. No host name, user name, environment variables or working directory."
+        },
+        "environment_fingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "Hash over cpu_model, arch, os_family, kernel_major, governor, smt and container (docs/specs/environment-fingerprint.md)."
+        },
+        "meta": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "From --meta KEY=VALUE and --meta git (git_commit, git_dirty)."
         }
       },
       "required": [
@@ -248,7 +376,9 @@
         "command_line",
         "started_at",
         "system",
-        "measurements"
+        "measurements",
+        "environment",
+        "environment_fingerprint"
       ],
       "description": "Run metadata."
     },

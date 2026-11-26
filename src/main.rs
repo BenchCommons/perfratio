@@ -29,6 +29,40 @@ fn parse_shell(name: &str) -> Result<Shell> {
     }
 }
 
+/// `--compare` and `--import-json`: warn when a file was measured in another
+/// environment (`--require-compatible-env`: fail, also for a file without one)
+fn check_environments(
+    cli_arguments: &clap::ArgMatches,
+    current: &perfratio::environment::Environment,
+    baseline: Option<&str>,
+) -> Result<()> {
+    let strict = cli_arguments.get_flag("require-compatible-env");
+    let imports = cli_arguments
+        .get_many::<String>("import-json")
+        .into_iter()
+        .flatten()
+        .map(|file| (file.as_str(), format!("The imported file '{file}'")));
+    let files = baseline
+        .into_iter()
+        .map(|file| (file, format!("The baseline '{file}'")))
+        .chain(imports);
+    for (path, what) in files {
+        let message = match perfratio::import::import_environment(path) {
+            Some(environment) => {
+                perfratio::environment::mismatch_message(&what, &environment, current)
+            }
+            None if strict => Some(format!("{what} records no environment")),
+            None => None,
+        };
+        let Some(message) = message else { continue };
+        if strict {
+            anyhow::bail!("{message} ('--require-compatible-env')");
+        }
+        eprintln!("{} {message}", output::colors::yellow("Warning:"));
+    }
+    Ok(())
+}
+
 fn run() -> Result<()> {
     perfratio::util::interrupt::install()?;
 
@@ -76,6 +110,12 @@ fn run() -> Result<()> {
         .get_one::<String>("fail-if-regressed")
         .map(|value| compare::parse_threshold(value).map_err(anyhow::Error::msg))
         .transpose()?;
+
+    check_environments(
+        &cli_arguments,
+        export_manager.environment(),
+        baseline.as_ref().map(|(path, _)| *path),
+    )?;
 
     let mut imported_results = vec![];
     if let Some(files) = cli_arguments.get_many::<String>("import-json") {

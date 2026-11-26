@@ -184,7 +184,7 @@ alone does not fail the gate. When the command did not get slower, the same gate
 `-2.3%  p = 0.401  ~` and exits 0. `--export-diff-markdown <FILE>` writes the table for a pull
 request comment. A GitHub Actions example is in [doc/ci.md](doc/ci.md).
 
-Every benchmark also gets a measurement quality report (`results[].quality` in the JSON, a summary in the terminal when a check warns or fails): sample sufficiency, CI precision, outliers, trend, clusters, counter and energy coverage, workload validation. `--fail-on-quality with_caveats` exits with code 5 if a measurement is `unreliable`, next to `--fail-if-regressed` ([spec](docs/specs/measurement-quality.md)).
+Every benchmark also gets a measurement quality report (`results[].quality` in the JSON, a summary in the terminal when a check warns or fails): sample sufficiency, CI precision, outliers, trend, clusters, counter and energy coverage, workload validation. `--fail-on-quality with_caveats` exits with code 5 if a measurement is `unreliable`, next to `--fail-if-regressed` ([spec](docs/specs/measurement-quality.md)). Exports carry an environment block and a fingerprint (`perfratio.environment_fingerprint`); `--compare` and `--import-json` warn when the hardware class differs, `--meta git` records the commit ([spec](docs/specs/environment-fingerprint.md)).
 
 ## JSON export and the `schemaVersion` contract
 

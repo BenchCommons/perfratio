@@ -146,14 +146,14 @@ pub fn all_passed(checks: &[Check]) -> bool {
 // ---------------------------------------------------------------------------
 // Linux (sysfs / procfs below `root`)
 
-fn read(root: &Path, path: &str) -> Option<String> {
+pub(crate) fn read(root: &Path, path: &str) -> Option<String> {
     std::fs::read_to_string(root.join(path.trim_start_matches('/')))
         .ok()
         .map(|s| s.trim().to_string())
 }
 
 /// Entries of a directory below `root` whose name starts with `prefix`, sorted.
-fn entries(root: &Path, dir: &str, prefix: &str) -> Vec<PathBuf> {
+pub(crate) fn entries(root: &Path, dir: &str, prefix: &str) -> Vec<PathBuf> {
     let mut paths: Vec<PathBuf> = std::fs::read_dir(root.join(dir.trim_start_matches('/')))
         .into_iter()
         .flatten()

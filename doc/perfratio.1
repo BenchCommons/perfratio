@@ -121,6 +121,9 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR MODE ]
 .RB [ \-\-fail\-on\-quality
 .IR GRADE ]
+.RB [ \-\-meta
+.IR KEY=VALUE|git ]
+.RB [ \-\-require\-compatible\-env ]
 .RB [ \-\-expect\-output\-sha256
 .IR HEX ]
 .RB [ \-\-validate
@@ -405,6 +408,14 @@ Print the measurement quality report of each benchmark: off, summary (the grade 
 \fB\-\-fail\-on\-quality\fR \fIGRADE\fP
 .IP
 Exit with code 5 if the quality grade of any benchmark is worse than GRADE (comparable, with_caveats or unreliable, best first). A CI gate on how trustworthy a measurement is; \fB\-\-fail\-if\-regressed\fR gates on the size of a change.
+.HP
+\fB\-\-meta\fR \fIKEY=VALUE|git\fP
+.IP
+Record provenance of the benchmarked program under perfratio.meta in the JSON export (repeatable). KEY=VALUE is a string; git adds git_commit and git_dirty of the git repository in the current directory. The export contains no host name, user name, environment variables or working directory.
+.HP
+\fB\-\-require\-compatible\-env\fR
+.IP
+Fail instead of warning when the environment of a \fB\-\-compare\fR baseline or an \fB\-\-import\-json\fR file differs from this machine (CPU model, architecture, OS, kernel major version, governor, SMT, container), or when the file records no environment.
 .HP
 \fB\-\-expect\-output\-sha256\fR \fIHEX\fP
 .IP
