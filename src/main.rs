@@ -84,6 +84,7 @@ fn run() -> Result<()> {
     }
 
     let mut options = Options::from_cli_arguments(&cli_arguments)?;
+    perfratio::stats::settings::install(options.stat_settings.clone());
     if let Some(precision) = cli_arguments.get_one::<String>("precision") {
         util::units::set_precision(match precision.as_str() {
             "auto" => util::units::Precision::Auto,
@@ -120,6 +121,7 @@ fn run() -> Result<()> {
         options.metric,
         options.counters.as_ref(),
         options.topdown.as_ref(),
+        options.execution_info(),
     )?;
 
     // Load the baseline before benchmarking, so that a bad file fails fast
@@ -168,6 +170,9 @@ fn run() -> Result<()> {
     if let Some(mode) = cli_arguments.get_one::<String>("check-system") {
         let mut checks = system_check::run_checks();
         checks.extend(system_check::scheduler_check(options.counters.as_ref()));
+        checks.extend(system_check::worker_cpus_check(
+            options.cpu_partition.as_ref(),
+        ));
         let passed = system_check::all_passed(&checks);
         if options.output_style != options::OutputStyleOption::Disabled {
             perfratio::outln!("{}", system_check::report(&checks));
@@ -184,6 +189,7 @@ fn run() -> Result<()> {
     scheduler.add_imported_results(imported_results);
     scheduler.run_benchmarks()?;
     scheduler.print_relative_speed_comparison();
+    scheduler.print_below_floor_warning();
     scheduler.print_raw_ratios();
     if cli_arguments.get_flag("delta-table") {
         scheduler.print_delta_table();
@@ -232,6 +238,18 @@ fn run() -> Result<()> {
         }
     }
 
+    if options.below_floor == perfratio::calibration::BelowFloorAction::Fail {
+        let below = scheduler
+            .results()
+            .iter()
+            .filter_map(|r| r.quality.as_ref())
+            .filter(|q| q.below_resolution == Some(true))
+            .count();
+        if below > 0 && !perfratio::util::interrupt::interrupted() {
+            return Err(error::BelowFloor(below).into());
+        }
+    }
+
     if perfratio::util::interrupt::interrupted() {
         std::process::exit(130);
     }
@@ -253,6 +271,10 @@ fn main() {
             if e.is::<perfratio::error::QualityGateFailed>() {
                 eprintln!("{} {:#}", colors::red("Error:"), e);
                 std::process::exit(5);
+            }
+            if e.is::<perfratio::error::BelowFloor>() {
+                eprintln!("{} {:#}", colors::red("Error:"), e);
+                std::process::exit(6);
             }
             if e.is::<perfratio::error::SystemCheckFailed>() {
                 eprintln!("{} {:#}", colors::red("Error:"), e);

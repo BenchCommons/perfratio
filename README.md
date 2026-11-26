@@ -85,6 +85,7 @@ Common options:
 | `--optimize <VAR> <MIN> <MAX>` | Search a parameter for the value that minimizes `--metric` (golden-section search, assumes a unimodal metric; `--optimize-budget <N>` caps the evaluations; `-D <DELTA>` allows fractional values; the best candidates are re-run once and pooled, `--optimize-confirm <N>`; the HTML report marks the best value). |
 | `-e, --export <FILE>` | Export results. The format follows the file extension. |
 | `--deep-stats` | Bootstrapped confidence intervals and hypothesis tests. |
+| `--estimator <mean\|median\|pNN>`, `--confidence-level`, `--significance-level`, `--bootstrap-resamples`, `--seed` | Choose the central value behind ranking, ratios and tests (default `mean`), and the levels and bootstrap settings of intervals and tests (see `docs/specs/statistics-settings.md`). |
 
 > [!WARNING]
 > Values from `-P`, `-L` and `-F/--parameter-file` are inserted into the command **verbatim**,
@@ -100,6 +101,7 @@ how to reduce noise. The manual page is [doc/perfratio.1](doc/perfratio.1).
 `--resource-usage` adds context switches, page faults and block I/O per run. Windows reports
 page faults and I/O operation counts only; the other counters show as `n/a` ([spec](docs/specs/windows-resource-usage.md)).
 `--counters` (Linux) adds hardware counters (instructions, cycles, cache and branch misses), IPC and the effective CPU frequency per run, and with `--counters=default,sw` CPU migrations and context switches (a warning points to `--affinity` when migrations slow runs down); see `docs/specs/hardware-counters.md`, `docs/specs/software-events-migrations.md` and `docs/specs/effective-frequency.md`. `--scope user|kernel|all|split` and per-event `:u` / `:k` modifiers (`--counters=instructions:u,instructions:k`) choose the privilege level; see `docs/specs/counter-scope-modifiers.md`.
+`scripts/perf_parity.py` checks the counters against `perf stat` on bare-metal Linux ([spec](docs/specs/perf-parity-harness.md)).
 `--topdown` (Linux x86_64; Intel Ice Lake or later, AMD Zen 4 or later) adds Top-down level 1: the share of pipeline slots that retire work or are lost to bad speculation, frontend stalls or backend stalls. The largest stall class is a hypothesis about the bottleneck, not a diagnosis; see `docs/specs/topdown-tma.md`.
 `--simd` (Linux, Intel and AMD Zen 4/5) adds a floating-point breakdown (scalar, 128-, 256- and 512-bit) and a vectorization ratio per run; see `docs/specs/simd-breakdown.md`.
 
@@ -185,7 +187,7 @@ alone does not fail the gate. When the command did not get slower, the same gate
 `-2.3%  p = 0.401  ~` and exits 0. `--export-diff-markdown <FILE>` writes the table for a pull
 request comment. A GitHub Actions example is in [doc/ci.md](doc/ci.md).
 
-Every benchmark also gets a measurement quality report (`results[].quality` in the JSON, a summary in the terminal when a check warns or fails): sample sufficiency, CI precision, outliers, trend, clusters, counter and energy coverage, workload validation. `--fail-on-quality with_caveats` exits with code 5 if a measurement is `unreliable`, next to `--fail-if-regressed` ([spec](docs/specs/measurement-quality.md)). Exports carry an environment block and a fingerprint (`perfratio.environment_fingerprint`); `--compare` and `--import-json` warn when the hardware class differs, `--meta git` records the commit ([spec](docs/specs/environment-fingerprint.md)).
+Every benchmark also gets a measurement quality report (`results[].quality` in the JSON, a summary in the terminal when a check warns or fails): sample sufficiency, CI precision, outliers, trend, clusters, counter and energy coverage, workload validation. `--fail-on-quality with_caveats` exits with code 5 if a measurement is `unreliable`, next to `--fail-if-regressed` ([spec](docs/specs/measurement-quality.md)). Exports carry an environment block and a fingerprint (`perfratio.environment_fingerprint`); `--compare` and `--import-json` warn when the hardware class differs, `--meta git` records the commit ([spec](docs/specs/environment-fingerprint.md)). A command within the runner floor (measured at start with a trivial command, `--calibrate`) is flagged as below resolution, `--below-floor fail` exits with code 6 ([spec](docs/specs/measurement-floor.md)).
 
 ## JSON export and the `schemaVersion` contract
 
@@ -221,6 +223,7 @@ warmup effects differ a lot between runtimes. Use:
 | `--warmup auto` | Warms up each command until timings are stable (at most 100 runs), so JIT-compiled and interpreted languages are not penalized by a fixed count. |
 | `--first-run=separate` | Reports the cold first run on its own line (`first_run` in the JSON) and keeps it out of the statistics. |
 | `--output-metric NAME=REGEX` | Reads a number from the command's stdout, or stderr with `--output-metric-stderr` (first capture group of the last match). Have the program time its algorithm and print it, so startup is separated from algorithm time. |
+| `--region[=NAME]` | Times only the code the program brackets with the region SDK (`sdk/`), so start-up, JIT warm-up and shutdown stay out. Rank on it with `--metric region:NAME`. See [docs/specs/region-protocol.md](docs/specs/region-protocol.md). |
 | `--duration <DURATION>` | Samples each command until the summed run time reaches DURATION (at least 3 runs), for example `--duration 5s`. Conflicts with `--runs` and `--target-precision`. |
 | `--target-precision <PCT>` | Runs until the 95% confidence interval of the mean is within PCT of the mean, bounded by `--min-runs`, `--max-runs` and `--max-benchmarking-time`. Fast commands finish early. |
 
@@ -241,7 +244,7 @@ Benchmark 1: sh -c 'echo algo_ms=12.5; sleep 0.05'
 On this busy laptop `--warmup auto` hit its 100-run limit without the timings settling, and
 perfratio also printed a warning saying so. Other useful flags: `--affinity <CPUS>`,
 `--priority <POLICY>`, `--discard-outliers`, `--timeout <DURATION>`,
-`--concurrency <N>` (N simultaneous instances per run, `{param}` allowed for a scaling curve, see [docs/specs/concurrency.md](docs/specs/concurrency.md)).
+`--concurrency <N>` (N simultaneous instances per run, `{param}` allowed for a scaling curve, see [docs/specs/concurrency.md](docs/specs/concurrency.md)), `--jobs <N|auto>` (N independent runs at the same time to collect samples faster, results marked as contended, see [docs/specs/worker-pool.md](docs/specs/worker-pool.md); `--pin-workers` / `--reserve-cpus` give each worker its own CPUs, see [docs/specs/worker-cpu-partition.md](docs/specs/worker-cpu-partition.md)).
 
 Every run has a unique `PERFRATIO_RUN_ID` (and `PERFRATIO_WORKER_ID` with `--concurrency`), also
 visible to `--prepare`/`--conclude`, so parallel runs can use `in.$PERFRATIO_RUN_ID.txt` without

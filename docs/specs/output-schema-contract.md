@@ -1,7 +1,7 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Shipped except the `.product` link (schemaVersion 1.22; 1.22 adds `perfratio.environment`, `perfratio.environment_fingerprint` and `perfratio.meta` from #314 (`environment-fingerprint.md`); 1.20 adds `perfratio.metrics[]`, the metric descriptors of #317 (`metric-descriptors.md`); 1.19 adds `results[].run_ids`, `instance_run_ids`, `leftover_processes` and `energy_scope` from #308 and #309 (`run-identity.md`, `process-tree.md`) and stops writing `energy_per_instance_joules`; 1.18 adds `results[].quality` from #318 (`measurement-quality.md`); 1.17 adds `results[].validation` from #316 (`workload-validation.md`); 1.16 adds the optional `pareto` object from #326 (`pareto.md`); 1.15 adds `optimize.reevaluated` and fractional `optimize` values with `-D` (#98); 1.14 adds `--simd` fields from #211 (`simd-breakdown.md`); 1.13 adds the software events and the effective frequency fields of #220 and #222; 1.12 adds `--topdown` fields from #221 (`topdown-tma.md`); 1.11 adds `results[].energy_samples` (#240) and the JSON Schema file `docs/schema/perfratio-export.schema.json`, validated by `tests/json_schema_tests.rs`; 1.10 adds `results[].counters_coverage` (#219); 1.9 adds the `:u`/`:k` counter key suffixes, `counters_scope` values `kernel` and `perfratio.measurements.counters_requested_scope` from #218 (`counter-scope-modifiers.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
+Shipped except the `.product` link (schemaVersion 1.28; 1.28 adds `perfratio.environment`, `perfratio.environment_fingerprint` and `perfratio.meta` from #314 (`environment-fingerprint.md`); 1.27 adds `perfratio.calibration` and `results[].quality.below_resolution` from #313 (`measurement-floor.md`); 1.26 adds `results[].precision.stopping_rule` and `achieved_half_width` from #322 (`sequential-stopping.md`); 1.25 adds `perfratio.schedule` from #324 (`schedule-randomized.md`); 1.24 adds `perfratio.execution.cpu_partition` (#307, `worker-cpu-partition.md`); 1.23 adds `results[].regions[]`, `perfratio.region_protocol`, `measurements.region` and `region:<name>` metric values from #310 (`region-protocol.md`); 1.22 adds `perfratio.execution` and `results[].workers_used` / `contended` for `--jobs` (#306, `worker-pool.md`); 1.21 adds `perfratio.statistics` and `results[].relative_speed_ci` from #320 (`statistics-settings.md`); 1.20 adds `perfratio.metrics[]`, the metric descriptors of #317 (`metric-descriptors.md`); 1.19 adds `results[].run_ids`, `instance_run_ids`, `leftover_processes` and `energy_scope` from #308 and #309 (`run-identity.md`, `process-tree.md`) and stops writing `energy_per_instance_joules`; 1.18 adds `results[].quality` from #318 (`measurement-quality.md`); 1.17 adds `results[].validation` from #316 (`workload-validation.md`); 1.16 adds the optional `pareto` object from #326 (`pareto.md`); 1.15 adds `optimize.reevaluated` and fractional `optimize` values with `-D` (#98); 1.14 adds `--simd` fields from #211 (`simd-breakdown.md`); 1.13 adds the software events and the effective frequency fields of #220 and #222; 1.12 adds `--topdown` fields from #221 (`topdown-tma.md`); 1.11 adds `results[].energy_samples` (#240) and the JSON Schema file `docs/schema/perfratio-export.schema.json`, validated by `tests/json_schema_tests.rs`; 1.10 adds `results[].counters_coverage` (#219); 1.9 adds the `:u`/`:k` counter key suffixes, `counters_scope` values `kernel` and `perfratio.measurements.counters_requested_scope` from #218 (`counter-scope-modifiers.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
@@ -103,7 +103,10 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
       "counters": "measured",                                 // new in 1.8, #49
       "topdown": "measured"                                   // new in 1.12, #221
       "simd": "measured"                                      // new in 1.14, #211
-    }
+    },
+    "execution": { "jobs": 4, "schedule_policy": "saturate",   // only with --jobs > 1, new in 1.22, #306
+                   "contended": true,
+                   "cpu_partition": { "workers": [[0,1],[2,3]], "reserved": [15] } }   // pinned workers only, new in 1.24, #307
   },
   "interrupted": true,                                        // optional
   "optimize": { "var": "j", "best": 24, "...": "..." },       // optional, new in 1.6 (#98)
@@ -119,6 +122,14 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
   values is closed (a new built-in value is MAJOR); the `custom:` prefix is a pattern, so
   consumers must accept any `custom:<name>` and treat it as unitless.
 - `perfratio` (object, guaranteed): run metadata, as `ExportMetadata` today.
+- `perfratio.statistics` (object, **new in 1.21**, #320; written by every export of 1.21 and later, absent from older ones): `{estimator, confidence_level,
+  significance_level, bootstrap_resamples, bootstrap_seed}`. `estimator` is `mean`, `median` or a
+  percentile such as `p95` and is the central value behind `relative_speed`, `significance`,
+  `p_value` and the delta table. With the defaults (`mean`, 0.95, 0.05, 5000 and the fixed
+  default seed) every other number is unchanged. `bootstrap_seed` is an unsigned 64-bit integer
+  (the default exceeds 2^53: parse it as an integer, not a double).
+- `perfratio.execution` (object, **new in 1.22**, #306): only with `--jobs` > 1. `jobs` (integer), `schedule_policy` (`saturate`, `exclusive` or `fair`; open enum) and `contended` (always `true`) and, when the workers were pinned (**new in 1.24**, #307), `cpu_partition` = { `workers`: CPUs of each worker, disjoint, `reserved`?: CPUs kept for perfratio (omitted when none), `shared_siblings`?: `true` when there are more workers than physical cores }. Without `--jobs` the object is absent; without pinning (`--pin-workers=none`, macOS) `cpu_partition` is absent.
+- `perfratio.schedule` (object, **new in 1.25**, #324; written by every export of 1.25 and later): `{mode, seed?, order?}`. `mode` is `grouped`, `round-robin`, `randomized`, `balanced` or, with `--jobs`, `saturate`, `exclusive` or `fair` (open enum). `seed` (unsigned 64-bit integer, the `--seed` value) only with `randomized`. `order` only for an interleaved schedule (`round-robin`, `randomized`, `balanced`) with at least two commands: the `results[]` index of each measured run in execution order, the initial measurement of every command being the first round; warmup runs are not listed. It is a separate object because `perfratio.execution` of 1.22 requires its `--jobs` keys.
 - `perfratio.measurements` (object, guaranteed, **new**): one status per measurement group,
   host-level and identical for every result:
   - `"measured"`: requested and the backend works;
@@ -138,6 +149,8 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
   optional, string) is the scope that was asked for when it differs from `counters_scope`:
   `"all"` next to `"user"` means kernel counting was denied (`perf_event_paranoid >= 2`).
   `counters_unavailable_events` lists keys, so suffixed ones read `instructions:k`.
+  `region` (`--region`, new in 1.23) has the values `measured`, `not_requested`, and
+  `perfratio.region_protocol` (integer) is present when it is `measured`.
   `simd` (`--simd`, new in 1.14) has the values `measured`, `unavailable`, `not_requested`, and
   `simd_unavailable_reason` is one of `unsupported_platform`, `unsupported_cpu`,
   `perf_paranoid`, `no_pmu`, `hybrid_cpu_unpinned`, `other` (open enum).
@@ -182,7 +195,8 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `exit_codes` | (int or `null`)[]; `null` = killed by a signal | guaranteed |
 | `primary_metric` { `metric`, `mean`, `stddev`?, `samples`? } (**new in 1.1**, #48; `metric` may be `custom:<name>` since 1.2) | metric unit (s, J, bytes; custom: as printed by the command) | optional (only with `--metric` other than `wall` and data for the metric) |
 | `relative_speed` | ratio to fastest/reference (1.0 = baseline) | optional (omitted if not computable) |
-| `relative_speed_stddev` | ratio | optional (omitted for the baseline) |
+| `relative_speed_stddev` | ratio | optional (omitted for the baseline; only with `statistics.estimator = "mean"`) |
+| `relative_speed_ci` (**new in 1.21**, #320) | `[low, high]` ratio, bootstrap interval at `statistics.confidence_level` | optional (estimators other than the mean, not for the baseline) |
 | `percentiles` { `p05`, `p25`, `p75`, `p95` } | s | optional |
 | `geometric_mean` | s | optional (omitted if a run took 0 s) |
 | `cpu_percent` | % | optional |
@@ -200,7 +214,7 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `parameters`, `per_run_parameters` | strings / stats | optional (`--parameter-*`) |
 | `omitted_failed_runs`, `discarded_outliers` | indices | optional |
 | `validation` (**new in 1.17**, #316) | object `{mode, on_invalid, first_only, runs_checked, runs_invalid, runs_omitted, omitted_runs?, output_sha256?}`, see `workload-validation.md` | only with `--expect-output-sha256` / `--validate`; `runs_invalid > 0` means the workload gave a wrong result |
-| `quality` (**new in 1.18**, #318) | object `{grade, checks: [{id, metric?, status, detail?}]}`; `grade` is `comparable`, `with_caveats` or `unreliable`; `status` is `pass`, `warn`, `fail`, `not_applicable` or `unavailable`; check ids are an open enum, see `measurement-quality.md` | every measured result |
+| `quality` (**new in 1.18**, #318) | object `{grade, checks: [{id, metric?, status, detail?}], below_resolution?}` (`below_resolution`: new in 1.27, #313); `grade` is `comparable`, `with_caveats` or `unreliable`; `status` is `pass`, `warn`, `fail`, `not_applicable` or `unavailable`; check ids are an open enum, see `measurement-quality.md` | every measured result |
 | `resources` { column: counts[] per run } (**columns individually optional since 1.3**, #291) | counts | when `measurements.resources = "measured"`; a column the OS cannot report is omitted (Windows has no `voluntary_ctx_switches`, `involuntary_ctx_switches`, `major_faults`), see `windows-resource-usage.md` |
 | `concurrency` (**new in 1.5**, #53) | count | only with `--concurrency N`, N > 1. **When present, `times` holds the makespan of each run** (wall time until all N instances finished) and `exit_codes` holds N entries per run, row-major (run 0 instances 0..N-1, ...), i.e. `runs x N` entries instead of `runs` |
 | `instance_times` (**new in 1.5**, #53) | s[][], one row of N per run aligned with `times`, instances in spawn order | with `concurrency` |
@@ -211,6 +225,8 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `run_ids` (**new in 1.19**, #308) | u64[], one per run, aligned with `times` | when runs were recorded. `PERFRATIO_RUN_ID` of the run; with `--concurrency` the id of instance 0, which `--prepare` and `--conclude` also see |
 | `instance_run_ids` (**new in 1.19**, #308) | u64[][], one row of N per run aligned with `instance_times` | with `concurrency`. The position in the row is the `PERFRATIO_WORKER_ID` of the instance |
 | `leftover_processes` (**new in 1.19**, #309) | `true` | only when true: in at least one run (or its prepare/conclude) processes started by the command were still running after it exited; they were killed. The runs stay in the statistics |
+| `workers_used` (**new in 1.22**, #306) | count of workers that executed at least one timed run | only with `--jobs N`, N > 1 |
+| `contended` (**new in 1.22**, #306) | `true`: the runs were executed in parallel and may have disturbed each other; a consumer should not compare them with sequential results | only with `--jobs N`, N > 1 |
 | `counters` (**new in 1.8**, #49) | { event: (u64 \| null)[] } raw counts per run aligned with `times`; `null` = not readable; events `instructions`, `cycles`, `cache-references`, `cache-misses`, `branches`, `branch-misses` (open set) | when `measurements.counters` is `measured` or `partial` |
 | `counters` events `cpu-migrations`, `context-switches`, `page-faults` (counts), `task-clock` (ns) (**new in 1.13**, #220) | counts | when requested by name or with `--counters=sw`; scheduler events are never counted when kernel scope is denied: then they are absent and `measurements.counters_unavailable_*` says `kernel_scope_denied` |
 | `effective_frequency_hz` (**new in 1.13**, #222) | Hz (f64 \| null)[] aligned with `times`, `cycles` / time on CPU | when `cycles` was counted and a time source exists |
@@ -225,9 +241,11 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `simd` (**new in 1.14**, #211) | { `unit` (`instructions` \| `uops`), `arch`, `scalar_fp`, `simd_128`, `simd_256`, `simd_512`?, `vectorization_ratio` }: per-run arrays aligned with `times`, `null` = not readable (or no FP arithmetic for the ratio); `simd_512` only on CPUs that have the bucket; Intel and AMD units are not comparable | when `measurements.simd` is `measured` |
 | `simd_summary` (**new in 1.14**) | { bucket or `vectorization_ratio`: { `mean`, `stddev`?, `median`, `min`, `max` } } | with `simd` |
 | `simd_scope` (**new in 1.14**) | `"all"`, `"user"` or `"kernel"`, like `counters_scope` | with `simd` |
+| `regions` (**new in 1.23**, #310) | [ { `name`, `status` (`measured` \| `region_missing`), `mean`, `stddev`?, `min`, `max`, `count_per_run`, `times`, `sdk`? } ]: seconds inside each `--region` per run, `null` where a run did not report the region; `times` of the result keep measuring the whole process | with `--region` |
 | `simd_scaling` (**new in 1.14**) | { bucket: { `scaled_runs`, `coverage` (lowest) } } for buckets scaled for multiplexing | optional |
 | `efficiency` { `ipc`, `cpi`, `cache_miss_rate`, `branch_miss_rate` } (#213) | ratios | optional (with the needed counters) |
-| `diagnostics`, `precision`, `baseline`, `shell`, `timed_out`, `timeout`, `runs_planned` | see `BenchmarkResult` | optional |
+| `precision` (`stopping_rule` and `achieved_half_width` **new in 1.26**, #322) | `{target, reached, confidence, met, stopping_rule?, achieved_half_width?}`: `stopping_rule` is `fixed_ci` (default) or `confidence_sequence` (`--target-precision-method sequential`), open enum; `achieved_half_width` is the relative half-width of that rule's interval (equal to `reached`) | optional, with `--target-precision` |
+| `diagnostics`, `baseline`, `shell`, `timed_out`, `timeout`, `runs_planned` | see `BenchmarkResult` | optional |
 
 Rules:
 - An unavailable or unrequested value is **omitted**, never written as `0`. `null` is used
@@ -289,6 +307,15 @@ perfratio -N --warmup auto --first-run=separate \
   combinations against a strict copy of it (no undeclared keys), checks that every schema
   property is produced by some case and that the `const` equals `SCHEMA_VERSION`. **A change to
   the export must update the schema in the same PR.**
+- Per-version archive (#319): `docs/schema/<MAJOR.MINOR>/perfratio-export.schema.json` is a
+  frozen copy of the schema of each `schemaVersion`. **A MINOR bump must add the new
+  directory** and never edit an older one. `tests/json_schema_compat_tests.rs` checks that
+  the current schema equals the archive of its version, that a fresh export validates against
+  every older archived schema of the same MAJOR (additive changes only), and that the diff
+  against the previous MINOR has no removed or renamed property, changed type, removed enum
+  value or newly required key (those are MAJOR changes). The release workflow uploads
+  `perfratio-export-<MAJOR.MINOR>.schema.json` to the GitHub release and includes it in
+  `SHA256SUMS`. Not done: a `$schema` field in the export and `--print-schema`.
 - The deprecation steps of §4, which cover only the JSON key of #225. The other #225
   items are not part of this spec.
 

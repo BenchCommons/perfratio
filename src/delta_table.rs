@@ -8,10 +8,10 @@ use crate::benchmark::benchmark_result::BenchmarkResult;
 use crate::benchmark::relative_speed::fastest_of;
 use crate::output::colors;
 use crate::stats::basic;
+use crate::stats::settings::{self, Estimator, StatSettings};
 use crate::util::units::format_bytes;
 
 /// Significance level for the verdict column
-const ALPHA: f64 = 0.05;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Dimension {
@@ -251,6 +251,9 @@ impl Dimension {
 pub struct Stat {
     pub mean: f64,
     pub stddev: Option<f64>,
+    /// The value shown and compared: the mean, or with `--estimator` the
+    /// median or percentile of the samples
+    pub center: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -282,8 +285,19 @@ pub struct DeltaRow {
     pub verdict: Verdict,
 }
 
-fn stat(dimension: Dimension, r: &BenchmarkResult) -> Option<Stat> {
+fn stat(dimension: Dimension, r: &BenchmarkResult, estimator: Estimator) -> Option<Stat> {
     let mean = dimension.mean(r)?;
+    let center = if estimator.is_mean() {
+        mean
+    } else {
+        match dimension.samples(r) {
+            Some(s) => estimator.estimate(&s),
+            // a stored median of an imported wall time
+            None if dimension == Dimension::WallTime && estimator == Estimator::Median => r.median,
+            // no per-run samples: a median or percentile cannot be computed
+            None => return None,
+        }
+    };
     let stddev = match dimension.samples(r) {
         Some(s) if s.len() >= 2 => Some(basic::standard_deviation(&s, Some(mean))),
         // Wall time keeps its stored deviation (it may stem from an import)
@@ -291,7 +305,11 @@ fn stat(dimension: Dimension, r: &BenchmarkResult) -> Option<Stat> {
         _ if dimension == Dimension::EffectiveFrequency => r.stddev_effective_frequency_hz,
         _ => None,
     };
-    Some(Stat { mean, stddev })
+    Some(Stat {
+        mean,
+        stddev,
+        center,
+    })
 }
 
 /// ln Γ(x) (Lanczos approximation, g = 7)
@@ -368,12 +386,14 @@ fn t_two_sided_p(t: f64, df: f64) -> f64 {
     inc_beta(df / (df + t * t), df / 2.0, 0.5)
 }
 
-/// 97.5% quantile of Student's t with fractional `df` (bisection)
-fn t_quantile_975(df: f64) -> f64 {
+/// Two-sided critical value of Student's t with fractional `df` at the
+/// confidence level (bisection; 0.95 gives the 97.5% quantile).
+fn t_quantile(df: f64, confidence: f64) -> f64 {
+    let alpha = 1.0 - confidence;
     let (mut lo, mut hi) = (0.0, 1e3);
     for _ in 0..200 {
         let mid = 0.5 * (lo + hi);
-        if t_two_sided_p(mid, df) > ALPHA {
+        if t_two_sided_p(mid, df) > alpha {
             lo = mid;
         } else {
             hi = mid;
@@ -390,7 +410,7 @@ fn t_quantile_975(df: f64) -> f64 {
 ///
 /// Two constant samples have no variance: they are different with certainty
 /// (p = 0, width 0) or identical (p = 1).
-fn welch(a: &[f64], b: &[f64]) -> Option<(f64, f64)> {
+fn welch(a: &[f64], b: &[f64], confidence: f64) -> Option<(f64, f64)> {
     let (n1, n2) = (a.len() as f64, b.len() as f64);
     if a.len() < 2 || b.len() < 2 {
         return None;
@@ -405,7 +425,7 @@ fn welch(a: &[f64], b: &[f64]) -> Option<(f64, f64)> {
     let df = se2 * se2 / (v1 * v1 / (n1 - 1.0) + v2 * v2 / (n2 - 1.0));
     let se = se2.sqrt();
     let p = t_two_sided_p((m2 - m1) / se, df);
-    let half = t_quantile_975(df) * se;
+    let half = t_quantile(df, confidence) * se;
     (p.is_finite() && half.is_finite()).then_some((p, half))
 }
 
@@ -413,28 +433,61 @@ fn welch(a: &[f64], b: &[f64]) -> Option<(f64, f64)> {
 /// dimension except the CPU frequency, which has no verdict, and the topdown classes,
 /// which only get a `Shift` verdict.
 pub fn compute_rows(reference: &BenchmarkResult, target: &BenchmarkResult) -> Vec<DeltaRow> {
+    compute_rows_with(reference, target, &settings::current())
+}
+
+/// [`compute_rows`] with explicit statistical settings: the estimator decides
+/// the compared value (and the test: Welch's t-test for the mean, a bootstrap
+/// test of the difference otherwise), `significance_level` the verdict and
+/// `confidence_level` the interval.
+pub fn compute_rows_with(
+    reference: &BenchmarkResult,
+    target: &BenchmarkResult,
+    settings: &StatSettings,
+) -> Vec<DeltaRow> {
+    let alpha = settings.significance_level;
     Dimension::ALL
         .into_iter()
         .filter_map(|dimension| {
-            let (rs, ts) = (stat(dimension, reference)?, stat(dimension, target)?);
-            let relative = (rs.mean != 0.0).then(|| (ts.mean - rs.mean) / rs.mean);
+            let (rs, ts) = (
+                stat(dimension, reference, settings.estimator)?,
+                stat(dimension, target, settings.estimator)?,
+            );
+            let relative = (rs.center != 0.0).then(|| (ts.center - rs.center) / rs.center);
             let (a, b) = (dimension.samples(reference), dimension.samples(target));
             let (p_value, ci_half_width) = match (&a, &b) {
-                (Some(a), Some(b)) => match welch(a, b) {
-                    // Relative to the reference mean (not a ratio interval)
-                    Some((p, half)) => (Some(p), (rs.mean > 0.0).then(|| half / rs.mean)),
-                    None => (None, None),
-                },
+                (Some(a), Some(b)) if settings.estimator.is_mean() => {
+                    match welch(a, b, settings.confidence_level) {
+                        // Relative to the reference mean (not a ratio interval)
+                        Some((p, half)) => (Some(p), (rs.center > 0.0).then(|| half / rs.center)),
+                        None => (None, None),
+                    }
+                }
+                (Some(a), Some(b)) => {
+                    let p =
+                        crate::stats::deep::compare_samples_with_settings(a, b, 0.0, 0.0, settings)
+                            .map(|c| c.p_value)
+                            // two constant samples with different centers differ with
+                            // certainty (as for the mean)
+                            .or_else(|| {
+                                let constant =
+                                    |x: &[f64]| x.len() >= 3 && x.iter().all(|v| *v == x[0]);
+                                (constant(a) && constant(b) && a[0] != b[0]).then_some(0.0)
+                            });
+                    let half = crate::stats::deep::difference_confidence_interval(a, b, settings)
+                        .map(|(lo, hi)| (hi - lo) / 2.0);
+                    (p, half.filter(|_| rs.center > 0.0).map(|h| h / rs.center))
+                }
                 _ => (None, None),
             };
             let verdict = match (p_value, relative) {
                 // A different clock is context, not a better or worse result
                 _ if dimension == Dimension::EffectiveFrequency => Verdict::Unknown,
-                (Some(p), Some(rel)) if p < ALPHA && rel != 0.0 && !dimension.directional() => {
+                (Some(p), Some(rel)) if p < alpha && rel != 0.0 && !dimension.directional() => {
                     Verdict::Shift
                 }
-                (Some(p), Some(rel)) if p < ALPHA && rel < 0.0 => Verdict::Improvement,
-                (Some(p), Some(rel)) if p < ALPHA && rel > 0.0 => Verdict::Regression,
+                (Some(p), Some(rel)) if p < alpha && rel < 0.0 => Verdict::Improvement,
+                (Some(p), Some(rel)) if p < alpha && rel > 0.0 => Verdict::Regression,
                 (Some(_), _) => Verdict::Noise,
                 _ => Verdict::Unknown,
             };
@@ -470,8 +523,8 @@ fn split<'a>(
 
 fn fmt_stat(dimension: Dimension, s: &Stat) -> String {
     match s.stddev {
-        Some(sd) => format!("{} ± {}", dimension.format(s.mean), dimension.format(sd)),
-        None => dimension.format(s.mean),
+        Some(sd) => format!("{} ± {}", dimension.format(s.center), dimension.format(sd)),
+        None => dimension.format(s.center),
     }
 }
 
@@ -548,6 +601,7 @@ fn render_terminal(
     let Some((reference, others)) = split(results, reference) else {
         return String::new();
     };
+    let estimator = settings::current().estimator.name();
     let mut out = String::new();
     for target in others {
         let rows = compute_rows(reference, target);
@@ -556,8 +610,8 @@ fn render_terminal(
         }
         let mut table: Vec<[String; 5]> = vec![[
             "Measurement".into(),
-            format!("{} (mean ± σ)", name(reference)),
-            format!("{} (mean ± σ)", name(target)),
+            format!("{} ({estimator} ± σ)", name(reference)),
+            format!("{} ({estimator} ± σ)", name(target)),
             "Delta (%)".into(),
             "p-val".into(),
         ]];
@@ -629,6 +683,7 @@ pub fn markdown(results: &[BenchmarkResult], reference: Option<&BenchmarkResult>
         return String::new();
     };
     let escape = |s: &str| s.replace('|', "\\|");
+    let estimator = settings::current().estimator.name();
     let mut out = String::new();
     for target in others {
         let rows = compute_rows(reference, target);
@@ -641,7 +696,9 @@ pub fn markdown(results: &[BenchmarkResult], reference: Option<&BenchmarkResult>
             escape(&reference.command)
         ));
         out.push_str(
-            "| Measurement | Reference (mean ± σ) | Command (mean ± σ) | Delta (%) | p-val | |\n",
+            &format!(
+                "| Measurement | Reference ({estimator} ± σ) | Command ({estimator} ± σ) | Delta (%) | p-val | |\n"
+            ),
         );
         out.push_str("|:---|---:|---:|---:|---:|:---|\n");
         for r in &rows {
@@ -736,7 +793,7 @@ mod tests {
     fn welch_ci_and_p_value_match_scipy() {
         let a = [10.0, 10.2, 9.9, 10.1, 10.3, 9.8];
         let b = [9.0, 9.4, 8.8, 9.1, 9.6, 8.9, 9.2, 9.0];
-        let (p, half) = welch(&a, &b).unwrap();
+        let (p, half) = welch(&a, &b, 0.95).unwrap();
         assert!((p / 6.0883526276694205e-6 - 1.0).abs() < 1e-6, "p = {p}");
         assert!((half - 0.263_964_82).abs() < 1e-6, "half = {half}");
         let rows = compute_rows(&result("a", &a), &result("b", &b));
@@ -754,17 +811,17 @@ mod tests {
                 .iter()
                 .map(|x| x + shift)
                 .collect();
-            let (p, half) = welch(&a, &b).unwrap();
+            let (p, half) = welch(&a, &b, 0.95).unwrap();
             let diff = (basic::mean(&b) - basic::mean(&a)).abs();
-            assert_eq!(p < ALPHA, diff > half, "shift {shift}: p {p}, half {half}");
+            assert_eq!(p < 0.05, diff > half, "shift {shift}: p {p}, half {half}");
         }
     }
 
     #[test]
     fn welch_constant_samples() {
-        assert_eq!(welch(&[1.0; 4], &[1.0; 4]), Some((1.0, 0.0)));
-        assert_eq!(welch(&[1.0; 4], &[2.0; 4]), Some((0.0, 0.0)));
-        assert_eq!(welch(&[1.0], &[2.0, 3.0]), None);
+        assert_eq!(welch(&[1.0; 4], &[1.0; 4], 0.95), Some((1.0, 0.0)));
+        assert_eq!(welch(&[1.0; 4], &[2.0; 4], 0.95), Some((0.0, 0.0)));
+        assert_eq!(welch(&[1.0], &[2.0, 3.0], 0.95), None);
     }
 
     #[test]

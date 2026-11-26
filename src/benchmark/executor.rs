@@ -34,7 +34,7 @@ impl BenchmarkIteration {
     }
 }
 
-pub trait Executor {
+pub trait Executor: Sync {
     /// Run the given command and measure the execution time
     fn run_command_and_measure(
         &self,
@@ -61,6 +61,15 @@ pub trait Executor {
     fn uses_shell(&self) -> bool {
         false
     }
+
+    /// The measured runner floor (`--calibrate`); [`FloorState::Off`] for
+    /// executors that have none
+    fn floor(&self) -> crate::calibration::FloorState {
+        crate::calibration::FloorState::Off
+    }
+
+    /// Store the floor measured with this executor
+    fn set_floor(&mut self, _floor: crate::calibration::FloorState) {}
 }
 
 /// How every benchmarked (and intermediate) process is started
@@ -80,6 +89,8 @@ struct ProcessSettings<'a> {
     output_metrics: &'a [crate::output_metric::OutputMetric],
     /// --output-metric-stderr
     output_metrics_stderr: bool,
+    /// --region
+    regions: &'a [String],
     /// --counters
     counters: Option<&'a crate::perf_counters::CounterConfig>,
     /// --topdown
@@ -100,6 +111,7 @@ impl<'a> ProcessSettings<'a> {
             until: options.until.as_ref(),
             output_metrics: &options.output_metrics,
             output_metrics_stderr: options.output_metrics_stderr,
+            regions: &options.regions,
             counters: options.counters.as_ref(),
             topdown: options.topdown.as_ref(),
             artifact_dir: options.artifact_dir.as_deref(),
@@ -125,6 +137,7 @@ fn run_command_and_measure_common(
         until,
         output_metrics,
         output_metrics_stderr,
+        regions,
         counters,
         topdown,
         artifact_dir,
@@ -137,6 +150,10 @@ fn run_command_and_measure_common(
             (until, !output_metrics.is_empty())
         }
     };
+
+    // `--pin-workers`: a worker's CPUs replace `--affinity`
+    let worker_cpus = super::pool::current_cpus();
+    let affinity = worker_cpus.as_deref().or(affinity);
 
     let stdin = command_input_policy.get_stdin()?;
     let (stdout, stderr) = match until {
@@ -160,6 +177,17 @@ fn run_command_and_measure_common(
     };
     command.stdin(stdin).stdout(stdout).stderr(stderr);
 
+    // `--region`: a private file the program's region SDK appends its events to
+    let region_file = match iteration {
+        BenchmarkIteration::Benchmark(_) if !regions.is_empty() => {
+            let file = crate::region::RunFile::create()
+                .context("Could not create the temporary file for '--region'")?;
+            file.apply(&mut command);
+            Some(file)
+        }
+        _ => None,
+    };
+
     command.env(
         "PERFRATIO_RANDOMIZED_ENVIRONMENT_OFFSET",
         randomized_environment_offset::value(),
@@ -173,7 +201,8 @@ fn run_command_and_measure_common(
     // command and the conclude of one run see the same id
     let identity = crate::run_id::identity();
     command.env("PERFRATIO_RUN_ID", identity.run_id.to_string());
-    match identity.worker_id {
+    // `--jobs`: the worker slot of the pool (`docs/specs/worker-pool.md`)
+    match identity.worker_id.or_else(super::pool::current_worker) {
         Some(worker) => command.env("PERFRATIO_WORKER_ID", worker.to_string()),
         // not inherited from an outer perfratio
         None => command.env_remove("PERFRATIO_WORKER_ID"),
@@ -365,7 +394,51 @@ fn run_command_and_measure_common(
         }
     }
 
+    if let Some(file) = &region_file {
+        collect_regions(file, regions, &mut result, command_name)?;
+    }
+
     Ok(result)
+}
+
+/// `--region`: read what the run reported and store, for every requested
+/// region the program reported, its total time and number of start/stop pairs.
+/// A region the run did not report stays out (it becomes `null`, never 0).
+fn collect_regions(
+    file: &crate::region::RunFile,
+    regions: &[String],
+    result: &mut TimerResult,
+    command_name: &str,
+) -> Result<()> {
+    let report = file
+        .read()
+        .with_context(|| format!("Invalid region data from command '{command_name}'"))?;
+    let Some(report) = report else {
+        // a run that failed (ignored with '-i') may have died before it wrote anything
+        if result.status.success() {
+            bail!(
+                "Command '{command_name}' reported no region. With '--region' the program must \
+                 bracket the code to measure with the perfratio region SDK (see sdk/ and \
+                 docs/specs/region-protocol.md); the SDK reads {} and {}. A program that is not \
+                 instrumented cannot be measured with '--region'.",
+                crate::region::ENV_FILE,
+                crate::region::ENV_PROTOCOL
+            );
+        }
+        return Ok(());
+    };
+    for name in regions {
+        if let Some(totals) = report.regions.get(name) {
+            result
+                .custom_metrics
+                .insert(crate::region::time_key(name), totals.seconds);
+            result
+                .custom_metrics
+                .insert(crate::region::count_key(name), totals.count as f64);
+        }
+    }
+    result.region_sdk = report.sdk;
+    Ok(())
 }
 
 /// Number of lines of each stream shown for a failed run
@@ -594,6 +667,7 @@ pub fn aggregate_batch(instances: Vec<BatchInstance>) -> (TimerResult, Vec<Insta
         timed_out: instances.iter().any(|i| i.result.timed_out),
         until_matched: None,
         custom_metrics: std::collections::BTreeMap::new(),
+        region_sdk: None,
         leftover_processes: instances.iter().any(|i| i.result.leftover_processes),
         validation_stdout: None,
     };
@@ -635,6 +709,7 @@ pub struct RawExecutor<'a> {
     options: &'a Options,
     /// Median fork/exec counter overhead per active event (`--counters`)
     counter_overhead: Vec<u64>,
+    floor: crate::calibration::FloorState,
 }
 
 impl<'a> RawExecutor<'a> {
@@ -642,6 +717,7 @@ impl<'a> RawExecutor<'a> {
         RawExecutor {
             options,
             counter_overhead: vec![],
+            floor: Default::default(),
         }
     }
 }
@@ -694,6 +770,7 @@ impl Executor for RawExecutor<'_> {
                 hw_counters: result.hw_counters,
                 timed_out: result.timed_out,
                 custom_metrics: result.custom_metrics,
+                region_sdk: result.region_sdk,
                 stdout: result.validation_stdout,
                 instances,
                 leftover_processes: result.leftover_processes,
@@ -736,6 +813,14 @@ impl Executor for RawExecutor<'_> {
     fn time_overhead(&self) -> Second {
         0.0
     }
+
+    fn floor(&self) -> crate::calibration::FloorState {
+        self.floor
+    }
+
+    fn set_floor(&mut self, floor: crate::calibration::FloorState) {
+        self.floor = floor;
+    }
 }
 
 pub struct ShellExecutor<'a> {
@@ -744,6 +829,7 @@ pub struct ShellExecutor<'a> {
     shell_spawning_time: Option<TimingResult>,
     /// Median shell spawn counter overhead per active event (`--counters`)
     counter_overhead: Vec<u64>,
+    floor: crate::calibration::FloorState,
 }
 
 impl<'a> ShellExecutor<'a> {
@@ -753,6 +839,7 @@ impl<'a> ShellExecutor<'a> {
             options,
             shell_spawning_time: None,
             counter_overhead: vec![],
+            floor: Default::default(),
         }
     }
 }
@@ -850,6 +937,7 @@ impl Executor for ShellExecutor<'_> {
                 hw_counters: result.hw_counters,
                 timed_out: result.timed_out,
                 custom_metrics: result.custom_metrics,
+                region_sdk: result.region_sdk,
                 stdout: result.validation_stdout,
                 instances,
                 leftover_processes: result.leftover_processes,
@@ -938,6 +1026,7 @@ impl Executor for ShellExecutor<'_> {
             hw_counters: None,
             timed_out: false,
             custom_metrics: std::collections::BTreeMap::new(),
+            region_sdk: None,
             instances: Vec::new(),
             leftover_processes: false,
             stdout: None,
@@ -956,6 +1045,14 @@ impl Executor for ShellExecutor<'_> {
             .as_ref()
             .map_or(0.0, |t| t.time_real)
     }
+
+    fn floor(&self) -> crate::calibration::FloorState {
+        self.floor
+    }
+
+    fn set_floor(&mut self, floor: crate::calibration::FloorState) {
+        self.floor = floor;
+    }
 }
 
 #[derive(Clone)]
@@ -965,6 +1062,7 @@ pub struct MockExecutor {
     counters: Option<crate::perf_counters::CounterConfig>,
     topdown: Option<crate::topdown::TopdownConfig>,
     concurrency: usize,
+    regions: Vec<String>,
     validation: Option<crate::validation::ValidationConfig>,
 }
 
@@ -976,8 +1074,16 @@ impl MockExecutor {
             counters: None,
             topdown: None,
             concurrency: 1,
+            regions: Vec::new(),
             validation: None,
         }
+    }
+
+    /// Simulate `--region`: every region takes half of the run time, in one
+    /// start/stop pair.
+    pub fn with_regions(mut self, regions: &[String]) -> Self {
+        self.regions = regions.to_vec();
+        self
     }
 
     /// Simulate the stdout of validated runs (`--expect-output-sha256`,
@@ -1151,7 +1257,18 @@ impl Executor for MockExecutor {
                     })
                     .filter(|_| !timed_out),
                 timed_out,
-                custom_metrics: std::collections::BTreeMap::new(),
+                custom_metrics: self
+                    .regions
+                    .iter()
+                    .filter(|_| !timed_out)
+                    .flat_map(|name| {
+                        [
+                            (crate::region::time_key(name), time_real / 2.0),
+                            (crate::region::count_key(name), 1.0),
+                        ]
+                    })
+                    .collect(),
+                region_sdk: None,
                 instances,
                 leftover_processes: false,
                 stdout: self
@@ -1265,6 +1382,7 @@ mod batch_tests {
                 timed_out: false,
                 until_matched: None,
                 custom_metrics: Default::default(),
+                region_sdk: None,
                 leftover_processes: false,
                 validation_stdout: None,
             },

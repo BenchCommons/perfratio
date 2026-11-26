@@ -90,6 +90,12 @@ pub enum OptionsError<'a> {
     InvalidTimeout(String, String),
     #[error("Invalid '--concurrency' value '{0}': expected an integer >= 1")]
     InvalidConcurrency(String),
+    #[error("Invalid '--jobs' value '{0}': expected an integer >= 1 or 'auto'")]
+    InvalidJobs(String),
+    #[error("Invalid '--pin-workers' / '--reserve-cpus': {0}")]
+    InvalidPinWorkers(String),
+    #[error("Invalid '--schedule': {0}")]
+    InvalidSchedule(String),
     #[error("Invalid duration '{0}' for '--energy-baseline': {1}")]
     InvalidEnergyBaseline(String, String),
     #[error("Invalid duration '{0}' for '--duration': {1}")]
@@ -104,6 +110,10 @@ pub enum OptionsError<'a> {
     InvalidRawRatios(&'static str),
     #[error("Invalid Pareto option: {0}")]
     InvalidPareto(String),
+    #[error("Invalid '--region': {0}")]
+    InvalidRegion(String),
+    #[error("{0}")]
+    InvalidStatistics(String),
 }
 
 #[derive(Debug, Error)]
@@ -119,6 +129,11 @@ pub struct RegressionDetected(pub usize);
 #[derive(Debug, Error)]
 #[error("{0} benchmark(s) have a measurement quality worse than '{1}' ('--fail-on-quality')")]
 pub struct QualityGateFailed(pub usize, pub &'static str);
+
+/// A result is within the runner floor with `--below-floor fail` (exit code 6)
+#[derive(Debug, Error)]
+#[error("{0} benchmark(s) are below the measurement floor ('--below-floor fail'); use a longer-running command or a loop inside the command")]
+pub struct BelowFloor(pub usize);
 
 /// `--check-system=strict` found a problem (exit code 4)
 #[derive(Debug, Error)]

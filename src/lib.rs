@@ -47,6 +47,8 @@ pub mod api;
 
 #[doc(hidden)]
 pub mod benchmark;
+#[doc(hidden)]
+pub mod calibration;
 #[cfg(feature = "cli")]
 #[doc(hidden)]
 pub mod cli;
@@ -98,6 +100,8 @@ pub mod pmu;
 pub mod pmu_scaling;
 #[doc(hidden)]
 pub mod quality;
+#[doc(hidden)]
+pub mod region;
 #[doc(hidden)]
 pub mod run_id;
 #[doc(hidden)]

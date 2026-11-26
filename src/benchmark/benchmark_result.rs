@@ -272,6 +272,12 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_metrics_summary: Option<BTreeMap<String, MetricSummary>>,
 
+    /// `--region`: time inside each instrumented region, see
+    /// `docs/specs/region-protocol.md`. `mean`, `times` and `time` fields above
+    /// keep measuring the whole process.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub regions: Option<Vec<RegionResult>>,
+
     /// `--concurrency N` (only when N > 1): instances started simultaneously per
     /// run. With it present, `times` holds the makespan of each run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -295,6 +301,17 @@ pub struct BenchmarkResult {
     /// that exports of schemaVersion 1.5 to 1.15 still load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub energy_per_instance_joules: Option<f64>,
+
+    /// `--jobs N` (only when N > 1): number of workers that executed at least
+    /// one timed run
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workers_used: Option<usize>,
+
+    /// `--jobs N` (only when N > 1, then `true`): runs executed in parallel and
+    /// may have disturbed each other, so the times are not comparable with
+    /// sequential samples
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contended: Option<bool>,
 
     /// Scope of the energy values (with `--energy`): `system` (the package
     /// counter covers every process of the machine) or `batch` (with
@@ -328,6 +345,71 @@ pub fn energy_scope(concurrency: Option<usize>) -> &'static str {
         "batch"
     } else {
         "system"
+    }
+}
+
+/// Whether every run reported a region.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RegionStatus {
+    /// Every run reported the region.
+    Measured,
+    /// Some runs did not report it (their entries are `null` and left out of the statistics).
+    RegionMissing,
+}
+
+/// Time inside one instrumented region (`--region`), in seconds. The wall time
+/// of one run is the sum of all start/stop pairs of the region in that run.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RegionResult {
+    pub name: String,
+    pub status: RegionStatus,
+    /// Statistics over the runs that reported the region.
+    pub mean: Second,
+    pub stddev: Option<Second>,
+    pub min: Second,
+    pub max: Second,
+    /// Start/stop pairs per run, `null` where the run did not report the region.
+    pub count_per_run: Vec<Option<u64>>,
+    /// Region time of every run, `null` where the run did not report the region.
+    pub times: Vec<Option<Second>>,
+    /// Identifier of the SDK that reported, when it sent one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sdk: Option<String>,
+}
+
+impl RegionResult {
+    /// `None` when no run reported the region.
+    pub fn from_runs(
+        name: &str,
+        times: &[Option<Second>],
+        counts: Option<&Vec<Option<f64>>>,
+        sdk: Option<String>,
+    ) -> Option<Self> {
+        let present: Vec<Second> = times.iter().flatten().copied().collect();
+        if present.is_empty() {
+            return None;
+        }
+        let mean = crate::stats::basic::mean(&present);
+        let stddev = (present.len() > 1)
+            .then(|| crate::stats::basic::standard_deviation(&present, Some(mean)));
+        Some(RegionResult {
+            name: name.to_string(),
+            status: if present.len() == times.len() {
+                RegionStatus::Measured
+            } else {
+                RegionStatus::RegionMissing
+            },
+            mean,
+            stddev,
+            min: present.iter().copied().fold(f64::INFINITY, f64::min),
+            max: present.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+            count_per_run: counts
+                .map(|c| c.iter().map(|v| v.map(|v| v as u64)).collect())
+                .unwrap_or_else(|| vec![None; times.len()]),
+            times: times.to_vec(),
+            sdk,
+        })
     }
 }
 
@@ -433,6 +515,14 @@ pub struct PrecisionReached {
     pub confidence: f64,
     /// Whether the target was reached
     pub met: bool,
+    /// The rule that decides the interval is narrow enough: `fixed_ci` or
+    /// `confidence_sequence` (new in 1.22, #322)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stopping_rule: Option<crate::stats::sequential::StoppingRule>,
+    /// Half-width of that rule's interval, relative to the mean; the same value as
+    /// `reached` (new in 1.22, #322)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub achieved_half_width: Option<f64>,
 }
 
 /// Per-run parameter values, aligned with `times`, and statistics per value.
@@ -543,6 +633,12 @@ impl BenchmarkResult {
         self.exit_codes.iter().any(|code| *code != Some(0))
     }
 
+    /// The region selected by `--metric region:<name>`.
+    fn region_of(&self, metric: Metric) -> Option<&RegionResult> {
+        let name = metric.region_name()?;
+        self.regions.as_ref()?.iter().find(|r| r.name == name)
+    }
+
     /// A note when runs failed output validation (`--expect-output-sha256`,
     /// `--validate`), for the delta table and `--compare`: such a result may
     /// have been fast because it computed the wrong thing.
@@ -584,6 +680,16 @@ impl BenchmarkResult {
                     .collect();
                 (!samples.is_empty()).then_some(samples)
             }
+            Metric::Custom(_) if metric.is_region() => {
+                let samples: Vec<f64> = self
+                    .region_of(metric)?
+                    .times
+                    .iter()
+                    .flatten()
+                    .copied()
+                    .collect();
+                (!samples.is_empty()).then_some(samples)
+            }
             Metric::Custom(name) => {
                 let samples: Vec<f64> = self
                     .custom_metrics
@@ -622,11 +728,39 @@ impl BenchmarkResult {
                 .as_ref()?
                 .get(metric.name())
                 .map(|s| s.mean),
+            Metric::Custom(_) if metric.is_region() => self.region_of(metric).map(|r| r.mean),
             Metric::Custom(name) => self
                 .custom_metrics_summary
                 .as_ref()?
                 .get(name)
                 .map(|s| s.mean),
+        }
+    }
+
+    /// The central value of the metric under the installed `--estimator`: the
+    /// mean by default (exactly `primary_mean`), the median or a percentile of
+    /// the per-run samples otherwise. `None` when there is no data for the
+    /// metric, or no per-run samples to take a median or percentile of
+    /// (e.g. imported results without `times`); never a made-up value.
+    pub fn primary_center(&self, metric: Metric) -> Option<f64> {
+        self.primary_center_with(metric, crate::stats::settings::current().estimator)
+    }
+
+    /// [`Self::primary_center`] with an explicit estimator.
+    pub fn primary_center_with(
+        &self,
+        metric: Metric,
+        estimator: crate::stats::settings::Estimator,
+    ) -> Option<f64> {
+        use crate::stats::settings::Estimator;
+        if estimator.is_mean() {
+            return self.primary_mean(metric);
+        }
+        self.primary_mean(metric)?;
+        match self.primary_samples(metric) {
+            Some(samples) if !samples.is_empty() => Some(estimator.estimate(&samples)),
+            _ if metric == Metric::Wall && estimator == Estimator::Median => Some(self.median),
+            _ => None,
         }
     }
 
@@ -690,6 +824,7 @@ impl BenchmarkResult {
                 .as_ref()?
                 .get(metric.name())
                 .and_then(|s| s.stddev),
+            Metric::Custom(_) if metric.is_region() => self.region_of(metric)?.stddev,
             Metric::Custom(name) => self
                 .custom_metrics_summary
                 .as_ref()?

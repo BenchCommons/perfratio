@@ -15,7 +15,7 @@ use std::collections::BTreeSet;
 
 use serde::Serialize;
 
-use crate::benchmark::benchmark_result::BenchmarkResult;
+use crate::benchmark::benchmark_result::{BenchmarkResult, RegionStatus};
 use crate::export::metadata::{ExportMetadata, MeasurementStatus, Measurements};
 
 /// Which way is better. Ranking code that needs it reads it from here.
@@ -479,6 +479,7 @@ pub const NON_METRIC_FIELDS: &[&str] = &[
     "p_value",
     "relative_speed",
     "relative_speed_stddev",
+    "relative_speed_ci",
     "primary_metric",
     "energy_samples",
     "energy_scope",
@@ -492,6 +493,8 @@ pub const NON_METRIC_FIELDS: &[&str] = &[
     "instance_run_ids",
     "leftover_processes",
     "energy_per_instance_joules",
+    "workers_used",
+    "contended",
 ];
 
 /// Result keys whose names inside the object are metrics decided at run time.
@@ -501,6 +504,7 @@ pub const DYNAMIC_FIELDS: &[&str] = &[
     "custom_metrics",
     "custom_metrics_summary",
     "energy_domains_joules",
+    "regions",
 ];
 
 /// One entry of `perfratio.metrics[]`.
@@ -735,6 +739,40 @@ pub fn descriptors(
             },
             reason: missing.then(|| "no_match_in_some_runs".to_string()),
             fields: vec!["custom_metrics".into(), "custom_metrics_summary".into()],
+        });
+    }
+
+    // `--region`: seconds inside each instrumented region, scoped to the region
+    for name in keys_of(results, |r| {
+        r.regions
+            .iter()
+            .flatten()
+            .map(|region| region.name.clone())
+            .collect()
+    }) {
+        let missing = results
+            .iter()
+            .filter_map(|r| {
+                r.regions
+                    .as_ref()?
+                    .iter()
+                    .find(|region| region.name == name)
+            })
+            .any(|region| region.status == RegionStatus::RegionMissing);
+        out.push(MetricDescriptor {
+            id: format!("region.{name}"),
+            unit: "seconds".into(),
+            direction: LowerIsBetter,
+            scope: Scope::Region,
+            source: "region_sdk".into(),
+            kind: Measured,
+            status: if missing {
+                Status::Partial
+            } else {
+                Status::Available
+            },
+            reason: missing.then(|| "region_missing".to_string()),
+            fields: vec!["regions".into()],
         });
     }
     out

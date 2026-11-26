@@ -77,6 +77,13 @@ Summary
   means a difference this large would rarely appear by chance if both commands were
   equally fast. It says nothing about whether the difference *matters*; look at the ratio
   for that. With very few runs, prefer more runs over reading much into the p-value.
+- `--estimator median` (or a percentile such as `p95`) replaces the mean in the ranking, the
+  ratios, the markers, the delta table and `--compare`. Use it when a few slow runs (garbage
+  collection, a cold cache) should not decide the result; a percentile needs many runs. The ratio
+  then shows a bootstrap interval, `1.87 [1.80, 1.95]`, at `--confidence-level` instead of `± σ`.
+  `--significance-level` sets the alpha of the tests and `--bootstrap-resamples` and `--seed` the
+  resampling; the defaults reproduce the same numbers every time. The settings are in
+  `perfratio.statistics` of the JSON export.
 
 ## What runs when: setup, prepare, conclude, cleanup
 
@@ -261,6 +268,17 @@ is different from an energy of `0`.
 | `energy_scope` | With `--energy`: `system` (the package counter covers the whole machine) or `batch` (`--concurrency`: the energy of the whole batch; it is never divided per instance). |
 | `run_ids`, `instance_run_ids` | `PERFRATIO_RUN_ID` of every run (with `--concurrency`: of every instance, one row per run; the position in the row is `PERFRATIO_WORKER_ID`). |
 | `leftover_processes` | Only when true: processes started by the command outlived it and were killed. |
+
+### Measurement floor
+
+At start perfratio runs a trivial command (`true`, or `exit 0` through a shell) about 20 times the way it
+starts your command and keeps the median wall time (`perfratio.calibration.wall_floor`), its spread
+(`wall_floor_mad`) and the peak memory (`rss_floor`). A command is *below resolution* when its mean is
+under 3 floors or its 95% CI reaches the floor; spawn cost and timer resolution then matter as much as
+the command. The result carries `quality.below_resolution: true` and a `measurement_floor` check, and the
+numbers stay. `perfratio -N true` is below resolution, `perfratio 'sleep 0.1'` is not. `--calibrate=off`
+skips the measurement; `--below-floor fail` exits with code 6. See
+[docs/specs/measurement-floor.md](../docs/specs/measurement-floor.md).
 
 ### Comparing implementations across languages
 
