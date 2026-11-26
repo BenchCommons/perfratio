@@ -9,6 +9,7 @@ reliable results. See the [README](../README.md) for installation and basic usag
 - [What runs when: setup, prepare, conclude, cleanup](#what-runs-when-setup-prepare-conclude-cleanup)
 - [Benchmarking across git branches](#benchmarking-across-git-branches)
 - [Reducing noise](#reducing-noise)
+- [The JSON export](#the-json-export)
 
 ## Anatomy of a benchmark report
 
@@ -149,6 +150,120 @@ later combine it with a live run: `perfratio --import-json main.json './target/r
 8. **Energy measurements** are the most sensitive to all of the above, because the RAPL
    counters include everything the CPU package does. Prefer longer runs (≥ 100 ms), a quiet
    machine, and compare commands with `--schedule round-robin`.
+
+## The JSON export
+
+`--export-json FILE` writes the machine-readable result. It is a versioned contract that other
+tools read; the normative text is [docs/specs/output-schema-contract.md](../docs/specs/output-schema-contract.md)
+and the schema is [docs/schema/perfratio-export.schema.json](../docs/schema/perfratio-export.schema.json)
+(JSON Schema, draft 2020-12, for the current `schemaVersion`). CSV, Markdown and the other
+exports are not part of the contract.
+
+### Units and rules
+
+Times are **seconds**, memory is **bytes**, energy is **joules**, power is **watts**.
+Per-run arrays (`times`, `user_times`, `energy_joules`, `counters`, ...) are aligned: index *i* is
+the same run. A value that was not requested or could not be measured is **omitted**, never
+written as `0`. `null` appears only where documented: `stddev` with fewer than 2 runs, `exit_codes[i]`
+for a run killed by a signal, and `custom_metrics` / `counters` entries that could not be read.
+
+### Compatibility
+
+`schemaVersion` is a string `"MAJOR.MINOR"` and the first key of the document. A new optional
+field or a new value of an open enum is a MINOR change. A removed or renamed field, a changed unit
+or type, or a changed meaning is a MAJOR change. Consumers must ignore unknown keys and accept any
+MINOR of the MAJOR they support. The published schema follows this rule and allows unknown keys.
+A file without `schemaVersion` is the legacy shape (`--import-json` still reads it). To check a
+file:
+
+```
+pip install check-jsonschema
+check-jsonschema --schemafile docs/schema/perfratio-export.schema.json result.json
+```
+
+### Top-level keys
+
+| Key | Meaning |
+|---|---|
+| `schemaVersion` | Version of the contract, always first. |
+| `metric` | Metric used for ranking: `wall`, `cpu`, `user`, `system`, `energy`, `memory` or `custom:<name>` (`--metric`). |
+| `perfratio` | Run metadata, see below. |
+| `interrupted` | Only present, as `true`, when Ctrl-C stopped the run. Per-result `runs_planned` then holds the planned run count. |
+| `optimize` | Only with `--optimize`: one object per search (`var`, `min`, `max`, `metric`, `algorithm`, `budget`, `evaluations`, `best`, `best_value`, `best_command`, `evaluated`, `at_boundary`, `unimodal_warning`, and optionally `runner_up`, `p_value`, `significant`, `fixed`, `interrupted`). Every evaluated value is also a `results[]` entry. |
+| `results` | One entry per benchmarked command. |
+
+### `perfratio`: metadata and the `measurements` status block
+
+`version` (perfratio version), `command_line` (program reduced to its file name), `started_at`
+(UTC, RFC 3339), `labels` (from `--label KEY=VALUE`), `system` (`os`, `arch`, `cpus`, `cpu_model`,
+`kernel`; no host or user name is exported) and `energy_backend` (`sysfs_powercap`, `perf_pmu`,
+`ioreport` or `windows_emi`, only when energy works).
+
+`measurements` tells a consumer, per group, whether the numbers can be trusted. It is a property of
+the host and run, identical for every result:
+
+| Group | `measured` | `unavailable` | `not_requested` |
+|---|---|---|---|
+| `time`, `memory` | always | never | never |
+| `energy` (`-E`) | RAPL, IOReport or EMI works | requested, but the backend failed; `energy_unavailable_reason` says why (`unsupported_platform`, `rapl_not_found`, `rapl_unreadable`, `unsupported_cpu`, `ioreport_not_found`, `ioreport_frozen`, `emi_not_found`, `emi_unreadable`, `other`) | no `--energy` |
+| `resources` (`--resource-usage`) | requested | - | no flag |
+| `counters` (`--counters`) | all events open; `partial` if some did not (listed in `counters_unavailable_events`) | `counters_unavailable_reason`: `unsupported_platform`, `perf_paranoid`, `no_pmu`, `other` | no flag |
+
+The reason lists are open: treat an unknown value like `other`. `counters_requested_scope` is
+present when kernel counting was asked for but denied. Check the group before you read the
+fields that belong to it: when `energy` is `unavailable` there are no energy fields at all, which
+is different from an energy of `0`.
+
+### `results[]`
+
+| Field | Meaning |
+|---|---|
+| `command` | The benchmarked command. |
+| `mean`, `median`, `min`, `max`, `stddev` | Wall time statistics. `stddev` is `null` with one run. |
+| `user`, `system` | Mean user and kernel CPU time. |
+| `times`, `user_times`, `system_times` | Per-run wall, user and kernel time. |
+| `memory_usage_byte` | Peak RSS per run. |
+| `exit_codes` | Per-run exit code; `null` = killed by a signal. |
+| `percentiles`, `geometric_mean`, `cpu_percent` | `p05`/`p25`/`p75`/`p95`, geometric mean (omitted if a run took 0 s), CPU utilization in %. |
+| `relative_speed`, `relative_speed_stddev` | Ratio to the fastest result or `--reference` (1.0 = baseline). |
+| `significance`, `p_value` | Difference to the reference: `significant_speedup`, `significant_regression` or `noise`, and the p-value of the bootstrap Welch test. Omitted for the reference and with fewer than 3 runs. |
+| `primary_metric` | `metric`, `mean`, `stddev`, `samples` of the ranking metric (with `--metric` other than `wall`). |
+| `warmup_runs` | Warmup runs done by `--warmup auto`. |
+| `target_duration_seconds`, `total_sampling_seconds`, `runs_done` | With `--duration`. |
+| `runs_planned` | Planned runs, when Ctrl-C stopped the benchmark. |
+| `precision` | With `--target-precision`: `target`, `reached`, `confidence`, `met`. |
+| `first_run` | Cold first run kept apart by `--first-run=separate`; it is in no other field. |
+| `diagnostics`, `outliers` | Trend, multimodality and outlier-inflated variance; outlier count, percent and fences by `--outlier-method` for time (and memory and energy when measured). `discarded_outliers` lists runs removed by `--discard-outliers`. |
+| `omitted_failed_runs`, `timed_out`, `timeout` | Runs dropped by `--omit-failed-runs`, and `--timeout` state. |
+| `baseline` | With `--subtract`: the baseline command and its statistics. |
+| `parameters`, `per_run_parameters` | Parameter values (`--parameter-*`) and per-value statistics for `--parameter-sample`. |
+| `shell` | The shell, when commands use different ones. |
+| `custom_metrics`, `custom_metrics_summary` | Values extracted with `--output-metric`, one per run (`null` = not extracted), and their `mean`, `stddev`, `median`, `min`, `max`. Unitless: perfratio does not interpret them. |
+| `mean_energy_joules`, `mean_watts` | Present with at least one energy sample. |
+| `energy_joules` | Per-run energy; only when every run has a sample. |
+| `energy_samples` | Runs that produced a sample. If it is lower than `len(times)`, energy coverage is partial and `energy_joules` is absent. |
+| `idle_watts`, `mean_net_energy_joules` | With `--energy-baseline`: idle power and the mean energy above idle. |
+| `energy_domains_joules` | With `--energy-domains`: joules per RAPL domain and run. Domains overlap and are not additive. |
+| `resources` | Per-run context switches, page faults and block I/O (`--resource-usage`). A column the OS cannot report is omitted. |
+| `counters`, `counters_summary`, `counters_scope`, `counters_multiplexed_runs`, `efficiency` | Hardware counters per run (`null` = not readable), their summary, the scope of unsuffixed keys (`all`, `user`, `kernel`; keys may carry `:u` or `:k`), runs with scaled counters, and `ipc`, `cpi`, `cache_miss_rate`, `branch_miss_rate`. |
+| `concurrency`, `instance_times`, `throughput`, `instance_percentiles`, `energy_per_instance_joules` | With `--concurrency N`: `times` then holds the makespan of each run, and `exit_codes` has N entries per run. |
+
+### Comparing implementations across languages
+
+Use the same flags for every language so that startup and runtime effects are handled the same way:
+
+```
+perfratio -N --warmup auto --first-run=separate \
+          --output-metric 'algo_ns=ALGO_NS=(\d+)' \
+          --label lang=<lang> --label algorithm=<name> \
+          --export-json result.json '<run command>'
+```
+
+`-N` keeps the shell start-up out of the numbers, `--warmup auto` lets JIT and VM runtimes reach a
+steady state, `--first-run=separate` keeps the cold start in `first_run`, `--output-metric` lets the
+program time only its algorithm, and `--label` carries the language and algorithm inside the file.
+Use `-E` only on bare-metal Linux with readable RAPL and check `perfratio.measurements.energy`
+before you read an energy field. See [docs/CROSS_LANGUAGE.md](../docs/CROSS_LANGUAGE.md).
 
 ## Graceful Interruption (Ctrl-C)
 

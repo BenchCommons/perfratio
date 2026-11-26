@@ -96,6 +96,11 @@ pub struct BenchmarkResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub energy_joules: Option<Vec<f64>>,
 
+    /// Number of runs that produced an energy sample, set whenever an energy
+    /// sampler was active; below the run count means partial coverage
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub energy_samples: Option<usize>,
+
     /// Idle power in Watts measured by `--energy-baseline`
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idle_watts: Option<f64>,
