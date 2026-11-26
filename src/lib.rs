@@ -47,6 +47,8 @@ pub mod api;
 
 #[doc(hidden)]
 pub mod benchmark;
+#[doc(hidden)]
+pub mod budget;
 pub mod calibration;
 #[doc(hidden)]
 pub mod cgroup;

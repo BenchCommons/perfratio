@@ -145,6 +145,40 @@ pub fn build_command() -> Command {
                        significant (p < 0.05, from the per-run times). Noise alone doesn't fail."),
         )
         .arg(
+            Arg::new("budget")
+                .long("budget")
+                .value_name("EXPR")
+                .action(ArgAction::Append)
+                .help("A regression budget, repeatable: '<METRIC><op><VALUE>'. A percentage \
+                       bounds the change against the '--compare' baseline ('wall=+5%', \
+                       'memory=+10%', 'wall<=+3%'; 'throughput=-2%' for a metric where higher \
+                       is better), a number with a unit bounds the value ('memory<=256MiB', \
+                       'wall<=50ms', 'energy<=3J'). '=' takes the direction of the metric; \
+                       '<=' and '>=' are literal. A relative budget fails only if the \
+                       difference is also significant (p < 0.05). Exit code 3 if any budget \
+                       fails. '--fail-if-regressed PCT' is '--budget wall=+PCT'."),
+        )
+        .arg(
+            Arg::new("budget-file")
+                .long("budget-file")
+                .value_name("FILE")
+                .value_hint(ValueHint::FilePath)
+                .action(ArgAction::Append)
+                .help("Read budgets from a TOML file ('budgets = [\"wall=+5%\", ...]') or a JSON \
+                       file (an array of strings, or {\"budgets\": [...]}), to check in with the code."),
+        )
+        .arg(
+            Arg::new("on-unavailable")
+                .long("on-unavailable")
+                .value_name("POLICY")
+                .value_parser(["fail", "warn", "skip"])
+                .default_value("warn")
+                .help("What to do with a budget that cannot be evaluated (the metric is missing \
+                       in the baseline or the current run, or there are too few runs): 'fail' \
+                       counts it as failed, 'warn' (default) reports it and keeps the exit code, \
+                       'skip' leaves it out of the report. Never treated as 0 or as a pass."),
+        )
+        .arg(
             Arg::new("export-diff-markdown")
                 .long("export-diff-markdown")
                 .action(ArgAction::Set)
@@ -965,11 +999,14 @@ pub fn build_command() -> Command {
             Arg::new("output-metric")
                 .long("output-metric")
                 .action(ArgAction::Append)
-                .value_name("NAME=REGEX")
+                .value_name("NAME[unit,higher]=REGEX")
                 .conflicts_with_all(["show-output", "until"])
                 .help("Extract a custom numeric metric from the command's standard output using \
                        the regular expression REGEX, which must contain at least one capture group. \
                        The value is extracted from the first capture group of the last match in the output. \
+                       NAME may declare a unit and a direction in brackets: 'qps[ops/s,higher]=REGEX' \
+                       ('higher' means a larger value is better, 'lower' is the default); they drive ranking, \
+                       relative speed and the exported descriptor. \
                        Can be specified multiple times for different metrics. Works with the default \
                        '--output=null' and with '--output=pipe'. A run where an ignored \
                        failure ('-i') left the metric out is exported as null."),

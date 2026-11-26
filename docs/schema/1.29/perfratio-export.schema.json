@@ -532,6 +532,93 @@
             "mode"
           ],
           "description": "New in 1.25 (#324): how the runs of several commands were ordered. Always written by 1.25 and later; not required here, so that a MINOR addition is not a breaking change for consumers of older exports."
+        },
+        "compare": {
+          "type": "object",
+          "properties": {
+            "baseline": {
+              "type": "string",
+              "description": "Path of the --compare baseline; absent for absolute budgets without a baseline."
+            },
+            "on_unavailable": {
+              "type": "string",
+              "description": "--on-unavailable policy: fail, warn or skip."
+            },
+            "verdict": {
+              "type": "string",
+              "description": "pass, fail, or not_evaluated (no budget could be evaluated). Open enum."
+            },
+            "budgets": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string"
+                  },
+                  "metric": {
+                    "type": "string",
+                    "description": "The metric with its statistic as written, e.g. wall, memory, wall.p95, throughput."
+                  },
+                  "kind": {
+                    "type": "string",
+                    "description": "relative or absolute. Open enum."
+                  },
+                  "op": {
+                    "type": "string",
+                    "description": "<= or >=."
+                  },
+                  "limit": {
+                    "type": "number",
+                    "description": "Relative: a fraction of the baseline (0.05 = +5%). Absolute: seconds, bytes, joules or a count."
+                  },
+                  "budget": {
+                    "type": "string",
+                    "description": "The budget as written."
+                  },
+                  "baseline": {
+                    "type": "number",
+                    "description": "Value in the baseline; omitted when unavailable, never 0."
+                  },
+                  "current": {
+                    "type": "number",
+                    "description": "Value of this run; omitted when unavailable, never 0."
+                  },
+                  "change": {
+                    "type": "number",
+                    "description": "current / baseline - 1; relative budgets only."
+                  },
+                  "p_value": {
+                    "type": "number",
+                    "description": "p-value of the difference of the per-run samples, when it was computed."
+                  },
+                  "verdict": {
+                    "type": "string",
+                    "description": "pass, fail, within_noise or not_evaluated. Open enum."
+                  },
+                  "reason": {
+                    "type": "string",
+                    "description": "Why the budget is not_evaluated: unavailable_in_baseline, unavailable_in_current, baseline_not_positive, too_few_runs. Open enum."
+                  }
+                },
+                "required": [
+                  "command",
+                  "metric",
+                  "kind",
+                  "op",
+                  "limit",
+                  "budget",
+                  "verdict"
+                ]
+              }
+            }
+          },
+          "required": [
+            "on_unavailable",
+            "verdict",
+            "budgets"
+          ],
+          "description": "New in 1.29 (#325): the outcome of --budget and --fail-if-regressed. Not required here, so that a MINOR addition is not a breaking change for consumers of older exports."
         }
       },
       "required": [
@@ -1579,52 +1666,6 @@
             ]
           },
           "description": "Buckets scaled for multiplexing: runs and lowest coverage."
-        },
-        "interference": {
-          "type": "object",
-          "properties": {
-            "cgroup_throttled_usec": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Microseconds the cgroup was throttled by its CPU quota during the runs (the cgroup's counter). Omitted when unreadable."
-            },
-            "cgroup_throttled_runs": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Runs during which the throttled time grew."
-            },
-            "cgroup_oom_kills": {
-              "type": "integer",
-              "minimum": 0,
-              "description": "Processes killed by the OOM killer in the cgroup during the runs."
-            },
-            "thermal": {
-              "type": "object",
-              "properties": {
-                "start_c": {
-                  "type": "number"
-                },
-                "end_c": {
-                  "type": "number"
-                },
-                "max_c": {
-                  "type": "number"
-                },
-                "throttle_events": {
-                  "type": "integer",
-                  "minimum": 0,
-                  "description": "Thermal throttling events the CPUs reported; omitted when no counter exists."
-                }
-              },
-              "required": [
-                "start_c",
-                "end_c",
-                "max_c"
-              ],
-              "description": "Hottest CPU temperature sensor in degrees Celsius."
-            }
-          },
-          "description": "Environment observed while the runs executed (new in 1.29, #315). A source that cannot be read is omitted, never 0."
         }
       },
       "required": [

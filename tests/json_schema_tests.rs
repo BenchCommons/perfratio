@@ -75,6 +75,15 @@ fn export(args: &[&str]) -> Value {
 const CASES: &[(&str, &[&str])] = &[
     ("default", &["--runs=3", "sleep 0.1"]),
     (
+        "absolute budgets",
+        &[
+            "--runs=3",
+            "--budget=wall<=1s",
+            "--budget=energy<=3J",
+            "sleep 0.1",
+        ],
+    ),
+    (
         "sequential stopping",
         &[
             "--target-precision=5%",

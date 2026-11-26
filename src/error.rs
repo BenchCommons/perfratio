@@ -128,6 +128,11 @@ pub struct Interrupted;
 #[error("{0} benchmark(s) regressed compared with the baseline ('--fail-if-regressed')")]
 pub struct RegressionDetected(pub usize);
 
+/// `--budget` found a budget that fails (exit code 3)
+#[derive(Debug, Error)]
+#[error("{0} budget(s) failed ('--budget')")]
+pub struct BudgetFailed(pub usize);
+
 /// `--fail-on-quality` found a benchmark with a worse grade (exit code 5)
 #[derive(Debug, Error)]
 #[error("{0} benchmark(s) have a measurement quality worse than '{1}' ('--fail-on-quality')")]
