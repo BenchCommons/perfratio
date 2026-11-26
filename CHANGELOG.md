@@ -6,17 +6,30 @@ Migrating from hyperfine or joulex: see [docs/MIGRATION.md](docs/MIGRATION.md). 
 
 ## 1.0.0 - 2026-11-26
 
-Generated from the merged pull requests (#1 to #284). Pull requests that bump dependencies or GitHub Actions are listed under Internal.
+Generated from the merged pull requests (#1 to #338). Pull requests that bump dependencies or GitHub Actions are listed under Internal.
 
 ### Breaking changes
 
 - Ambiguous alias dropped in round-robin mode when computing the common run count ([#145](https://github.com/BenchCommons/perfratio/pull/145), issue [#102](https://github.com/BenchCommons/perfratio/issues/102), [#111](https://github.com/BenchCommons/perfratio/issues/111))
 - Project renamed from joulex to perfratio (crate, binary, man page, `$PERFRATIO_ITERATION`); see docs/MIGRATION.md ([#224](https://github.com/BenchCommons/perfratio/pull/224))
-- Removed the `joulex` shell completions, the `joulex.1` man page and the `joulex_eta` progress key; renamed `$HYPERFINE_RANDOMIZED_ENVIRONMENT_OFFSET` to `$PERFRATIO_RANDOMIZED_ENVIRONMENT_OFFSET`. `$JOULEX_ITERATION`, `$HYPERFINE_ITERATION` and `$JOULEX_SYSTEM_CHECK_ROOT` still work but warn and are removed in the release after 1.0 ([#263](https://github.com/BenchCommons/perfratio/pull/263), issue [#225](https://github.com/BenchCommons/perfratio/issues/225))
+- Removed the `joulex` shell completions, the `joulex.1` man page and the `joulex_eta` progress key; renamed `$HYPERFINE_RANDOMIZED_ENVIRONMENT_OFFSET` to `$PERFRATIO_RANDOMIZED_ENVIRONMENT_OFFSET` ([#263](https://github.com/BenchCommons/perfratio/pull/263)). The `$JOULEX_ITERATION`, `$HYPERFINE_ITERATION` and `$JOULEX_SYSTEM_CHECK_ROOT` aliases are removed; use the `PERFRATIO_` names ([#302](https://github.com/BenchCommons/perfratio/pull/302), issue [#225](https://github.com/BenchCommons/perfratio/issues/225))
 - The JSON export no longer has the top-level `joulex` key; read `perfratio` instead. Exports start with `"schemaVersion"` ([#262](https://github.com/BenchCommons/perfratio/pull/262), issue [#240](https://github.com/BenchCommons/perfratio/issues/240))
 
 ### Features
 
+- `--counters` hardware performance counters on Linux via `perf_event_open`, with multiplexing scaling, derived IPC/CPI/miss rates, `counters_coverage` and `--metric instructions|cycles` ([#294](https://github.com/BenchCommons/perfratio/pull/294), [#328](https://github.com/BenchCommons/perfratio/pull/328), [#334](https://github.com/BenchCommons/perfratio/pull/334); issue [#49](https://github.com/BenchCommons/perfratio/issues/49), [#213](https://github.com/BenchCommons/perfratio/issues/213), [#219](https://github.com/BenchCommons/perfratio/issues/219))
+- `--scope user|kernel|all|split` and `:u`/`:k` counter modifiers ([#329](https://github.com/BenchCommons/perfratio/pull/329); issue [#218](https://github.com/BenchCommons/perfratio/issues/218))
+- Software events (context switches, CPU migrations, page faults, task-clock) and effective CPU frequency with throttling warnings ([#330](https://github.com/BenchCommons/perfratio/pull/330); issue [#220](https://github.com/BenchCommons/perfratio/issues/220), [#222](https://github.com/BenchCommons/perfratio/issues/222))
+- `--topdown` TMA level 1 (Intel Ice Lake+, AMD Zen 4/5) ([#331](https://github.com/BenchCommons/perfratio/pull/331); issue [#221](https://github.com/BenchCommons/perfratio/issues/221))
+- `--simd` floating-point vectorization breakdown (Intel, AMD Zen 4/5) ([#333](https://github.com/BenchCommons/perfratio/pull/333); issue [#211](https://github.com/BenchCommons/perfratio/issues/211))
+- `--concurrency N` runs N simultaneous instances per run ([#296](https://github.com/BenchCommons/perfratio/pull/296), [#335](https://github.com/BenchCommons/perfratio/pull/335); issue [#53](https://github.com/BenchCommons/perfratio/issues/53))
+- `--optimize` golden-section search of a numeric parameter, with `--optimize-budget` and `--optimize-confirm` ([#297](https://github.com/BenchCommons/perfratio/pull/297), [#336](https://github.com/BenchCommons/perfratio/pull/336); issue [#98](https://github.com/BenchCommons/perfratio/issues/98))
+- `--energy-domains` RAPL domain breakdown, run-window alignment and a permission hint ([#299](https://github.com/BenchCommons/perfratio/pull/299), [#338](https://github.com/BenchCommons/perfratio/pull/338); issue [#59](https://github.com/BenchCommons/perfratio/issues/59))
+- Energy backends for Apple Silicon (IOReport) and Windows (EMI) ([#295](https://github.com/BenchCommons/perfratio/pull/295); issue [#291](https://github.com/BenchCommons/perfratio/issues/291))
+- Windows `--resource-usage` via job accounting, CPU frequency check and registry CPU model ([#293](https://github.com/BenchCommons/perfratio/pull/293); issue [#291](https://github.com/BenchCommons/perfratio/issues/291))
+- macOS `--affinity p-cores|e-cores` and `--priority realtime` ([#298](https://github.com/BenchCommons/perfratio/pull/298); issue [#291](https://github.com/BenchCommons/perfratio/issues/291))
+- Library `perfratio::api::Benchmark` builder, quiet finish and optional `cli` feature ([#300](https://github.com/BenchCommons/perfratio/pull/300); issue [#92](https://github.com/BenchCommons/perfratio/issues/92))
+- JSON Schema file `docs/schema/perfratio-export.schema.json`, validated in tests, and `energy_samples` ([#332](https://github.com/BenchCommons/perfratio/pull/332); issue [#240](https://github.com/BenchCommons/perfratio/issues/240))
 - Add --parameter-file flag to read parameter lines from file ([#9](https://github.com/BenchCommons/perfratio/pull/9), issue [#5](https://github.com/BenchCommons/perfratio/issues/5))
 - Add --import-json flag to compare and convert saved benchmarks ([#10](https://github.com/BenchCommons/perfratio/pull/10), issue [#6](https://github.com/BenchCommons/perfratio/issues/6))
 - Export detailed user_times and system_times in JSON ([#14](https://github.com/BenchCommons/perfratio/pull/14), issue [#11](https://github.com/BenchCommons/perfratio/issues/11))
@@ -76,7 +89,7 @@ Generated from the merged pull requests (#1 to #284). Pull requests that bump de
 - Add `--output-metric-stderr` ([#265](https://github.com/BenchCommons/perfratio/pull/265), issue [#90](https://github.com/BenchCommons/perfratio/issues/90))
 - Minimal pre-stable library API, `perfratio::api` ([#277](https://github.com/BenchCommons/perfratio/pull/277), issue [#92](https://github.com/BenchCommons/perfratio/issues/92))
 - `--check-system` reports PMU permissions on Linux ([#268](https://github.com/BenchCommons/perfratio/pull/268), issue [#217](https://github.com/BenchCommons/perfratio/issues/217))
-- Building blocks, not yet wired to a CLI flag: derived IPC, CPI and miss-rate metrics ([#267](https://github.com/BenchCommons/perfratio/pull/267), issue [#213](https://github.com/BenchCommons/perfratio/issues/213)) and PMU multiplexing detection and scaling ([#271](https://github.com/BenchCommons/perfratio/pull/271), issue [#219](https://github.com/BenchCommons/perfratio/issues/219))
+- Derived IPC, CPI and miss-rate metrics ([#267](https://github.com/BenchCommons/perfratio/pull/267), issue [#213](https://github.com/BenchCommons/perfratio/issues/213)) and PMU multiplexing detection and scaling, wired to `--counters` in #294 ([#271](https://github.com/BenchCommons/perfratio/pull/271), issue [#219](https://github.com/BenchCommons/perfratio/issues/219))
 
 ### Bug fixes
 
@@ -122,6 +135,7 @@ Generated from the merged pull requests (#1 to #284). Pull requests that bump de
 
 ### Internal
 
+- Security: `SECURITY.md`, gitleaks config, fuzz targets, SBOM and build attestations in the release workflow, atomic diff export ([#301](https://github.com/BenchCommons/perfratio/pull/301), issue [#22](https://github.com/BenchCommons/perfratio/issues/22))
 - Bump actions/checkout from 5 to 7 ([#1](https://github.com/BenchCommons/perfratio/pull/1))
 - Bump softprops/action-gh-release from 2 to 3 ([#2](https://github.com/BenchCommons/perfratio/pull/2))
 - Bump clap_complete from 4.5.60 to 4.6.9 ([#3](https://github.com/BenchCommons/perfratio/pull/3))
@@ -159,16 +173,10 @@ Generated from the merged pull requests (#1 to #284). Pull requests that bump de
 
 ### Not in 1.0
 
-Still open after the changes above:
-
-- [#240](https://github.com/BenchCommons/perfratio/issues/240): JSON `energy_samples`, a JSON Schema file with CI validation, and the `doc/understanding-output.md` section.
-- [#225](https://github.com/BenchCommons/perfratio/issues/225): removal of the deprecated `$JOULEX_ITERATION`, `$HYPERFINE_ITERATION` and `$JOULEX_SYSTEM_CHECK_ROOT` in the release after 1.0.
-- [#59](https://github.com/BenchCommons/perfratio/issues/59): `--energy-domains` (RAPL domain breakdown).
-- [#213](https://github.com/BenchCommons/perfratio/issues/213), [#219](https://github.com/BenchCommons/perfratio/issues/219): wiring the derived metrics and multiplexing scaling to `--counters` ([#49](https://github.com/BenchCommons/perfratio/issues/49)).
-- [#92](https://github.com/BenchCommons/perfratio/issues/92): separating printing from measurement in the library, and a `cli` feature.
 - [#93](https://github.com/BenchCommons/perfratio/issues/93): publishing to crates.io, Homebrew and winget (needs maintainer credentials).
-- [#222](https://github.com/BenchCommons/perfratio/issues/222), [#221](https://github.com/BenchCommons/perfratio/issues/221), [#220](https://github.com/BenchCommons/perfratio/issues/220), [#218](https://github.com/BenchCommons/perfratio/issues/218), [#211](https://github.com/BenchCommons/perfratio/issues/211): PMU extensions (specs only, see [#281](https://github.com/BenchCommons/perfratio/pull/281)).
-- [#72](https://github.com/BenchCommons/perfratio/issues/72): ideas tracking issue.
+- [#337](https://github.com/BenchCommons/perfratio/issues/337): running the RAPL and PMU test suite on bare-metal Linux. The counter, energy and topdown code is unit-tested and compiled in CI but has not run on real hardware.
+- [#291](https://github.com/BenchCommons/perfratio/issues/291): remaining cross-platform gaps (for example hardware counters on macOS and Windows).
+- New roadmap items from the 1.0 review are tracked under [#72](https://github.com/BenchCommons/perfratio/issues/72).
 
 ---
 
