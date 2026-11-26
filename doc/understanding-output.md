@@ -89,6 +89,11 @@ Summary
 | `-C`, `--conclude CMD` (alias `--after`) | after **each** run | no |
 | `-c`, `--cleanup CMD` | once **after all runs** of a benchmark; once for all commands or once per command | no |
 
+`PERFRATIO_RUN_ID` is a number that is unique for every run (and, with `--concurrency`, for every
+instance) and the same for the `--prepare`, the command and the `--conclude` of one run;
+`PERFRATIO_WORKER_ID` is the instance number in a `--concurrency` batch. Use them to name files
+that parallel runs must not share (`in.$PERFRATIO_RUN_ID.txt`).
+
 `PERFRATIO_ITERATION` is set to the run index (`0`, `1`, … or
 `warmup-0`, …) for the command, `--prepare` and `--conclude`. The same value is available as
 the `{iteration}` placeholder, which also works with `-N`/`--shell=none`, e.g.
@@ -246,7 +251,10 @@ is different from an energy of `0`.
 | `energy_domains_joules` | With `--energy-domains`: joules per RAPL domain and run. Domains overlap and are not additive. |
 | `resources` | Per-run context switches, page faults and block I/O (`--resource-usage`). A column the OS cannot report is omitted. |
 | `counters`, `counters_summary`, `counters_scope`, `counters_multiplexed_runs`, `counters_coverage`, `efficiency` | Hardware counters per run (`null` = not readable), their summary, the scope of unsuffixed keys (`all`, `user`, `kernel`; keys may carry `:u` or `:k`), runs with scaled counters, the lowest share of time each multiplexed event was scheduled (0..1), and `ipc`, `cpi`, `cache_miss_rate`, `branch_miss_rate`. |
-| `concurrency`, `instance_times`, `throughput`, `instance_percentiles`, `energy_per_instance_joules` | With `--concurrency N`: `times` then holds the makespan of each run, and `exit_codes` has N entries per run. |
+| `concurrency`, `instance_times`, `throughput`, `instance_percentiles` | With `--concurrency N`: `times` then holds the makespan of each run, and `exit_codes` has N entries per run. |
+| `energy_scope` | With `--energy`: `system` (the package counter covers the whole machine) or `batch` (`--concurrency`: the energy of the whole batch; it is never divided per instance). |
+| `run_ids`, `instance_run_ids` | `PERFRATIO_RUN_ID` of every run (with `--concurrency`: of every instance, one row per run; the position in the row is `PERFRATIO_WORKER_ID`). |
+| `leftover_processes` | Only when true: processes started by the command outlived it and were killed. |
 
 ### Comparing implementations across languages
 

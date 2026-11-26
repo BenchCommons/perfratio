@@ -62,6 +62,9 @@ pub enum Warnings {
     },
     /// `--subtract`: the baseline's σ is large compared with the net time
     NoisyBaseline,
+    /// Descendants of the command were still running when it exited
+    /// (`docs/specs/process-tree.md`)
+    LeftoverProcesses,
     /// `--target-precision` not reached within the budget or `--max-runs`
     TargetPrecisionNotReached {
         target: f64,
@@ -104,6 +107,13 @@ impl fmt::Display for Warnings {
                 concurrent load.",
                 MIN_EXECUTION_TIME * 1e3 * n as f64,
                 MIN_EXECUTION_TIME * 1e3
+            ),
+            Warnings::LeftoverProcesses => write!(
+                f,
+                "Processes started by the command were still running when it exited \
+                 (daemonized or background children). They were killed, but they used \
+                 CPU, memory and energy outside the measured command, so the results may \
+                 include or miss their work."
             ),
             Warnings::NonZeroExitCode => write!(f, "Ignoring non-zero exit code."),
             Warnings::SlowInitialRun(time_first_run, ref options) => write!(

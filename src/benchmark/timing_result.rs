@@ -118,6 +118,9 @@ pub struct TimingResult {
     /// The other fields are then the aggregate of the batch (see
     /// `docs/specs/concurrency.md`). Empty for a single instance.
     pub instances: Vec<InstanceTiming>,
+
+    /// Descendants of the command outlived it (`docs/specs/process-tree.md`)
+    pub leftover_processes: bool,
 }
 
 #[test]

@@ -280,9 +280,45 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance_percentiles: Option<InstancePercentiles>,
 
-    /// `--concurrency` with `--energy`: mean batch energy divided by N
+    /// No longer written (1.16): package energy is shared by the instances, so
+    /// it is not divided per instance (`docs/specs/process-tree.md`). Kept so
+    /// that exports of schemaVersion 1.5 to 1.15 still load.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub energy_per_instance_joules: Option<f64>,
+
+    /// Scope of the energy values (with `--energy`): `system` (the package
+    /// counter covers every process of the machine) or `batch` (with
+    /// `--concurrency`, the energy of the whole batch over the makespan)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub energy_scope: Option<String>,
+
+    /// `PERFRATIO_RUN_ID` of every run in `times`. With `--concurrency` it is
+    /// the id of instance 0, which `--prepare` and `--conclude` also see.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_ids: Option<Vec<u64>>,
+
+    /// `--concurrency`: `PERFRATIO_RUN_ID` of every instance, one row per run
+    /// aligned with `instance_times`; the position in the row is the
+    /// `PERFRATIO_WORKER_ID`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance_run_ids: Option<Vec<Vec<u64>>>,
+
+    /// Processes started by the command (or its prepare/conclude) outlived it
+    /// in at least one run; they were killed (`docs/specs/process-tree.md`)
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub leftover_processes: bool,
+}
+
+/// Scope of the energy values of a benchmark. RAPL counts the whole package,
+/// so the energy of a run is never the energy of one process: it is `system`
+/// for a single instance and, with `--concurrency`, the energy of the whole
+/// `batch` over its makespan. Package energy is never divided per instance.
+pub fn energy_scope(concurrency: Option<usize>) -> &'static str {
+    if concurrency.is_some_and(|n| n > 1) {
+        "batch"
+    } else {
+        "system"
+    }
 }
 
 /// Percentiles of the per-instance wall times of a `--concurrency` benchmark.
@@ -795,4 +831,11 @@ fn test_primary_samples_and_metrics() {
     assert!(result.primary_stddev(Metric::Cpu).is_some());
     assert!(result.primary_stddev(Metric::Energy).is_some());
     assert!(result.primary_stddev(Metric::Memory).is_some());
+}
+
+#[test]
+fn test_energy_scope_is_never_per_instance() {
+    assert_eq!(energy_scope(None), "system");
+    assert_eq!(energy_scope(Some(1)), "system");
+    assert_eq!(energy_scope(Some(4)), "batch");
 }

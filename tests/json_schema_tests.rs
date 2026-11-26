@@ -309,6 +309,10 @@ const NEEDS_REAL_HOST: &[&str] = &[
     "discarded_outliers",
     "omitted_failed_runs",
     "shell",
+    // `leftover_processes` needs a command that leaves a child behind (Unix case in
+    // `real_cases`); `energy_per_instance_joules` is no longer written since 1.16
+    "leftover_processes",
+    "energy_per_instance_joules",
 ];
 
 /// Cases that need real commands, which `--debug-mode` cannot simulate (`--output-metric`,
@@ -354,6 +358,11 @@ fn real_cases() -> Vec<(&'static str, Vec<String>)> {
         (
             "ignored failing command",
             [args(&["--runs=3", "-N", "-i"]), vec![failing]].concat(),
+        ),
+        #[cfg(unix)]
+        (
+            "leftover processes",
+            args(&["--runs=2", "sleep 36 & sleep 0.05"]),
         ),
     ]
 }
