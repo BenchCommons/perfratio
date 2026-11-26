@@ -90,6 +90,10 @@ pub struct BenchmarkRunner<'a> {
     /// Breakdown of the run being recorded, moved to `domain_measurements` with its time
     pending_domains: Option<Vec<(String, f64)>>,
     pub exit_codes: Vec<Option<i32>>,
+    /// `--concurrency N` (N > 1): instance wall times of every run, in spawn order
+    pub instance_times: Vec<Vec<Second>>,
+    /// `--concurrency N` (N > 1): instance exit codes of every run
+    pub instance_exit_codes: Vec<Vec<Option<i32>>>,
     /// OS resource counters per run (`None` where unavailable, e.g. Windows)
     pub resource_counters: Vec<Option<timing_result::ResourceCounters>>,
     /// Per-run parameter values of each run, as (name, value) pairs
@@ -199,6 +203,8 @@ impl<'a> BenchmarkRunner<'a> {
             domain_measurements: vec![],
             pending_domains: None,
             exit_codes: vec![],
+            instance_times: vec![],
+            instance_exit_codes: vec![],
             resource_counters: vec![],
             per_run_values: vec![],
             all_succeeded: true,
@@ -613,6 +619,7 @@ impl<'a> BenchmarkRunner<'a> {
             .push(self.subtract_baseline_energy(energy_initial));
         self.domain_measurements.push(self.pending_domains.take());
         self.exit_codes.push(extract_exit_code(status));
+        self.push_instances(&res);
         self.resource_counters.push(res.counters);
         self.per_run_values.push(
             self.command
@@ -656,6 +663,7 @@ impl<'a> BenchmarkRunner<'a> {
             .push(self.subtract_baseline_energy(energy));
         self.domain_measurements.push(self.pending_domains.take());
         self.exit_codes.push(extract_exit_code(status));
+        self.push_instances(&res);
         self.resource_counters.push(res.counters);
         self.per_run_values.push(
             self.command
@@ -667,6 +675,16 @@ impl<'a> BenchmarkRunner<'a> {
         self.run_conclusion(BenchmarkIteration::Benchmark(iteration))?;
 
         Ok(())
+    }
+
+    /// `--concurrency`: remember the instances of the run just measured.
+    fn push_instances(&mut self, res: &TimingResult) {
+        if self.options.concurrency > 1 {
+            self.instance_times
+                .push(res.instances.iter().map(|i| i.time_real).collect());
+            self.instance_exit_codes
+                .push(res.instances.iter().map(|i| i.exit_code).collect());
+        }
     }
 
     /// Resource counters of all runs, if every run has them.
@@ -729,6 +747,16 @@ impl<'a> BenchmarkRunner<'a> {
                 .collect();
         }
         self.exit_codes = select(&self.exit_codes, keep);
+        if self.instance_times.len() == run_count {
+            self.instance_times = keep
+                .iter()
+                .map(|&index| self.instance_times[index].clone())
+                .collect();
+            self.instance_exit_codes = keep
+                .iter()
+                .map(|&index| self.instance_exit_codes[index].clone())
+                .collect();
+        }
         self.resource_counters = select(&self.resource_counters, keep);
         if self.per_run_values.len() == run_count {
             self.per_run_values = keep
@@ -988,6 +1016,14 @@ impl<'a> BenchmarkRunner<'a> {
             (None, None)
         };
 
+        // --concurrency: per-instance statistics (the primary series is the makespan)
+        let concurrency = (self.options.concurrency > 1 && !self.instance_times.is_empty())
+            .then_some(self.options.concurrency);
+        let instance_flat: Vec<Second> = self.instance_times.iter().flatten().copied().collect();
+        let instance_percentiles =
+            concurrency.and_then(|_| benchmark_result::InstancePercentiles::new(&instance_flat));
+        let throughput = concurrency.and_then(|n| benchmark_result::throughput(n, t_mean));
+
         if self.options.output_style != OutputStyleOption::Disabled {
             if print_header {
                 let suffix = if is_interrupted {
@@ -1209,6 +1245,23 @@ impl<'a> BenchmarkRunner<'a> {
                     }
                 }
 
+                if let (Some(n), Some(p)) = (concurrency, instance_percentiles) {
+                    let fmt = |t: Second| format_duration(t, Some(time_unit));
+                    crate::outln!(
+                        "  Concurrency:        {n} instances per run (time is the makespan)"
+                    );
+                    crate::outln!(
+                        "  Per-instance (mean): {}   p50 {}   p95 {}   max {}",
+                        colors::green(fmt(mean(&instance_flat))).bold(),
+                        fmt(p.p50),
+                        fmt(p.p95),
+                        fmt(p.max)
+                    );
+                    if let Some(rate) = throughput {
+                        crate::outln!("  Throughput:         {rate:.1} instances/s");
+                    }
+                }
+
                 if let Some(summaries) = &custom_metrics_summary {
                     for (name, summary) in summaries {
                         // already printed as the primary metric above
@@ -1376,6 +1429,12 @@ impl<'a> BenchmarkRunner<'a> {
             if self.executor.uses_shell() && self.times_real.iter().any(|&t| t < MIN_EXECUTION_TIME)
             {
                 warnings.push(Warnings::FastExecutionTime);
+            }
+
+            if self.options.concurrency > 1
+                && t_mean < MIN_EXECUTION_TIME * self.options.concurrency as f64
+            {
+                warnings.push(Warnings::ConcurrencySpawnCost(self.options.concurrency));
             }
 
             if self.options.measure_energy
@@ -1618,7 +1677,17 @@ impl<'a> BenchmarkRunner<'a> {
             idle_watts: self.idle_watts,
             mean_net_energy_joules: mean_net_energy,
             energy_domains_joules: energy_domains,
-            exit_codes: self.exit_codes,
+            exit_codes: if concurrency.is_some() {
+                // N exit codes per run, row-major (docs/specs/concurrency.md)
+                self.instance_exit_codes.into_iter().flatten().collect()
+            } else {
+                self.exit_codes
+            },
+            concurrency,
+            instance_times: concurrency.map(|_| self.instance_times),
+            throughput,
+            instance_percentiles,
+            energy_per_instance_joules: concurrency.and_then(|n| mean_energy.map(|e| e / n as f64)),
             parameters: self
                 .command
                 .get_parameters()

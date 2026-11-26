@@ -191,6 +191,54 @@ pub struct BenchmarkResult {
     /// Statistical summary of custom metrics
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_metrics_summary: Option<BTreeMap<String, MetricSummary>>,
+
+    /// `--concurrency N` (only when N > 1): instances started simultaneously per
+    /// run. With it present, `times` holds the makespan of each run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub concurrency: Option<usize>,
+
+    /// `--concurrency`: wall time of every instance in seconds, one row per run
+    /// aligned with `times`, instances in spawn order
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance_times: Option<Vec<Vec<Second>>>,
+
+    /// `--concurrency`: instances per second, `N / mean makespan`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub throughput: Option<f64>,
+
+    /// `--concurrency`: percentiles of all instance times (`runs x N` samples)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance_percentiles: Option<InstancePercentiles>,
+
+    /// `--concurrency` with `--energy`: mean batch energy divided by N
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub energy_per_instance_joules: Option<f64>,
+}
+
+/// Percentiles of the per-instance wall times of a `--concurrency` benchmark.
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct InstancePercentiles {
+    pub p50: Second,
+    pub p95: Second,
+    pub max: Second,
+}
+
+impl InstancePercentiles {
+    /// From the (unsorted) instance times of all runs.
+    pub fn new(times: &[Second]) -> Option<Self> {
+        let mut sorted = times.to_vec();
+        sorted.sort_by(f64::total_cmp);
+        Some(InstancePercentiles {
+            p50: crate::stats::summary::percentile(&sorted, 50.0)?,
+            p95: crate::stats::summary::percentile(&sorted, 95.0)?,
+            max: *sorted.last()?,
+        })
+    }
+}
+
+/// Instances per second: `concurrency / mean makespan` (`None` for a zero makespan).
+pub fn throughput(concurrency: usize, mean_makespan: Second) -> Option<f64> {
+    (mean_makespan > 0.0).then(|| concurrency as f64 / mean_makespan)
 }
 
 /// Statistical summary of a custom output metric
@@ -511,6 +559,17 @@ mod tests {
             exit_codes: codes,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn instance_percentiles_and_throughput() {
+        let p = InstancePercentiles::new(&[0.4, 0.1, 0.3, 0.2]).unwrap();
+        assert_eq!(p.max, 0.4);
+        assert!((p.p50 - 0.25).abs() < 1e-12);
+        assert!((p.p95 - 0.385).abs() < 1e-12);
+        assert_eq!(InstancePercentiles::new(&[]), None);
+        assert_eq!(throughput(8, 0.5), Some(16.0));
+        assert_eq!(throughput(8, 0.0), None);
     }
 
     #[test]

@@ -38,7 +38,7 @@ Console, after the Energy line:
 Domains (mean):      core 0.710 J · uncore 0.020 J · dram 0.180 J · package 1.284 J · psys 2.100 J
 ```
 
-JSON, new in `schemaVersion` 1.5 (MINOR, additive): `results[].energy_domains_joules`, an object
+JSON, new in `schemaVersion` 1.6 (MINOR, additive): `results[].energy_domains_joules`, an object
 `{domain: [joules per run]}`, each array aligned with `times`. Present only when every run has
 a reading of the same set of domains.
 
@@ -77,7 +77,7 @@ do it only on machines the user controls.
 - Unit tests with an injectable sysfs root (`LinuxRaplSampler::try_new_at`): domains with one and
   two packages, `psys`, total unchanged, missing zones, off by default, permission helper.
 - Debug-mode CLI tests (mock sampler) for the flag, the JSON export and the unchanged total.
-- Layout test: `schemaVersion` is `1.5`.
+- Layout test: `schemaVersion` is `1.6`.
 - `#[ignore]` test `bare_metal_rapl_domains` (Linux with readable `energy_uj`, run with
   `cargo test --test energy_domains_tests -- --ignored`). **Not run on real hardware by the author**
   (macOS dev machine, CI has no RAPL).
