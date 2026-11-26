@@ -814,6 +814,20 @@ pub fn build_command() -> Command {
                        Low-noise commands then finish early and noisy ones get more runs."),
         )
         .arg(
+            Arg::new("target-precision-method")
+                .long("target-precision-method")
+                .action(ArgAction::Set)
+                .value_name("METHOD")
+                .value_parser(["fixed", "sequential"])
+                .requires("target-precision")
+                .help("How '--target-precision' decides that the interval is narrow enough: \
+                       'fixed' (default) re-checks the Student-t interval of the mean after \
+                       every run, which stops too early more often than the confidence level \
+                       says; 'sequential' uses an anytime-valid confidence sequence of the \
+                       mean, valid however the run count was chosen, at the cost of about 2.5x \
+                       the runs. Assumes independent runs with finite variance."),
+        )
+        .arg(
             Arg::new("max-benchmarking-time")
                 .long("max-benchmarking-time")
                 .action(ArgAction::Set)
@@ -1281,6 +1295,32 @@ pub fn build_command() -> Command {
                        'p-cores' or 'e-cores' (Apple Silicon) to prefer a core type."),
         )
         .arg(
+            Arg::new("pin-workers")
+                .long("pin-workers")
+                .action(ArgAction::Set)
+                .value_name("MODE")
+                .num_args(0..=1)
+                .require_equals(true)
+                .default_missing_value("auto")
+                .value_parser(["auto", "none"])
+                .help("With '--jobs' > 1: give every worker its own CPUs, one physical core \
+                       (with its SMT siblings) per worker, within '--affinity'. Default with \
+                       '--jobs' > 1: auto; 'none' leaves the workers unpinned. Fails when \
+                       there are fewer usable CPUs than jobs. Linux and Windows; elsewhere \
+                       an explicit flag warns and the workers are not pinned. The partition \
+                       is recorded in the JSON export."),
+        )
+        .arg(
+            Arg::new("reserve-cpus")
+                .long("reserve-cpus")
+                .action(ArgAction::Set)
+                .value_name("N|LIST")
+                .help("With '--jobs' > 1: keep N CPUs (the highest ones, with their SMT \
+                       siblings) or the CPUs of an explicit list such as '0' written as \
+                       '0-0' or '0,1' for perfratio's own threads. Workers never run there. \
+                       Linux and Windows."),
+        )
+        .arg(
             Arg::new("check-system")
                 .long("check-system")
                 .action(ArgAction::Set)
@@ -1487,8 +1527,8 @@ pub fn build_command() -> Command {
             Arg::new("schedule")
                 .long("schedule")
                 .value_name("MODE")
-                .value_parser(["grouped", "round-robin", "interleaved", "saturate", "exclusive", "fair"])
-                .help("Set benchmark execution schedule: 'grouped' (run all iterations per command; default) or 'round-robin' / 'interleaved' (interleave iterations across commands to mitigate temporal bias). With '--jobs' > 1: 'saturate' (keep every worker busy; default), 'exclusive' (a command never runs concurrently with itself) or 'fair' (every command keeps the same number of runs).")
+                .value_parser(["grouped", "round-robin", "interleaved", "saturate", "exclusive", "fair", "randomized", "balanced"])
+                .help("Set benchmark execution schedule: 'grouped' (run all iterations per command; default) or 'round-robin' / 'interleaved' (interleave iterations across commands to mitigate temporal bias), 'randomized' (interleaved, with a seeded shuffle of the command order in every round; '--seed' sets the seed) or 'balanced' (interleaved, order rotated every round so each command takes each position equally often). With '--jobs' > 1: 'saturate' (keep every worker busy; default), 'exclusive' (a command never runs concurrently with itself) or 'fair' (every command keeps the same number of runs).")
         )
         .arg(
             Arg::new("round-robin")

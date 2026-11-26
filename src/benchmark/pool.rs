@@ -5,9 +5,9 @@
 //! [`Dispatcher`] holds the scheduling policies and no process or thread, so
 //! it is tested with simulated workers. [`run_pool`] drives real workers.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::process::ExitStatus;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 use std::time::Instant;
 
 use anyhow::{anyhow, Result};
@@ -17,10 +17,20 @@ use super::timing_result::TimingResult;
 use super::{run_intermediate, BenchmarkRunner, CONCLUSION_ERROR, PREPARATION_ERROR};
 use crate::command::Command;
 use crate::options::{CommandOutputPolicy, Options};
+use crate::util::cpu_partition::{pin_current_thread, Partition};
 
 thread_local! {
     /// Slot of the worker running on this thread (`None` outside a pool)
     static WORKER: Cell<Option<usize>> = const { Cell::new(None) };
+    /// CPUs of the worker running on this thread (`--pin-workers`)
+    static WORKER_CPUS: RefCell<Option<Arc<[usize]>>> = const { RefCell::new(None) };
+}
+
+/// CPUs that processes started by this worker are pinned to, if any.
+/// They replace `--affinity` for the benchmarked command and for
+/// `--prepare` / `--conclude`.
+pub fn current_cpus() -> Option<Arc<[usize]>> {
+    WORKER_CPUS.with(|cpus| cpus.borrow().clone())
 }
 
 /// Worker slot (0-based) of the calling thread, if it belongs to a pool.
@@ -190,6 +200,7 @@ pub fn run_pool(
     jobs: usize,
     adaptive: bool,
     budget: f64,
+    partition: Option<&Partition>,
     mut on_run: impl FnMut(&BenchmarkRunner<'_>),
 ) -> Result<()> {
     let started = Instant::now();
@@ -214,6 +225,13 @@ pub fn run_pool(
         .collect();
     let mut dispatcher = Dispatcher::new(policy, runners.iter().map(|_| 1).collect());
     let mut first_error: Option<anyhow::Error> = None;
+    // perfratio's own threads stay on the reserved CPUs while the pool runs;
+    // the workers (spawned below) inherit this on Linux and pin themselves
+    let reserved: Option<Arc<[usize]>> = partition
+        .map(|p| p.reserved.as_slice())
+        .filter(|r| !r.is_empty())
+        .map(Arc::from);
+    let _main_pin = reserved.as_deref().and_then(pin_current_thread);
 
     std::thread::scope(|scope| {
         let (done_tx, done_rx) = mpsc::channel::<Finished>();
@@ -222,8 +240,15 @@ pub fn run_pool(
             let (tx, rx) = mpsc::channel::<(usize, u64)>();
             let done_tx = done_tx.clone();
             let contexts = &contexts;
+            let cpus: Option<Arc<[usize]>> =
+                partition.map(|p| Arc::from(p.workers[slot].as_slice()));
+            let reserved = reserved.clone();
             let spawned = std::thread::Builder::new().spawn_scoped(scope, move || {
                 WORKER.with(|w| w.set(Some(slot)));
+                WORKER_CPUS.with(|c| *c.borrow_mut() = cpus);
+                // Processes started from this thread are pinned to the worker's
+                // CPUs; the thread itself stays with perfratio
+                let _pin = reserved.as_deref().and_then(pin_current_thread);
                 while let Ok((command, iteration)) = rx.recv() {
                     let outcome = execute(&contexts[command], iteration);
                     let finished = Finished {
