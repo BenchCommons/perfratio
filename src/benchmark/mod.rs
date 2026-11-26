@@ -137,6 +137,8 @@ pub struct BenchmarkRunner<'a> {
     invalid_runs: u64,
     /// SHA-256 of the stdout of the first checked run
     first_output_sha256: Option<String>,
+    /// cgroup throttling and temperature during the runs
+    watch: crate::environment_watch::Watch,
 }
 
 const PREPARATION_ERROR: &str = "The preparation command terminated with a non-zero exit code. \
@@ -274,6 +276,13 @@ impl<'a> BenchmarkRunner<'a> {
             validated_runs: 0,
             invalid_runs: 0,
             first_output_sha256: None,
+            watch: if !matches!(options.executor_kind, ExecutorKind::Mock(_))
+                || std::env::var_os(crate::system_check::FAKE_ROOT_ENV).is_some()
+            {
+                crate::environment_watch::Watch::new(&crate::thermal::default_root())
+            } else {
+                crate::environment_watch::Watch::disabled()
+            },
             all_succeeded: true,
             count: 0,
             warmup: None,
@@ -382,7 +391,15 @@ impl<'a> BenchmarkRunner<'a> {
     }
 
     /// Perform one warmup run and return its wall-clock time.
+    /// `--cooldown`: wait before a run (outside every timed window)
+    fn cool_down(&self) {
+        if let Some(cooldown) = self.options.cooldown {
+            crate::cooldown::before_run(cooldown, self.options.cooldown_timeout);
+        }
+    }
+
     pub fn run_warmup_iteration(&mut self, iteration: u64) -> Result<Second> {
+        self.cool_down();
         // Prepare, command and conclude of the run share one run id
         let _run = crate::run_id::enter(self.concurrency());
         let _ = self.run_preparation(BenchmarkIteration::Warmup(iteration))?;
@@ -635,6 +652,7 @@ impl<'a> BenchmarkRunner<'a> {
     }
 
     pub fn run_initial_measurement(&mut self) -> Result<()> {
+        self.cool_down();
         let run = crate::run_id::enter(self.concurrency());
         let preparation_result = self.run_preparation(BenchmarkIteration::Benchmark(0))?;
         let preparation_overhead =
@@ -643,6 +661,7 @@ impl<'a> BenchmarkRunner<'a> {
         if let Some(sampler) = self.energy_sampler.as_mut() {
             sampler.start();
         }
+        let watch_before = self.watch.begin();
         let window_start = std::time::Instant::now();
         let (mut res, status) = self.executor.run_command_and_measure(
             self.command,
@@ -651,6 +670,7 @@ impl<'a> BenchmarkRunner<'a> {
             self.output_policy,
         )?;
         let window = window_start.elapsed().as_secs_f64();
+        self.watch.end(watch_before);
         let energy_initial = self.stop_energy(res.time_real, window);
         let success = status.success();
         self.note_leftovers(&res);
@@ -722,12 +742,14 @@ impl<'a> BenchmarkRunner<'a> {
     }
 
     pub fn run_timed_iteration(&mut self, iteration: u64) -> Result<()> {
+        self.cool_down();
         let run = crate::run_id::enter(self.concurrency());
         self.run_preparation(BenchmarkIteration::Benchmark(iteration))?;
 
         if let Some(sampler) = self.energy_sampler.as_mut() {
             sampler.start();
         }
+        let watch_before = self.watch.begin();
         let window_start = std::time::Instant::now();
         let (res, status) = self.executor.run_command_and_measure(
             self.command,
@@ -736,6 +758,7 @@ impl<'a> BenchmarkRunner<'a> {
             self.output_policy,
         )?;
         let window = window_start.elapsed().as_secs_f64();
+        self.watch.end(watch_before);
         let energy = self.stop_energy(res.time_real, window);
         self.note_leftovers(&res);
 
@@ -2172,6 +2195,7 @@ impl<'a> BenchmarkRunner<'a> {
             omitted_failed_runs,
             validation: validation_summary,
             quality: None,
+            interference: std::mem::take(&mut self.watch).finish(),
             discarded_outliers,
             resources,
             runs_planned,

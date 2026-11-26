@@ -32,6 +32,7 @@ ignore unknown ids), an optional `metric`, a `status` and an optional `detail` (
 | `trend` | `time` | no significant drift | Mann–Kendall trend, the thresholds of `interference-diagnostics.md` | | fewer than 8 runs | |
 | `interference` | `time` | one cluster of run times | two separated clusters (multimodal) | | fewer than 8 runs | |
 | `measurement_floor` | `wall` | mean at least 3 runner floors and its CI above the floor (#313) | within the floor (`--below-floor warn`) | within the floor with `--below-floor fail` | the floor could not be measured | `--calibrate=off`, `--debug-mode` |
+| `environment_stability` | `environment` | something read, no cgroup throttling, OOM, thermal throttling, temperature rise ≥ 10 °C or frequency drop (#315, `cgroup-thermal.md`) | any of those | | | nothing readable on this host, `--debug-mode` |
 | `counter_coverage` | `counters` | all counters read, scheduled ≥ 90% | scheduled < 90% (PMU multiplexing), or some readings missing | scheduled < 50% | counters requested, none read | `--counters` not given |
 | `energy_coverage` | `energy` | every run has an energy sample | some runs without | fewer than half of the runs have one | `--energy` given, no sample | `--energy` not given |
 | `workload_validation` | none | all validated runs correct | | any run invalid (also when omitted) | no run validated | no validation options |
@@ -92,11 +93,9 @@ exported with and are included in `--fail-on-quality`.
 result and of what was requested (`--metric`, `--counters`, `--energy`), so checks are table-testable.
 `BenchmarkRunner::finalize` calls it and prints; `main.rs` applies the gate.
 
-## 4. Not yet covered
+## 4. Not covered
 
-These checks are reserved ids and appear once their data exists (#314, #315 are open; `measurement_floor` shipped with #313, `measurement-floor.md`):
-`environment_stability` (cgroup throttling,
-thermal), `environment_compatibility` (only in `--compare`). Adding a check changes the report, so
+`environment_compatibility` is not produced: the check runs when a benchmark finishes, and a comparison is a property of two files. `--compare` and `--import-json` report it as a warning, or an error with `--require-compatible-env` (#314, `environment-fingerprint.md` §4). `environment_stability` shipped with #315. Adding a check changes the report, so
 it raises the JSON MINOR version only if it adds fields; a new `id` alone does not.
 
 ## 5. Tests

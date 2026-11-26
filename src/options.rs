@@ -469,6 +469,11 @@ pub struct Options {
     /// `--fail-on-quality`: exit non-zero when a benchmark's grade is worse
     pub fail_on_quality: Option<crate::quality::Grade>,
 
+    /// `--cooldown`: wait before every run
+    pub cooldown: Option<crate::cooldown::Cooldown>,
+
+    /// `--cooldown-timeout`: how long `until-temp` waits before it gives up
+    pub cooldown_timeout: std::time::Duration,
     /// `--calibrate`: measure the runner floor before benchmarking
     pub calibrate: crate::calibration::CalibrateMode,
 
@@ -579,6 +584,8 @@ impl Default for Options {
             validation: None,
             quality_mode: Default::default(),
             fail_on_quality: None,
+            cooldown: None,
+            cooldown_timeout: crate::cooldown::DEFAULT_TIMEOUT,
             calibrate: Default::default(),
             below_floor: Default::default(),
             discard_outliers: None,
@@ -1070,6 +1077,19 @@ impl Options {
         options.fail_on_quality = matches
             .get_one::<String>("fail-on-quality")
             .and_then(|value| crate::quality::Grade::parse(value));
+        options.cooldown = matches
+            .get_one::<String>("cooldown")
+            .map(|value| {
+                crate::cooldown::Cooldown::parse(value).map_err(OptionsError::InvalidCooldown)
+            })
+            .transpose()?;
+        if let Some(value) = matches.get_one::<String>("cooldown-timeout") {
+            options.cooldown_timeout = crate::util::units::parse_duration(value).map_err(|e| {
+                OptionsError::InvalidCooldown(format!(
+                    "Invalid '--cooldown-timeout' '{value}': {e}"
+                ))
+            })?;
+        }
         options.calibrate = matches
             .get_one::<String>("calibrate")
             .and_then(|value| crate::calibration::CalibrateMode::parse(value))

@@ -475,6 +475,7 @@ pub const NON_METRIC_FIELDS: &[&str] = &[
     "baseline",
     "validation",
     "quality",
+    "interference",
     "significance",
     "p_value",
     "relative_speed",

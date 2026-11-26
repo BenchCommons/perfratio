@@ -181,6 +181,7 @@ impl QualityReport {
         checks.extend(secondary_outliers(result));
         checks.push(trend(result));
         checks.push(interference(result));
+        checks.push(environment_stability(result));
         let (floor_check, below_resolution) = measurement_floor(result, context);
         checks.push(floor_check);
         checks.push(counter_coverage(result, context));
@@ -542,6 +543,87 @@ fn interference(result: &BenchmarkResult) -> Check {
         None => check(id, Some("time"), CheckStatus::Pass, None),
     }
 }
+
+/// A cgroup quota that throttled the runs, thermal throttling or a rising
+/// temperature, a falling effective CPU frequency (#315). Facts of the
+/// environment the benchmark ran in, not hypotheses.
+fn environment_stability(result: &BenchmarkResult) -> Check {
+    let id = "environment_stability";
+    let metric = Some("environment");
+    let runs = runs_of(result);
+    let mut warnings: Vec<String> = Vec::new();
+    let mut facts: Vec<String> = Vec::new();
+
+    if let Some(i) = &result.interference {
+        if let (Some(usec), Some(throttled_runs)) =
+            (i.cgroup_throttled_usec, i.cgroup_throttled_runs)
+        {
+            if throttled_runs > 0 || usec > 0 {
+                warnings.push(format!(
+                    "the cgroup CPU quota throttled the benchmark for {:.1} ms in {throttled_runs} of {runs} runs",
+                    usec as f64 / 1000.0
+                ));
+            } else {
+                facts.push("cgroup not throttled".to_string());
+            }
+        }
+        if let Some(kills) = i.cgroup_oom_kills.filter(|&k| k > 0) {
+            warnings.push(format!(
+                "the out-of-memory killer killed {kills} process(es) in the cgroup"
+            ));
+        }
+        if let Some(t) = &i.thermal {
+            if let Some(events) = t.throttle_events.filter(|&e| e > 0) {
+                warnings.push(format!(
+                    "the CPU reported {events} thermal throttling event(s)"
+                ));
+            }
+            if t.end_c - t.start_c >= THERMAL_RISE_WARN_C {
+                warnings.push(format!(
+                    "the CPU temperature rose from {:.0} to {:.0} °C (peak {:.0} °C)",
+                    t.start_c, t.end_c, t.max_c
+                ));
+            } else {
+                facts.push(format!("temperature {:.0} to {:.0} °C", t.start_c, t.end_c));
+            }
+        }
+    }
+
+    let frequencies: Vec<f64> = result
+        .effective_frequency_hz
+        .iter()
+        .flatten()
+        .flatten()
+        .copied()
+        .collect();
+    if let Some(trend) = crate::stats::diagnostics::trend(&frequencies) {
+        if trend.rel_change <= -crate::stats::diagnostics::TREND_MIN_REL_CHANGE
+            && trend.p_value < crate::stats::diagnostics::TREND_MAX_P
+        {
+            warnings.push(format!(
+                "the effective CPU frequency fell {:.0}% from the first to the last run",
+                -trend.rel_change * 100.0
+            ));
+        }
+    }
+
+    if !warnings.is_empty() {
+        return check(id, metric, CheckStatus::Warn, warnings.join("; "));
+    }
+    if facts.is_empty() {
+        return check(
+            id,
+            metric,
+            CheckStatus::NotApplicable,
+            "no cgroup throttle counters or temperature sensors can be read on this host"
+                .to_string(),
+        );
+    }
+    check(id, metric, CheckStatus::Pass, facts.join(", "))
+}
+
+/// A temperature rise during the benchmark that is flagged, °C
+pub const THERMAL_RISE_WARN_C: f64 = 10.0;
 
 /// Hardware counters: did every run read them, and were they scheduled the
 /// whole time (multiplexing scales the counts when they were not)
