@@ -16,7 +16,7 @@ By default, benchmarking tools compute all comparisons, relative speed ratios, r
 --metric <METRIC>
     Primary metric used for statistics, outlier detection, comparison, and sorting.
     [default: wall]
-    [possible values: wall, cpu, user, system, energy, memory, custom:<name>]
+    [possible values: wall, cpu, user, system, energy, memory, instructions, cycles, custom:<name>]
 ```
 
 - When `--metric energy` is passed, energy measurement is automatically enabled (`measure_energy = true`). If energy sampling is unsupported or unprivileged on the host system, perfratio fails immediately with an explanatory error.

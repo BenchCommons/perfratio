@@ -390,6 +390,38 @@ fn marker(v: Verdict) -> &'static str {
     }
 }
 
+/// Note under the table when a counter row compares values that were scaled
+/// for PMU multiplexing (#219). `None` if no compared counter was scaled.
+fn multiplex_note(
+    reference: &BenchmarkResult,
+    target: &BenchmarkResult,
+    rows: &[DeltaRow],
+) -> Option<String> {
+    let shown = |counter: &str| {
+        rows.iter()
+            .any(|r| r.dimension.counter_name() == Some(counter))
+    };
+    let mut affected = Vec::new();
+    for result in [reference, target] {
+        for (counter, coverage) in result.counters_coverage.iter().flatten() {
+            if shown(counter) {
+                affected.push(format!(
+                    "{} {counter} {:.1}%",
+                    name(result),
+                    coverage * 100.0
+                ));
+            }
+        }
+    }
+    (!affected.is_empty()).then(|| {
+        format!(
+            "Note: counter values are scaled for PMU multiplexing (lowest coverage: {}); \
+             deltas are estimates.",
+            affected.join(", ")
+        )
+    })
+}
+
 fn name(r: &BenchmarkResult) -> String {
     format!("'{}'", r.command)
 }
@@ -469,6 +501,9 @@ fn render_terminal(
                 out.push_str(&format!("  {}\n", "─".repeat(total + 2)));
             }
         }
+        if let Some(note) = multiplex_note(reference, target, &rows) {
+            out.push_str(&format!("  {note}\n"));
+        }
         out.push('\n');
     }
     out
@@ -505,6 +540,9 @@ pub fn markdown(results: &[BenchmarkResult], reference: Option<&BenchmarkResult>
                 fmt_p(r),
                 marker(r.verdict)
             ));
+        }
+        if let Some(note) = multiplex_note(reference, target, &rows) {
+            out.push_str(&format!("\n_{note}_\n"));
         }
     }
     out
@@ -765,6 +803,35 @@ Benchmark comparison (Reference: 'cmd_a')
         assert!(row.p_value.is_some_and(|p| p < 0.05));
         assert_eq!(row.verdict, Verdict::Unknown);
         assert_eq!(Dimension::VectorizationRatio.format(0.964), "96.4%");
+    }
+
+    #[test]
+    fn multiplexing_note_names_scaled_counters_shown_in_the_table() {
+        let counters = |scale: f64| {
+            let v: Vec<Option<u64>> = [1000u64, 1010, 990, 1005, 995, 1000]
+                .iter()
+                .map(|v| Some((*v as f64 * scale) as u64))
+                .collect();
+            std::collections::BTreeMap::from([("instructions".to_string(), v)])
+        };
+        let mut a = full("a", 1.0);
+        let mut b = full("b", 1.0);
+        a.counters = Some(counters(1.0));
+        b.counters = Some(counters(2.0));
+        let rows = compute_rows(&a, &b);
+        assert_eq!(multiplex_note(&a, &b, &rows), None);
+        b.counters_coverage = Some(std::collections::BTreeMap::from([
+            ("instructions".to_string(), 0.742),
+            ("cycles".to_string(), 0.5),
+        ]));
+        let note = multiplex_note(&a, &b, &rows).unwrap();
+        assert!(note.contains("'b' instructions 74.2%"), "{note}");
+        // `cycles` has no row in this table, so it is not mentioned
+        assert!(!note.contains("cycles"), "{note}");
+        let results = [a, b];
+        let text = render_terminal(&results, Some(&results[0]), false);
+        assert!(text.contains("Note: counter values are scaled"), "{text}");
+        assert!(markdown(&results, Some(&results[0])).contains("_Note: counter"));
     }
 
     #[test]

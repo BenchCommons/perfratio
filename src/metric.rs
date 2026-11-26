@@ -39,6 +39,10 @@ pub enum Metric {
     System,
     Energy,
     Memory,
+    /// Retired instructions (`--counters`, Linux); needs a reading for every run.
+    Instructions,
+    /// CPU cycles (`--counters`, Linux); needs a reading for every run.
+    Cycles,
     /// A metric extracted with `--output-metric <name>=<regex>`; lower is better.
     Custom(&'static str),
 }
@@ -66,6 +70,8 @@ impl Metric {
             Metric::System => "system",
             Metric::Energy => "energy",
             Metric::Memory => "memory",
+            Metric::Instructions => "instructions",
+            Metric::Cycles => "cycles",
             Metric::Custom(name) => name,
         }
     }
@@ -79,6 +85,8 @@ impl Metric {
             Metric::System => "System Time",
             Metric::Energy => "Energy",
             Metric::Memory => "Memory",
+            Metric::Instructions => "Instructions",
+            Metric::Cycles => "Cycles",
             Metric::Custom(name) => name,
         }
     }
@@ -87,7 +95,7 @@ impl Metric {
     pub fn verb(&self) -> &'static str {
         match self {
             Metric::Wall | Metric::Cpu | Metric::User | Metric::System => "ran",
-            Metric::Energy | Metric::Memory => "used",
+            Metric::Energy | Metric::Memory | Metric::Instructions | Metric::Cycles => "used",
             Metric::Custom(_) => "had",
         }
     }
@@ -98,6 +106,8 @@ impl Metric {
             Metric::Wall | Metric::Cpu | Metric::User | Metric::System => ("faster", "slower"),
             Metric::Energy => ("less energy", "more energy"),
             Metric::Memory => ("less memory", "more memory"),
+            Metric::Instructions => ("fewer instructions", "more instructions"),
+            Metric::Cycles => ("fewer cycles", "more cycles"),
             Metric::Custom(_) => ("lower value", "higher value"),
         }
     }
@@ -108,7 +118,18 @@ impl Metric {
             Metric::Wall | Metric::Cpu | Metric::User | Metric::System => "as fast as",
             Metric::Energy => "same energy as",
             Metric::Memory => "same memory as",
+            Metric::Instructions => "the same instructions as",
+            Metric::Cycles => "the same cycles as",
             Metric::Custom(_) => "the same value as",
+        }
+    }
+
+    /// The hardware counter behind `instructions` / `cycles`.
+    pub fn counter_kind(&self) -> Option<crate::perf_counters::CounterKind> {
+        match self {
+            Metric::Instructions => Some(crate::perf_counters::CounterKind::Instructions),
+            Metric::Cycles => Some(crate::perf_counters::CounterKind::Cycles),
+            _ => None,
         }
     }
 
@@ -132,6 +153,8 @@ impl FromStr for Metric {
             "system" => Ok(Metric::System),
             "energy" => Ok(Metric::Energy),
             "memory" | "rss" | "peak-memory" => Ok(Metric::Memory),
+            "instructions" => Ok(Metric::Instructions),
+            "cycles" => Ok(Metric::Cycles),
             other => {
                 // names are case-sensitive, so use the original spelling
                 if let Some(name) = s
@@ -149,7 +172,7 @@ impl FromStr for Metric {
                     ));
                 }
                 Err(format!(
-                    "invalid metric '{other}': possible values are wall, cpu, user, system, energy, memory, custom:<name>"
+                    "invalid metric '{other}': possible values are wall, cpu, user, system, energy, memory, instructions, cycles, custom:<name>"
                 ))
             }
         }
@@ -233,6 +256,17 @@ mod tests {
         assert_eq!("memory".parse::<Metric>().unwrap(), Metric::Memory);
         assert_eq!("rss".parse::<Metric>().unwrap(), Metric::Memory);
         assert_eq!("peak-memory".parse::<Metric>().unwrap(), Metric::Memory);
+        assert_eq!(
+            "Instructions".parse::<Metric>().unwrap(),
+            Metric::Instructions
+        );
+        assert_eq!("cycles".parse::<Metric>().unwrap(), Metric::Cycles);
+        assert_eq!(Metric::Cycles.to_string(), "cycles");
+        assert_eq!(
+            Metric::Instructions.counter_kind(),
+            Some(crate::perf_counters::CounterKind::Instructions)
+        );
+        assert_eq!(Metric::Wall.counter_kind(), None);
         assert!("invalid".parse::<Metric>().is_err());
     }
 

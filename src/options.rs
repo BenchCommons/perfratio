@@ -796,6 +796,9 @@ impl Options {
         if options.metric == crate::metric::Metric::Energy {
             options.measure_energy = true;
         }
+        // An imported file carries its own values, so nothing is measured then.
+        let importing = matches.get_one::<String>("import-json").is_some();
+        let metric_counter = options.metric.counter_kind();
         // An imported file carries its own values, so nothing is extracted then.
         if let Some(name) = options.metric.custom_name() {
             if matches.get_one::<String>("import-json").is_none()
@@ -846,7 +849,14 @@ impl Options {
         options.omit_failed_runs = matches.get_flag("omit-failed-runs");
         options.show_resource_usage = matches.get_flag("resource-usage");
         let simd = matches.get_flag("simd");
-        if matches.contains_id("counters") || simd {
+        // `--metric instructions|cycles` collects its own counter
+        let counters_list = matches.get_one::<String>("counters").cloned().or_else(|| {
+            (!importing)
+                .then_some(metric_counter)
+                .flatten()
+                .map(|kind| kind.name().to_string())
+        });
+        if counters_list.is_some() || simd {
             let mode = matches
                 .get_one::<String>("scope")
                 .and_then(|v| crate::perf_counters::ScopeMode::parse(v))
@@ -858,11 +868,20 @@ impl Options {
                         .to_string(),
                 ));
             }
-            let requested = match matches.get_one::<String>("counters") {
+            let mut requested = match counters_list.as_deref() {
                 Some(list) => crate::perf_counters::parse_list(list, mode)
                     .map_err(OptionsError::InvalidCounters)?,
                 None => Vec::new(),
             };
+            if let Some(kind) = metric_counter.filter(|_| !importing) {
+                let spec = crate::perf_counters::CounterSpec {
+                    kind,
+                    scope: mode.default_scope(),
+                };
+                if !requested.contains(&spec) {
+                    requested.push(spec);
+                }
+            }
             let (config, warnings) = crate::perf_counters::resolve_with_simd(
                 requested,
                 mode.default_scope(),

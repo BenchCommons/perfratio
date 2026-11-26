@@ -140,8 +140,10 @@ SUBSYSTEM=="powercap", ACTION=="add|change", RUN+="/bin/sh -c 'chmod o+r /sys%p/
 
 `--delta-table` prints one table per command against the reference, with a row for each measured
 dimension (wall time, peak memory, energy, power, CPU time): mean ± σ, relative delta with its
-95% confidence interval, and the p-value. `--metric <wall|cpu|user|system|energy|memory>` sets the
-primary metric for statistics, comparison and sorting.
+95% confidence interval, and the p-value. `--metric <wall|cpu|user|system|energy|memory|instructions|cycles>` sets the
+primary metric for statistics, comparison and sorting. `instructions` and `cycles` turn on
+`--counters` (Linux). Markdown, AsciiDoc and Org tables get IPC, CPI and miss-rate columns when
+counters were collected.
 
 `--check-system` reports conditions that add noise (frequency governor, turbo boost, load,
 power source). `--check-system=strict` aborts with exit code 4 if a check fails.

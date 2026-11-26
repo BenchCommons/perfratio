@@ -1,7 +1,7 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Partly shipped (schemaVersion 1.10; 1.10 adds `--simd` fields from #211 (`simd-breakdown.md`); 1.9 adds the `:u`/`:k` counter key suffixes, `counters_scope` values `kernel` and `perfratio.measurements.counters_requested_scope` from #218 (`counter-scope-modifiers.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
+Partly shipped (schemaVersion 1.11; 1.11 adds `--simd` fields from #211 (`simd-breakdown.md`); 1.10 adds `results[].counters_coverage` (#219); 1.9 adds the `:u`/`:k` counter key suffixes, `counters_scope` values `kernel` and `perfratio.measurements.counters_requested_scope` from #218 (`counter-scope-modifiers.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
@@ -101,7 +101,7 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
       "energy_unavailable_reason": "rapl_unreadable",
       "resources": "not_requested",
       "counters": "measured",                                 // new in 1.8, #49
-      "simd": "measured"                                      // new in 1.10, #211
+      "simd": "measured"                                      // new in 1.11, #211
     }
   },
   "interrupted": true,                                        // optional
@@ -134,7 +134,7 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
   optional, string) is the scope that was asked for when it differs from `counters_scope`:
   `"all"` next to `"user"` means kernel counting was denied (`perf_event_paranoid >= 2`).
   `counters_unavailable_events` lists keys, so suffixed ones read `instructions:k`.
-  `simd` (`--simd`, new in 1.10) has the values `measured`, `unavailable`, `not_requested`, and
+  `simd` (`--simd`, new in 1.11) has the values `measured`, `unavailable`, `not_requested`, and
   `simd_unavailable_reason` is one of `unsupported_platform`, `unsupported_cpu`,
   `perf_paranoid`, `no_pmu`, `hybrid_cpu_unpinned`, `other` (open enum).
 - `interrupted` (bool, optional, only `true`): the run was stopped by Ctrl-C.
@@ -193,10 +193,11 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `counters_summary` (**new in 1.8**) | { event: { `mean`, `stddev`?, `median`, `min`, `max` } } | with `counters` |
 | `counters_scope` (**new in 1.8**, `"kernel"` new in 1.9) | effective scope of unsuffixed event names: `"all"` (user + kernel), `"user"` (also when kernel counting was denied and `--scope` was implicit) or `"kernel"` (`--scope kernel`); `--scope split` reports `"all"`. A name with a `:u` / `:k` suffix (**new in 1.9**, #218) has that scope, e.g. `instructions:u`; the `split` total is `:u` + `:k` and is not stored | with `counters` |
 | `counters_multiplexed_runs` (**new in 1.8**) | count of runs with a scaled counter | optional (> 0) |
-| `simd` (**new in 1.10**, #211) | { `unit` (`instructions` \| `uops`), `arch`, `scalar_fp`, `simd_128`, `simd_256`, `simd_512`?, `vectorization_ratio` }: per-run arrays aligned with `times`, `null` = not readable (or no FP arithmetic for the ratio); `simd_512` only on CPUs that have the bucket; Intel and AMD units are not comparable | when `measurements.simd` is `measured` |
-| `simd_summary` (**new in 1.10**) | { bucket or `vectorization_ratio`: { `mean`, `stddev`?, `median`, `min`, `max` } } | with `simd` |
-| `simd_scope` (**new in 1.10**) | `"all"` or `"user"`, like `counters_scope` | with `simd` |
-| `simd_scaling` (**new in 1.10**) | { bucket: { `scaled_runs`, `coverage` (lowest) } } for buckets scaled for multiplexing | optional |
+| `counters_coverage` (**new in 1.10**, #219) | { event: number } lowest `time_running / time_enabled` (0..1) over the runs, only for events that were multiplexed or never scheduled | optional (with `counters_multiplexed_runs`) |
+| `simd` (**new in 1.11**, #211) | { `unit` (`instructions` \| `uops`), `arch`, `scalar_fp`, `simd_128`, `simd_256`, `simd_512`?, `vectorization_ratio` }: per-run arrays aligned with `times`, `null` = not readable (or no FP arithmetic for the ratio); `simd_512` only on CPUs that have the bucket; Intel and AMD units are not comparable | when `measurements.simd` is `measured` |
+| `simd_summary` (**new in 1.11**) | { bucket or `vectorization_ratio`: { `mean`, `stddev`?, `median`, `min`, `max` } } | with `simd` |
+| `simd_scope` (**new in 1.11**) | `"all"` or `"user"`, like `counters_scope` | with `simd` |
+| `simd_scaling` (**new in 1.11**) | { bucket: { `scaled_runs`, `coverage` (lowest) } } for buckets scaled for multiplexing | optional |
 | `efficiency` { `ipc`, `cpi`, `cache_miss_rate`, `branch_miss_rate` } (#213) | ratios | optional (with the needed counters) |
 | `diagnostics`, `precision`, `baseline`, `shell`, `timed_out`, `timeout`, `runs_planned` | see `BenchmarkResult` | optional |
 
