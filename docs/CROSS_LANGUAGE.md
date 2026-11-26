@@ -36,6 +36,6 @@ perfratio -N --warmup auto --first-run=separate \
 
 ## JSON fields for consumers
 
-Read `schemaVersion` first (currently `"1.1"`), accept any 1.x and ignore unknown keys. There is no `joulex` key; use `perfratio`. Check `perfratio.measurements.energy` (`measured`, `unavailable` or `not_requested`) before reading energy fields. With `--output-metric-stderr` the metric is read from stderr instead of stdout.
+Read `schemaVersion` first (currently `"1.2"`), accept any 1.x and ignore unknown keys. There is no `joulex` key; use `perfratio`. Check `perfratio.measurements.energy` (`measured`, `unavailable` or `not_requested`) before reading energy fields. With `--output-metric-stderr` the metric is read from stderr instead of stdout.
 
 Correctness checks of the algorithm output and per-language builds belong to the catalog contract in tools-benchmark, not to perfratio.

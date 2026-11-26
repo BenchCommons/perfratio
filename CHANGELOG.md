@@ -65,7 +65,7 @@ Generated from the merged pull requests (#1 to #284). Pull requests that bump de
 - Exclude fork/spawn overhead on Linux via post-fork timing ([#208](https://github.com/BenchCommons/perfratio/pull/208), issue [#81](https://github.com/BenchCommons/perfratio/issues/81))
 - Support custom output metrics with --output-metric ([#209](https://github.com/BenchCommons/perfratio/pull/209), issue [#90](https://github.com/BenchCommons/perfratio/issues/90))
 - Improve progress UI with ticking elapsed time, live estimates, and iteration count ([#210](https://github.com/BenchCommons/perfratio/pull/210), issue [#66](https://github.com/BenchCommons/perfratio/issues/66))
-- JSON export `schemaVersion` (now 1.1) and `perfratio.measurements` status block ([#262](https://github.com/BenchCommons/perfratio/pull/262), issue [#240](https://github.com/BenchCommons/perfratio/issues/240))
+- JSON export `schemaVersion` (now 1.2) and `perfratio.measurements` status block ([#262](https://github.com/BenchCommons/perfratio/pull/262), issue [#240](https://github.com/BenchCommons/perfratio/issues/240))
 - Add `--metric` to choose the primary metric for statistics, comparison and sorting ([#226](https://github.com/BenchCommons/perfratio/pull/226), issue [#48](https://github.com/BenchCommons/perfratio/issues/48))
 - Add `--duration` for time-budgeted sampling ([#269](https://github.com/BenchCommons/perfratio/pull/269), issue [#216](https://github.com/BenchCommons/perfratio/issues/216))
 - Add `--delta-table` to compare every measured dimension with the reference ([#274](https://github.com/BenchCommons/perfratio/pull/274), issue [#212](https://github.com/BenchCommons/perfratio/issues/212))
