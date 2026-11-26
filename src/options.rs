@@ -408,6 +408,10 @@ pub struct Options {
     /// `--concurrency`: instances of the command started simultaneously per run
     pub concurrency: usize,
 
+    /// `--concurrency` value containing `{param}`: resolved per benchmark
+    /// (`Command::with_concurrency_template`); `concurrency` stays 1
+    pub concurrency_template: Option<String>,
+
     /// `--until`: stop timer upon readiness output pattern
     pub until: Option<UntilSettings>,
 
@@ -468,6 +472,7 @@ impl Default for Options {
             allow_setup_with_round_robin: false,
             timeout: None,
             concurrency: 1,
+            concurrency_template: None,
             until: None,
             output_metrics: Vec::new(),
             output_metrics_stderr: false,
@@ -720,11 +725,16 @@ impl Options {
         }
         options.energy_domains = matches.get_flag("energy-domains");
         if let Some(val) = matches.get_one::<String>("concurrency") {
-            options.concurrency = val
-                .parse::<usize>()
-                .ok()
-                .filter(|&n| n >= 1)
-                .ok_or_else(|| OptionsError::InvalidConcurrency(val.clone()))?;
+            if val.contains('{') {
+                // Resolved per parameter combination, once the commands are known
+                options.concurrency_template = Some(val.clone());
+            } else {
+                options.concurrency = val
+                    .parse::<usize>()
+                    .ok()
+                    .filter(|&n| n >= 1)
+                    .ok_or_else(|| OptionsError::InvalidConcurrency(val.clone()))?;
+            }
         }
         if let Some(val) = matches.get_one::<String>("energy-baseline") {
             options.energy_baseline = parse_energy_baseline(val)
@@ -1000,6 +1010,29 @@ impl Options {
 
         if num_commands == 0 {
             return Ok(());
+        }
+
+        if let Some(template) = &self.concurrency_template {
+            // Fail before anything runs when a value is not an integer >= 1
+            let mut largest = 1;
+            for command in commands.iter() {
+                let resolved = command.clone().with_concurrency_template(template)?;
+                largest = largest.max(resolved.concurrency_or(1));
+            }
+            let cpus = std::thread::available_parallelism().map_or(1, |n| n.get());
+            if largest > cpus {
+                eprintln!(
+                    "{} '--concurrency {template}' reaches {largest} instances, more than the \
+                     {cpus} logical CPUs: those instances will queue on the CPU.",
+                    crate::output::colors::yellow("Warning:")
+                );
+            }
+            if self.reference_command.is_some() {
+                bail!(
+                    "'--concurrency {template}' cannot be combined with '--reference': the \
+                     reference command has no parameters to substitute"
+                );
+            }
         }
 
         if let Some(spec) = &self.optimize {

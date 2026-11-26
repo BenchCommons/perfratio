@@ -417,8 +417,8 @@ fn warn_failed_run_output(
 
 /// Number of instances of one execution: `--concurrency` for warmup and
 /// benchmark runs, 1 for `--prepare`, `--conclude`, `--setup` and `--cleanup`.
-fn batch_size(options: &Options, iteration: BenchmarkIteration) -> usize {
-    batch_size_of(options.concurrency, iteration)
+fn batch_size(command: &Command<'_>, options: &Options, iteration: BenchmarkIteration) -> usize {
+    batch_size_of(command.concurrency_or(options.concurrency), iteration)
 }
 
 fn batch_size_of(concurrency: usize, iteration: BenchmarkIteration) -> usize {
@@ -443,11 +443,13 @@ fn run_batch(
     run_one: impl Fn() -> Result<TimerResult> + Sync,
 ) -> Result<Vec<BatchInstance>> {
     let barrier = std::sync::Barrier::new(n);
+    let registry = crate::timer::batch::BatchRegistry::default();
     let base = std::time::Instant::now();
     let outcomes: Vec<Result<BatchInstance>> = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..n)
             .map(|_| {
                 scope.spawn(|| {
+                    let _installed = crate::timer::batch::install(&registry);
                     barrier.wait();
                     let offset = base.elapsed().as_secs_f64();
                     run_one().map(|result| BatchInstance { offset, result })
@@ -463,6 +465,14 @@ fn run_batch(
             })
             .collect()
     });
+    // An instance that failed to start killed the others: report that, not
+    // the signals the killed instances died of
+    if let Some((reason, killed)) = registry.abort_reason() {
+        return Err(anyhow!(
+            "--concurrency {n}: an instance failed to start ({reason}); \
+             killed the {killed} instance(s) of this run that had already started"
+        ));
+    }
     // Report an interruption first, otherwise the first failing instance
     let mut instances = Vec::with_capacity(n);
     let mut first_error = None;
@@ -621,8 +631,9 @@ impl Executor for RawExecutor<'_> {
                 ProcessSettings::from_options(self.options),
             )
         };
-        let (mut result, instances) = if batch_size(self.options, iteration) > 1 {
-            aggregate_batch(run_batch(self.options.concurrency, run_one)?)
+        let batch = batch_size(&command, self.options, iteration);
+        let (mut result, instances) = if batch > 1 {
+            aggregate_batch(run_batch(batch, run_one)?)
         } else {
             (run_one()?, Vec::new())
         };
@@ -760,7 +771,7 @@ impl Executor for ShellExecutor<'_> {
                 ProcessSettings::from_options(self.options),
             )
         };
-        let batch = batch_size(self.options, iteration);
+        let batch = batch_size(&command, self.options, iteration);
         let (mut result, mut instances) = if batch > 1 {
             aggregate_batch(run_batch(batch, run_one)?)
         } else {
@@ -1032,7 +1043,7 @@ impl Executor for MockExecutor {
             requested
         };
 
-        let n = batch_size_of(self.concurrency, iteration);
+        let n = batch_size_of(command.concurrency_or(self.concurrency), iteration);
         let instances: Vec<InstanceTiming> = if n > 1 {
             (0..n)
                 .map(|i| InstanceTiming {

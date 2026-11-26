@@ -635,7 +635,8 @@ pub fn build_command() -> Command {
                        reported time is the wall time until all N instances finished. \
                        User/system time is summed over the instances, memory is the \
                        maximum of any instance. The JSON export gains per-instance times \
-                       and a throughput. Default: 1."),
+                       and a throughput. N may contain a parameter, e.g. '-L c 1,2,4,8 \
+                       --concurrency {c}', for one benchmark per value. Default: 1."),
         )
         .arg(
             Arg::new("until")
