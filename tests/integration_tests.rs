@@ -2082,7 +2082,7 @@ fn zz_diag_ci_timing_360() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("d.json");
     let start = std::time::Instant::now();
-    let out = Command::new(assert_cmd::cargo_bin!("perfratio"))
+    let out = std::process::Command::new(assert_cmd::cargo_bin!("perfratio"))
         .args(["--runs=5", "--calibrate=off", "--shell=none", "--style=basic", "--export-json"])
         .arg(&path)
         .arg("sleep 0.1")
