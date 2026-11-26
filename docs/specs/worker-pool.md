@@ -86,7 +86,7 @@ should refuse to mix `contended` results with sequential ones (trust tracker #30
 - Integration (`tests/jobs_tests.rs`, `--debug-mode` and, on Unix, real commands): option
   errors, JSON fields, run counts, wall-clock speedup, `exclusive` with a lock directory
   command, `fair` run counts, `PERFRATIO_WORKER_ID` and `PERFRATIO_RUN_ID`, Ctrl-C.
-- Schema: `tests/json_schema_tests.rs` has `--jobs` cases.
+- Schema: `tests/json_schema_tests.rs` has `--jobs` cases; `docs/schema/1.21/` is the archived schema (#319).
 
 ## Not done
 - The per-worker CPU partition (#307).
