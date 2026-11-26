@@ -14,8 +14,10 @@
 //! Without perfratio (`PERFRATIO_REGION_FILE` unset or empty) every call returns at once.
 //! Events are buffered in memory and written when the process exits (an `atexit`
 //! handler, so `std::process::exit` and a panic that unwinds to `main` are covered) or on
-//! [`flush`]. With `panic = "abort"`, a signal or `libc::_exit` the buffer is lost: call
-//! [`flush`] first when that matters.
+//! [`flush`]. On Windows `std::process::exit`
+//! skips `atexit` handlers, so call
+//! [`flush`] before it. With `panic = "abort"`, a signal or `libc::_exit` the buffer is lost:
+//! call [`flush`] first when that matters.
 //!
 //! Thread-safe; protocol 1 allows one thread per region name. Names are 1-64 ASCII letters,
 //! digits or `_`; invalid names are ignored with one warning on stderr. Wire format:

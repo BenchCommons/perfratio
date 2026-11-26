@@ -119,7 +119,8 @@ fn rust_example() -> Option<&'static Client> {
                     .to_string_lossy()
                     .into_owned(),
                 args: vec![],
-                exit_mode: ("exit", 3),
+                // std::process::exit calls ExitProcess on Windows, which skips atexit handlers
+                exit_mode: if cfg!(windows) { ("", 0) } else { ("exit", 3) },
                 unwind_mode: Some(("panic", 101)),
             })
         })
