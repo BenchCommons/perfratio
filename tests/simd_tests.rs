@@ -23,7 +23,7 @@ fn export(args: &[&str]) -> serde_json::Value {
 #[test]
 fn simd_alone_exports_series_summary_and_status() {
     let json = export(&["--runs=3", "--simd", "sleep 0.5"]);
-    assert_eq!(json["schemaVersion"], "1.19");
+    assert_eq!(json["schemaVersion"], "1.20");
     let m = &json["perfratio"]["measurements"];
     assert_eq!(m["simd"], "measured");
     assert_eq!(m["counters"], "not_requested");

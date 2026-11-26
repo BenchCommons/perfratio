@@ -22,7 +22,7 @@ pub struct ExportMetadata {
     pub energy_backend: Option<&'static str>,
     /// Which measurement groups were measured, unavailable or not requested
     pub measurements: Measurements,
-    /// Estimator, levels and bootstrap settings behind the statistics (new in 1.19, #320)
+    /// Estimator, levels and bootstrap settings behind the statistics (new in 1.20, #320)
     pub statistics: StatisticsInfo,
 }
 

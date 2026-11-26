@@ -24,7 +24,7 @@ pub struct PrimaryMetricStats {
 }
 
 /// Version of the JSON output contract (`docs/specs/output-schema-contract.md`).
-pub const SCHEMA_VERSION: &str = "1.19";
+pub const SCHEMA_VERSION: &str = "1.20";
 
 #[derive(Serialize, Debug)]
 struct PerfratioSummary<'a> {
@@ -61,7 +61,7 @@ struct ResultEntry<'a> {
     relative_speed_stddev: Option<f64>,
     /// Bootstrap interval `[low, high]` of `relative_speed` at
     /// `perfratio.statistics.confidence_level`, for estimators other than the
-    /// mean (new in 1.19, #320)
+    /// mean (new in 1.20, #320)
     #[serde(skip_serializing_if = "Option::is_none")]
     relative_speed_ci: Option<[f64; 2]>,
     /// Significance of the difference to the reference (#215). Omitted for the
