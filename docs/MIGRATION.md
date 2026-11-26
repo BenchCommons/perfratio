@@ -16,14 +16,14 @@ This guide covers moving from [hyperfine](https://github.com/sharkdp/hyperfine) 
 
 | Old | New | Status |
 |---|---|---|
-| `$HYPERFINE_ITERATION` | `$PERFRATIO_ITERATION` | old name is still exported; the command line triggers a deprecation warning if it mentions it |
-| `$JOULEX_ITERATION` | `$PERFRATIO_ITERATION` | same as above |
-| `$JOULEX_SYSTEM_CHECK_ROOT` (test hook for `--check-system`) | `$PERFRATIO_SYSTEM_CHECK_ROOT` | old name is a fallback and warns |
+| `$HYPERFINE_ITERATION` | `$PERFRATIO_ITERATION` | removed in 1.0: no longer exported, no warning. Hyperfine compatibility is promised for flags and JSON import only, not for environment variables |
+| `$JOULEX_ITERATION` | `$PERFRATIO_ITERATION` | removed in 1.0, same as above |
+| `$JOULEX_SYSTEM_CHECK_ROOT` (test hook for `--check-system`) | `$PERFRATIO_SYSTEM_CHECK_ROOT` | removed in 1.0: the old name is ignored |
 | `$HYPERFINE_RANDOMIZED_ENVIRONMENT_OFFSET` | `$PERFRATIO_RANDOMIZED_ENVIRONMENT_OFFSET` | renamed, no fallback |
 
 The `{iteration}` placeholder ([#149](https://github.com/BenchCommons/perfratio/pull/149)) also works without a shell, so prefer it over the variable with `-N`.
 
-Update scripts now. The deprecated names are removed in the release after 1.0 ([#225](https://github.com/BenchCommons/perfratio/issues/225)).
+No perfratio release shipped these aliases, so there is no deprecation period: scripts must use the `PERFRATIO_*` names ([#225](https://github.com/BenchCommons/perfratio/issues/225)).
 
 ## Flags
 

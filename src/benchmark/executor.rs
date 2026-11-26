@@ -150,10 +150,7 @@ fn run_command_and_measure_common(
     );
 
     if let Some(value) = iteration.to_env_var_value() {
-        command.env("PERFRATIO_ITERATION", &value);
-        // Deprecated aliases, removed in the next release (see warn_legacy_iteration_vars)
-        command.env(crate::util::legacy::LEGACY_ITERATION_VARS[0], &value);
-        command.env(crate::util::legacy::LEGACY_ITERATION_VARS[1], value);
+        command.env("PERFRATIO_ITERATION", value);
     }
 
     #[cfg(target_os = "linux")]

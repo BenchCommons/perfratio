@@ -128,7 +128,7 @@ fn json_export_records_the_environment() {
 }
 
 #[test]
-fn legacy_root_variable_still_works_but_warns() {
+fn old_root_variable_is_ignored() {
     let root = fake_root("powersave");
     perfratio()
         .env_remove("PERFRATIO_SYSTEM_CHECK_ROOT")
@@ -136,11 +136,6 @@ fn legacy_root_variable_still_works_but_warns() {
         .args(["--check-system", "--debug-mode", "--runs=1", "sleep 0.1"])
         .assert()
         .success()
-        .stderr(predicate::str::contains(
-            "$JOULEX_SYSTEM_CHECK_ROOT is deprecated",
-        ))
-        .stderr(predicate::str::contains("$PERFRATIO_SYSTEM_CHECK_ROOT"))
-        .stdout(predicate::str::contains(
-            "CPU governor     powersave on 1 CPU",
-        ));
+        .stderr(predicate::str::contains("deprecated").not())
+        .stdout(predicate::str::contains("powersave on 1 CPU").not());
 }
