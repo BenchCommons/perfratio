@@ -231,12 +231,8 @@ fn linux_checks(root: &Path, cpus: usize) -> Vec<Check> {
         checks.push(check);
     }
 
-    let temperatures: Vec<f64> = entries(root, "/sys/class/thermal", "thermal_zone")
-        .iter()
-        .filter_map(|zone| std::fs::read_to_string(zone.join("temp")).ok())
-        .filter_map(|t| t.trim().parse::<f64>().ok())
-        .map(|millidegrees| millidegrees / 1000.0)
-        .collect();
+    // the reader `interference.thermal` and `--cooldown` use too
+    let temperatures = crate::thermal::temperatures(root);
     if let Some(check) = thermal_check(&temperatures) {
         checks.push(check);
     }

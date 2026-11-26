@@ -568,6 +568,31 @@ pub fn build_command() -> Command {
                 ),
         )
         .arg(
+            Arg::new("cooldown")
+                .long("cooldown")
+                .action(ArgAction::Set)
+                .value_name("DURATION|until-temp=C")
+                .help("Wait before every run: a duration (e.g. 2s), or until-temp=C (CPU at most C °C).")
+                .long_help(
+                    "Wait before every run (warmup and timed, outside the timed window) and so \
+                     between commands, so that long benchmarks do not start hot.\n\n  \
+                     DURATION      Wait this long, e.g. 500ms or 2s. Not before the very first run.\n  \
+                     until-temp=C  Wait until the hottest CPU temperature sensor reads at most C \
+                     degrees Celsius. Gives up after '--cooldown-timeout' (default 5 min) with a \
+                     message and continues. Without a readable sensor it does not wait, and says so.\n\n\
+                     The wait counts toward '--duration'. It is not a statistic: nothing in the \
+                     results changes except the temperature the runs start at.",
+                ),
+        )
+        .arg(
+            Arg::new("cooldown-timeout")
+                .long("cooldown-timeout")
+                .action(ArgAction::Set)
+                .value_name("DURATION")
+                .requires("cooldown")
+                .help("Give up 'until-temp' after this long (default: 5m)."),
+        )
+        .arg(
             Arg::new("calibrate")
                 .long("calibrate")
                 .action(ArgAction::Set)

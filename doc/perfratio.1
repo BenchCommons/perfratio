@@ -121,6 +121,10 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR MODE ]
 .RB [ \-\-fail\-on\-quality
 .IR GRADE ]
+.RB [ \-\-cooldown
+.IR DURATION|until\-temp=C ]
+.RB [ \-\-cooldown\-timeout
+.IR DURATION ]
 .RB [ \-\-meta
 .IR KEY=VALUE|git ]
 .RB [ \-\-require\-compatible\-env ]
@@ -492,6 +496,13 @@ Print the measurement quality report of each benchmark: off, summary (the grade 
 .IP
 Exit with code 5 if the quality grade of any benchmark is worse than GRADE (comparable, with_caveats or unreliable, best first). A CI gate on how trustworthy a measurement is; \fB\-\-fail\-if\-regressed\fR gates on the size of a change.
 .HP
+\fB\-\-cooldown\fR \fIDURATION|until\-temp=C\fP
+.IP
+Wait before every run (warmup and timed, outside the timed window), so between commands too. A duration such as 2s is skipped before the very first run. until\-temp=C waits until the hottest CPU temperature sensor reads at most C degrees Celsius; it gives up after \fB\-\-cooldown\-timeout\fR with a message and continues, and does not wait when no sensor is readable. The wait counts toward \fB\-\-duration\fR.
+.HP
+\fB\-\-cooldown\-timeout\fR \fIDURATION\fP
+.IP
+How long until\-temp waits before it gives up (default 5m). Requires \fB\-\-cooldown\fR.
 \fB\-\-meta\fR \fIKEY=VALUE|git\fP
 .IP
 Record provenance of the benchmarked program under perfratio.meta in the JSON export (repeatable). KEY=VALUE is a string; git adds git_commit and git_dirty of the git repository in the current directory. The export contains no host name, user name, environment variables or working directory.

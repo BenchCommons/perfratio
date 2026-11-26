@@ -50,6 +50,8 @@ pub mod benchmark;
 #[doc(hidden)]
 pub mod budget;
 pub mod calibration;
+#[doc(hidden)]
+pub mod cgroup;
 #[cfg(feature = "cli")]
 #[doc(hidden)]
 pub mod cli;
@@ -58,6 +60,8 @@ pub mod command;
 #[doc(hidden)]
 pub mod compare;
 #[doc(hidden)]
+pub mod cooldown;
+#[doc(hidden)]
 pub mod counters;
 #[doc(hidden)]
 pub mod cpu_id;
@@ -65,8 +69,9 @@ pub mod cpu_id;
 pub mod delta_table;
 #[doc(hidden)]
 pub mod energy;
-#[doc(hidden)]
 pub mod environment;
+#[doc(hidden)]
+pub mod environment_watch;
 #[doc(hidden)]
 pub mod error;
 #[doc(hidden)]
@@ -111,6 +116,8 @@ pub mod simd;
 pub mod stats;
 #[doc(hidden)]
 pub mod system_check;
+#[doc(hidden)]
+pub mod thermal;
 #[doc(hidden)]
 pub mod timer;
 #[doc(hidden)]

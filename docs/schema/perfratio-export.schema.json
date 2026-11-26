@@ -1683,6 +1683,52 @@
             ]
           },
           "description": "Buckets scaled for multiplexing: runs and lowest coverage."
+        },
+        "interference": {
+          "type": "object",
+          "properties": {
+            "cgroup_throttled_usec": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Microseconds the cgroup was throttled by its CPU quota during the runs (the cgroup's counter). Omitted when unreadable."
+            },
+            "cgroup_throttled_runs": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Runs during which the throttled time grew."
+            },
+            "cgroup_oom_kills": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Processes killed by the OOM killer in the cgroup during the runs."
+            },
+            "thermal": {
+              "type": "object",
+              "properties": {
+                "start_c": {
+                  "type": "number"
+                },
+                "end_c": {
+                  "type": "number"
+                },
+                "max_c": {
+                  "type": "number"
+                },
+                "throttle_events": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Thermal throttling events the CPUs reported; omitted when no counter exists."
+                }
+              },
+              "required": [
+                "start_c",
+                "end_c",
+                "max_c"
+              ],
+              "description": "Hottest CPU temperature sensor in degrees Celsius."
+            }
+          },
+          "description": "Environment observed while the runs executed (new in 1.31, #315). A source that cannot be read is omitted, never 0."
         }
       },
       "required": [
