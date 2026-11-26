@@ -80,7 +80,7 @@ Common options:
 | `-p, --prepare <CMD>` | Run CMD before each timing run, for example to clear caches. |
 | `-s, --setup <CMD>` / `-c, --cleanup <CMD>` | Run CMD once before or after all runs of a command. |
 | `-P`, `-L`, `-F` | Parameter scans over a range, a list or a file. |
-| `--optimize <VAR> <MIN> <MAX>` | Search an integer parameter for the value that minimizes `--metric` (golden-section search, assumes a unimodal metric; `--optimize-budget <N>` caps the evaluations). |
+| `--optimize <VAR> <MIN> <MAX>` | Search a parameter for the value that minimizes `--metric` (golden-section search, assumes a unimodal metric; `--optimize-budget <N>` caps the evaluations; `-D <DELTA>` allows fractional values; the best candidates are re-run once and pooled, `--optimize-confirm <N>`; the HTML report marks the best value). |
 | `-e, --export <FILE>` | Export results. The format follows the file extension. |
 | `--deep-stats` | Bootstrapped confidence intervals and hypothesis tests. |
 

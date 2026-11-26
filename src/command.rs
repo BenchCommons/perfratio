@@ -579,6 +579,16 @@ impl<'a> Commands<'a> {
             None => Command::new_parametrized(name, expression, parameters),
         };
 
+        if matches.get_one::<String>("parameter-step-size").is_some()
+            && matches.get_many::<String>("parameter-scan").is_none()
+            && matches.get_many::<String>("optimize").is_none()
+        {
+            bail!(
+                "'--parameter-step-size' ('-D') requires '--parameter-scan' ('-P') or \
+                 '--optimize'"
+            );
+        }
+
         let has_parameters = matches.get_many::<String>("parameter-scan").is_some()
             || matches.get_many::<String>("parameter-list").is_some()
             || matches.get_many::<String>("parameter-file").is_some();

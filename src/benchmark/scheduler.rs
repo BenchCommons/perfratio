@@ -445,12 +445,15 @@ impl<'a> Scheduler<'a> {
                 if crate::util::interrupt::interrupted() {
                     break;
                 }
-                let mut points: Vec<PointData> = Vec::new();
-                let outcome = optimize::golden_section_min(spec.min, spec.max, spec.budget, |x| {
+                let points: std::cell::RefCell<Vec<PointData>> = Default::default();
+                // Confirmation runs feed the pooled statistics of the report; they are
+                // not entries of the results (one per evaluated value)
+                let confirming = std::cell::Cell::new(false);
+                let mut evaluate = |x: i64| -> Result<Option<f64>> {
                     if crate::util::interrupt::interrupted() {
                         return Ok(None);
                     }
-                    let cmd = base.with_parameter(&spec.var, ParameterValue::Text(x.to_string()));
+                    let cmd = base.with_parameter(&spec.var, ParameterValue::Text(spec.text(x)));
                     let Some(res) =
                         Benchmark::new(number, results.len(), &cmd, options, executor_for(number))
                             .with_baseline(baseline_for(number))
@@ -476,7 +479,7 @@ impl<'a> Scheduler<'a> {
                         (Some(s), Some(sd)) if !s.is_empty() => sd / (s.len() as f64).sqrt(),
                         _ => 0.0,
                     };
-                    points.push(PointData {
+                    points.borrow_mut().push(PointData {
                         x,
                         value,
                         se,
@@ -484,6 +487,9 @@ impl<'a> Scheduler<'a> {
                         wall_mean: res.mean,
                         command: cmd.get_command_line(),
                     });
+                    if confirming.get() {
+                        return Ok(Some(value));
+                    }
                     results.push(res);
 
                     // Export after each evaluation, as for ordinary benchmarks
@@ -499,13 +505,34 @@ impl<'a> Scheduler<'a> {
                     self.export_manager
                         .write_results(&intermediate, None, true)?;
                     Ok(Some(value))
-                })?;
+                };
+                let mut outcome =
+                    optimize::golden_section_min(spec.min, spec.max, spec.budget, &mut evaluate)?;
+
+                // Noise: run the best value and its close competitors once more
+                // and pool the samples before declaring a best value
+                let mut reevaluated = Vec::new();
+                if !outcome.interrupted && spec.confirm > 0 {
+                    let candidates =
+                        optimize::confirmation_candidates(&points.borrow(), spec.confirm);
+                    confirming.set(true);
+                    for x in candidates {
+                        if evaluate(x)?.is_none() {
+                            outcome.interrupted = true;
+                            break;
+                        }
+                        reevaluated.push(x);
+                    }
+                }
+                let points = optimize::merge_repeated(points.into_inner());
                 let fixed = base
                     .get_parameters()
                     .iter()
                     .map(|(name, value)| (name.to_string(), value.to_string()))
                     .collect();
-                if let Some(report) = optimize::analyze(spec, metric, &outcome, &points, fixed) {
+                if let Some(report) =
+                    optimize::analyze(spec, metric, &outcome, &points, &reevaluated, fixed)
+                {
                     if options.output_style != OutputStyleOption::Disabled {
                         crate::outln!("\n{}", optimize::summary(spec, metric, &report, &points));
                     }

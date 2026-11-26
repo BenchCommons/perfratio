@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.14 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.15 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.14",
+      "const": "1.15",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -1130,10 +1130,10 @@
           "type": "string"
         },
         "min": {
-          "type": "integer"
+          "type": "number"
         },
         "max": {
-          "type": "integer"
+          "type": "number"
         },
         "metric": {
           "type": "string"
@@ -1150,7 +1150,7 @@
           "minimum": 0
         },
         "best": {
-          "type": "integer"
+          "type": "number"
         },
         "best_value": {
           "type": "number"
@@ -1159,7 +1159,7 @@
           "type": "string"
         },
         "runner_up": {
-          "type": "integer"
+          "type": "number"
         },
         "p_value": {
           "type": "number"
@@ -1176,7 +1176,7 @@
         "evaluated": {
           "type": "array",
           "items": {
-            "type": "integer"
+            "type": "number"
           }
         },
         "fixed": {
@@ -1187,6 +1187,13 @@
         },
         "interrupted": {
           "type": "boolean"
+        },
+        "reevaluated": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "description": "Values run a second time by --optimize-confirm (1.15)."
         }
       },
       "required": [

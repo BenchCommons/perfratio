@@ -5,8 +5,9 @@ with every metric (`wall`, `cpu`, `energy`, `memory`, `custom:<name>`). Deviatio
 proposal below: when the range fits into the budget (`MAX - MIN + 1 <= budget`) all values are
 evaluated and `algorithm` is `"exhaustive"`; the JSON `optimize` object also has `best_value`
 and, with other parameters, `fixed`; points are evaluated and exported one by one. Follow-ups
-(not done): re-evaluation of the final bracket under noise, `--reference`, HTML marker for the
-best point (#60), float parameters. The energy path is tested with the mock executor
+(second iteration, schemaVersion 1.11, see "Follow-ups as shipped" at the end): re-evaluation under noise,
+float parameters with `-D`, HTML marker for the best point (#60); `--reference` stays rejected
+by decision. The energy path is tested with the mock executor
 (`--debug-mode`) and with pure unit tests on the search; it was not run against real RAPL.
 
 ## Problem / Motivation
@@ -143,3 +144,29 @@ against the best point (the fastest by the primary metric).
 ## Acceptance criteria
 - Finds the optimum of unimodal metrics in O(log range) benchmarks.
 - Works with `--metric energy`, reports significance versus the runner-up, warns when the curve is not unimodal.
+
+## Follow-ups as shipped (second iteration, schemaVersion 1.11)
+- **Re-evaluation under noise (`--optimize-confirm <N>`, default 2, 0 disables).** After the search
+  (not after a Ctrl-C), the best value and up to N other evaluated values whose difference from it
+  is not significant (`compare_samples`, p >= 0.05, or not computable) are benchmarked once more
+  with the same options. The samples of both runs are pooled per value (mean and standard error
+  recomputed), then the best value, runner-up, significance and unimodality check are evaluated on
+  the pooled points. When every other value is significantly worse nothing is re-run. The re-runs
+  are not extra entries of `results[]` (it keeps one entry per evaluated value, the first run);
+  the values that were re-run are listed in `optimize.reevaluated`, `best_value` is the pooled mean.
+  They do not count against `--optimize-budget` (at most N + 1 extra benchmarks per search).
+  A pooled mean can differ from the `results[]` entry of the same value; that is intended.
+- **Float parameters.** `--optimize VAR MIN MAX -D DELTA` searches the values `MIN, MIN+DELTA, ...`
+  (up to `MAX`, as `-P` with `-D`) by index with the same golden-section search; the budget counts
+  values. `-D` also works with integer bounds (a coarser grid). Without `-D`, non-integer bounds
+  are an error that names `-D`. `-D` is an error with both `--optimize` and `-P`, and with neither.
+  The command line gets the value formatted as `-P` does. In the JSON, `min`, `max`, `best`,
+  `runner_up`, `evaluated` and `reevaluated` are numbers: integers stay integers, others are floats.
+- **`--reference`: decision.** Stays rejected. The reference is one fixed command, while an optimize
+  search evaluates a different command per value; a ratio against it would have to be recomputed per
+  point and the search itself does not need it. Compare the best value with a reference by running
+  the best command in a normal benchmark.
+- **HTML marker.** The HTML report's summary table marks the row of each search's best command
+  with "★ best" (`HtmlExporter::set_optimize`).
+- **Not done.** Non-numeric or multi-parameter searches; re-evaluation results as separate JSON
+  entries; real RAPL hardware for `--metric energy`.
