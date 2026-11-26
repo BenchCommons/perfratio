@@ -161,6 +161,10 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR N ]
 .RB [ \-\-parameter\-step\-size
 .IR DELTA ]
+.RB [ \-\-parameter\-step\-n
+.IR N ]
+.RB [ \-\-parameter\-step\-log ]
+.RB [ \-\-raw\-ratios ]
 .RB [ \-\-parameter\-list
 .IR VAR
 .IR VALUES ]
@@ -364,6 +368,18 @@ After the search, run the best value and up to N other values whose difference f
 \fB\-D\fR, \fB\-\-parameter\-step\-size\fR \fIDELTA\fP
 .IP
 This argument requires \fB\-\-parameter\-scan\fR to be specified as well. Traverse the range MIN..MAX in steps of DELTA.
+.HP
+\fB\-\-parameter\-step\-n\fR \fIN\fP
+.IP
+Scan every \fB\-\-parameter\-scan\fR range with N+1 evenly spaced values, including MIN and MAX, instead of a step size. Values are rounded to integers if MIN and MAX are integers (duplicates are removed, with a note). Conflicts with \fB\-\-parameter\-step\-size\fR.
+.HP
+\fB\-\-parameter\-step\-log\fR
+.IP
+With \fB\-\-parameter\-step\-n\fR: space the values geometrically (constant ratio). MIN must be greater than 0. Example: \fB\-P n 10 1000000 \-\-parameter\-step\-n 5 \-\-parameter\-step\-log\fR runs 10, 100, 1000, 10000, 100000 and 1000000.
+.HP
+\fB\-\-raw\-ratios\fR
+.IP
+Print only the relative values of the primary metric on stdout: one line per result in command order (a \fB\-\-reference\fR command is the first), the reference (or the best command) being 1.000000, others mean divided by the reference mean with six decimals and a '.' decimal point ('nan' if it cannot be computed). Nothing else is printed on stdout (implies \fB\-\-style none\fR); warnings go to stderr. Exports to stdout ('\-') are rejected.
 .HP
 \fB\-L\fR, \fB\-\-parameter\-list\fR \fIVAR\fP \fIVALUES\fP
 .IP
@@ -595,7 +611,7 @@ Control where the input of the benchmark comes from. WHERE can be: null (read fr
 .HP
 \fB\-n\fR, \fB\-\-command\-name\fR \fINAME\fP
 .IP
-Give a meaningful name to a command. This can be specified multiple times if several commands are benchmarked.
+Give a meaningful name to a command. This can be specified multiple times if several commands are benchmarked. Without a value, the commands are named by the words in which they differ (the common prefix and suffix are stripped; '#1', '#2', ... if nothing is shared). Because the next argument would be taken as the name, write \fB\-\-command\-name=\fR or put the option after the commands.
 .HP
 \fB\-\-generate\-completions\fR \fISHELL\fP
 .IP

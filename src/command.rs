@@ -465,6 +465,73 @@ fn split_windows_command_line(command_line: &str) -> Vec<String> {
     args
 }
 
+/// The command argument that reads the commands from stdin
+pub const STDIN_COMMANDS: &str = "-";
+
+/// One command per line; blank lines and lines starting with `#` are ignored.
+/// Surrounding whitespace is trimmed.
+pub fn parse_command_lines(input: &str) -> Vec<String> {
+    input
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(str::to_string)
+        .collect()
+}
+
+/// Names for commands that have no `--command-name` (`--command-name` without a value):
+/// the part of each command line that differs.
+///
+/// The longest common prefix and suffix of whole words are stripped. If nothing can be
+/// stripped (no shared words), a command is empty after stripping (one command is a
+/// prefix of another) or the commands are identical, the names are `#1`, `#2`, ...
+/// A single command gets no name.
+pub fn automatic_names(command_lines: &[String]) -> Option<Vec<String>> {
+    if command_lines.len() < 2 {
+        return None;
+    }
+    let words: Vec<Vec<&str>> = command_lines
+        .iter()
+        .map(|c| c.split_whitespace().collect())
+        .collect();
+    let shortest = words.iter().map(Vec::len).min().unwrap_or(0);
+    let common = |at: &dyn Fn(&Vec<&str>, usize) -> String, limit: usize| -> usize {
+        (0..limit)
+            .take_while(|&i| words.iter().all(|w| at(w, i) == at(&words[0], i)))
+            .count()
+    };
+    let prefix = common(&|w, i| w[i].to_string(), shortest);
+    // the suffix must not overlap the prefix
+    let suffix = common(
+        &|w, i| w[w.len() - 1 - i].to_string(),
+        shortest - prefix.min(shortest),
+    );
+    let names: Vec<String> = words
+        .iter()
+        .map(|w| w[prefix..w.len() - suffix].join(" "))
+        .collect();
+    let distinct = names.iter().collect::<std::collections::HashSet<_>>().len() == names.len();
+    if (prefix == 0 && suffix == 0) || names.iter().any(String::is_empty) || !distinct {
+        return Some((1..=command_lines.len()).map(|i| format!("#{i}")).collect());
+    }
+    Some(names)
+}
+
+/// `--command-name` without a value (or with an empty one) asks for automatic names.
+#[cfg(feature = "cli")]
+fn wants_automatic_names(matches: &ArgMatches) -> Result<bool> {
+    let names: Vec<&String> = matches
+        .get_many::<String>("command-name")
+        .into_iter()
+        .flatten()
+        .collect();
+    let auto = names.iter().any(|n| n.is_empty());
+    if auto && names.iter().any(|n| !n.is_empty()) {
+        bail!("'--command-name' without a value (automatic names) cannot be combined with explicit names");
+    }
+    Ok(auto)
+}
+
 /// A collection of commands that should be benchmarked
 #[derive(Debug)]
 pub struct Commands<'a>(Vec<Command<'a>>);
@@ -483,6 +550,16 @@ impl<'a> Commands<'a> {
         }
 
         let mut commands = Self::expand_parameters(matches)?;
+
+        if wants_automatic_names(matches)? {
+            let lines: Vec<String> = commands.0.iter().map(Command::get_command_line).collect();
+            if let Some(names) = automatic_names(&lines) {
+                for (command, name) in commands.0.iter_mut().zip(names) {
+                    // like the command lines, the names live as long as the process
+                    command.name = Some(Box::leak(name.into_boxed_str()));
+                }
+            }
+        }
 
         if let Some(args) = matches.get_many::<String>("parameter-sample") {
             let args: Vec<&str> = args.map(String::as_str).collect();
@@ -560,7 +637,10 @@ impl<'a> Commands<'a> {
 
     #[cfg(feature = "cli")]
     fn expand_parameters(matches: &'a ArgMatches) -> Result<Commands<'a>> {
-        let command_names = matches.get_many::<String>("command-name");
+        let auto_names = wants_automatic_names(matches)?;
+        let command_names = matches
+            .get_many::<String>("command-name")
+            .filter(|_| !auto_names);
         let argv = matches
             .get_many::<String>("argv")
             .map(|args| args.map(String::as_str).collect::<Vec<_>>());
@@ -573,6 +653,26 @@ impl<'a> Commands<'a> {
                 .unwrap_or_default()
                 .map(|v| v.as_str())
                 .collect::<Vec<_>>(),
+        };
+        // A lone `-` reads one command per line from stdin
+        let command_strings = if command_strings.contains(&STDIN_COMMANDS) {
+            if command_strings.len() > 1 {
+                bail!("'-' (commands from stdin) cannot be combined with other commands");
+            }
+            let mut input = String::new();
+            std::io::Read::read_to_string(&mut std::io::stdin().lock(), &mut input)
+                .context("Could not read the commands from stdin")?;
+            let lines = parse_command_lines(&input);
+            if lines.is_empty() {
+                bail!("No commands on stdin: expected one command per line");
+            }
+            // The commands live as long as the process, like the arguments they replace
+            lines
+                .into_iter()
+                .map(|line| &*Box::leak(line.into_boxed_str()))
+                .collect()
+        } else {
+            command_strings
         };
         let make_command = |name, expression, parameters| match &argv {
             Some(argv) => Command::from_argv(name, argv.clone(), parameters),
@@ -606,13 +706,38 @@ impl<'a> Commands<'a> {
                     .get_one::<String>("parameter-step-size")
                     .map(|s| s.as_str());
 
+                let spacing = match matches.get_one::<String>("parameter-step-n") {
+                    Some(n) => Some((
+                        n.parse::<usize>().map_err(|_| {
+                            anyhow::anyhow!(
+                                "'--parameter-step-n' needs a positive integer, got '{n}'"
+                            )
+                        })?,
+                        matches.get_flag("parameter-step-log"),
+                    )),
+                    None => None,
+                };
+
                 let (chunks, _) = args.as_chunks::<3>();
                 if step_size.is_some() && chunks.len() > 1 {
                     bail!("The '--parameter-step-size' ('-D') option cannot be used when multiple '--parameter-scan' ('-P') options are specified");
                 }
 
                 for &[name, min, max] in chunks {
-                    let values = Self::parse_parameter_scan(min, max, step_size)?;
+                    let values = match spacing {
+                        Some((n, log)) => {
+                            let spaced = crate::parameter::spacing::spaced(min, max, n, log)?;
+                            if let Some(note) = &spaced.note {
+                                eprintln!("Note: '-P {name}': {note}");
+                            }
+                            spaced
+                                .values
+                                .into_iter()
+                                .map(ParameterValue::Numeric)
+                                .collect()
+                        }
+                        None => Self::parse_parameter_scan(min, max, step_size)?,
+                    };
                     param_names_and_values.push((name, values));
                 }
             }
@@ -1705,5 +1830,82 @@ mod per_run_tests {
                 prep.trim_start_matches("prepare ")
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod name_and_line_tests {
+    use super::*;
+
+    fn lines(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn stdin_lines_skip_blanks_and_comments() {
+        assert_eq!(
+            parse_command_lines("a\n\n  # c\n b c \r\n#\n"),
+            ["a", "b c"]
+        );
+        assert!(parse_command_lines("").is_empty());
+    }
+
+    #[test]
+    fn names_strip_common_prefix_and_suffix() {
+        assert_eq!(
+            automatic_names(&lines(&["sort -n data.txt", "sort -r data.txt"])),
+            Some(lines(&["-n", "-r"]))
+        );
+        assert_eq!(
+            automatic_names(&lines(&["prog a x y", "prog b q x y", "prog c x y"])),
+            Some(lines(&["a", "b q", "c"]))
+        );
+        // spacing is normalised
+        assert_eq!(
+            automatic_names(&lines(&["run  1", "run 2"])),
+            Some(lines(&["1", "2"]))
+        );
+    }
+
+    #[test]
+    fn names_fall_back_to_indices() {
+        // nothing shared
+        assert_eq!(
+            automatic_names(&lines(&["alpha", "beta"])),
+            Some(lines(&["#1", "#2"]))
+        );
+        // identical
+        assert_eq!(
+            automatic_names(&lines(&["same cmd", "same cmd"])),
+            Some(lines(&["#1", "#2"]))
+        );
+        // one is a prefix of the other
+        assert_eq!(
+            automatic_names(&lines(&["make", "make -j4"])),
+            Some(lines(&["#1", "#2"]))
+        );
+    }
+
+    #[test]
+    fn single_command_and_unicode() {
+        assert_eq!(automatic_names(&lines(&["only"])), None);
+        assert_eq!(automatic_names(&[]), None);
+        assert_eq!(
+            automatic_names(&lines(&["cmd été ✓", "cmd naïve ✓"])),
+            Some(lines(&["été", "naïve"]))
+        );
+    }
+
+    #[test]
+    fn suffix_does_not_overlap_prefix() {
+        // "a b a" vs "a b b a"? shared: prefix [a, b], suffix [a]
+        assert_eq!(
+            automatic_names(&lines(&["a x a", "a y a"])),
+            Some(lines(&["x", "y"]))
+        );
+        assert_eq!(
+            automatic_names(&lines(&["a a", "a b a"])),
+            Some(lines(&["#1", "#2"]))
+        );
     }
 }
