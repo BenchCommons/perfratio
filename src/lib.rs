@@ -97,6 +97,8 @@ pub mod quality;
 #[doc(hidden)]
 pub mod region;
 #[doc(hidden)]
+pub mod run_id;
+#[doc(hidden)]
 pub mod simd;
 #[doc(hidden)]
 pub mod stats;

@@ -806,6 +806,17 @@ pub fn build_command() -> Command {
                        reports no region fails."),
         )
         .arg(
+            Arg::new("artifact-dir")
+                .long("artifact-dir")
+                .action(ArgAction::Set)
+                .value_name("DIR")
+                .value_hint(ValueHint::DirPath)
+                .help("Create DIR/run-<id> for every run and export its path as \
+                       PERFRATIO_RUN_DIR to --prepare, the command and --conclude of \
+                       that run (and to --setup/--cleanup), so that parallel runs \
+                       never share artifact files. The directories are kept."),
+        )
+        .arg(
             Arg::new("until")
                 .long("until")
                 .visible_alias("ready-when")

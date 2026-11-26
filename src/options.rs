@@ -426,6 +426,9 @@ pub struct Options {
     /// (`Command::with_concurrency_template`); `concurrency` stays 1
     pub concurrency_template: Option<String>,
 
+    /// `--artifact-dir`: parent of the per-run directories (`PERFRATIO_RUN_DIR`)
+    pub artifact_dir: Option<PathBuf>,
+
     /// `--until`: stop timer upon readiness output pattern
     pub until: Option<UntilSettings>,
 
@@ -495,6 +498,7 @@ impl Default for Options {
             timeout: None,
             concurrency: 1,
             concurrency_template: None,
+            artifact_dir: None,
             until: None,
             regions: Vec::new(),
             output_metrics: Vec::new(),
@@ -785,6 +789,7 @@ impl Options {
                     .ok_or_else(|| OptionsError::InvalidConcurrency(val.clone()))?;
             }
         }
+        options.artifact_dir = matches.get_one::<String>("artifact-dir").map(PathBuf::from);
         if let Some(val) = matches.get_one::<String>("energy-baseline") {
             options.energy_baseline = parse_energy_baseline(val)
                 .map_err(|e| OptionsError::InvalidEnergyBaseline(val.clone(), e))?;

@@ -1,6 +1,7 @@
 mod wall_clock_timer;
 
 pub mod batch;
+pub mod tree;
 
 #[cfg(windows)]
 mod windows_timer;
@@ -58,6 +59,9 @@ pub struct TimerResult {
     pub custom_metrics: std::collections::BTreeMap<String, f64>,
     /// Identifier of the region SDK that reported (`--region`)
     pub region_sdk: Option<String>,
+    /// Descendants of the command were still running when it exited (they
+    /// were killed; see `docs/specs/process-tree.md`)
+    pub leftover_processes: bool,
     /// Stdout of the run, kept for `--expect-output-sha256` / `--validate`
     pub validation_stdout: Option<Vec<u8>>,
 }
@@ -443,8 +447,10 @@ pub fn execute_and_measure(
     #[cfg(not(windows))]
     let _ = (affinity, priority);
 
+    // Every measured process leads a group of its own, so that the whole tree
+    // can be signalled (timeout, --until, Ctrl-C) and its leftovers found.
     #[cfg(not(windows))]
-    if timeout.is_some() || until.is_some() {
+    {
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
@@ -490,6 +496,7 @@ pub fn execute_and_measure(
 
     let wallclock_timer = WallClockTimer::start();
 
+    let spawning = tree::before_spawn();
     let mut child = match command.spawn() {
         Ok(child) => child,
         Err(error) => {
@@ -500,6 +507,8 @@ pub fn execute_and_measure(
     };
     // Registered until the end of this function (after the child is reaped)
     let _spawned = batch::spawned(child.id());
+    #[cfg(not(windows))]
+    let tracked = spawning.spawned(child.id() as usize);
 
     #[cfg(target_os = "linux")]
     let child_start_ts = {
@@ -530,6 +539,9 @@ pub fn execute_and_measure(
         // SAFETY: We created a suspended process
         unsafe { self::windows_timer::CPUTimer::start_suspended_process(&child) }
     };
+
+    #[cfg(windows)]
+    let tracked = spawning.spawned(cpu_timer.raw_job_handle() as usize);
 
     let watchdog = timeout.map(|t| {
         #[cfg(not(windows))]
@@ -729,6 +741,15 @@ pub fn execute_and_measure(
         until_matched = None;
     }
 
+    // The measurement is over: look for descendants that outlived the command.
+    // After a timeout or a matched `--until`, the tree was killed on purpose,
+    // so what is found then is not a leftover.
+    #[cfg(not(windows))]
+    let found = tracked.finish(None);
+    #[cfg(windows)]
+    let found = tracked.finish(cpu_timer.active_processes());
+    let leftover_processes = found && !timed_out && until_matched != Some(true);
+
     Ok(TimerResult {
         time_real,
         time_total,
@@ -743,6 +764,7 @@ pub fn execute_and_measure(
         until_matched,
         custom_metrics: std::collections::BTreeMap::new(),
         region_sdk: None,
+        leftover_processes,
         validation_stdout: None,
     })
 }

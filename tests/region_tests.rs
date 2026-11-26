@@ -23,7 +23,7 @@ fn json_of(args: &[&str]) -> Value {
 #[test]
 fn debug_mode_reports_region_next_to_whole_process_time() {
     let json = json_of(&["--debug-mode", "--runs=3", "--region=work", "sleep 0.2"]);
-    assert_eq!(json["schemaVersion"], "1.19");
+    assert_eq!(json["schemaVersion"], "1.20");
     assert_eq!(json["perfratio"]["region_protocol"], 1);
     assert_eq!(json["perfratio"]["measurements"]["region"], "measured");
     let result = &json["results"][0];

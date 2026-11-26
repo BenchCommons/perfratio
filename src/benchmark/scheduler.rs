@@ -1049,6 +1049,10 @@ fn generate_results(args: &[&'static str]) -> Result<Vec<BenchmarkResult>> {
     let mut scheduler = Scheduler::new(&commands, &options, &export_manager);
 
     scheduler.run_benchmarks()?;
+    // Run ids come from a process-wide counter that parallel tests share
+    for result in &mut scheduler.results {
+        result.run_ids = None;
+    }
     Ok(scheduler.results)
 }
 
