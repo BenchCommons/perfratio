@@ -16,7 +16,7 @@ By default, benchmarking tools compute all comparisons, relative speed ratios, r
 --metric <METRIC>
     Primary metric used for statistics, outlier detection, comparison, and sorting.
     [default: wall]
-    [possible values: wall, cpu, user, system, energy, memory]
+    [possible values: wall, cpu, user, system, energy, memory, custom:<name>]
 ```
 
 - When `--metric energy` is passed, energy measurement is automatically enabled (`measure_energy = true`). If energy sampling is unsupported or unprivileged on the host system, perfratio fails immediately with an explanatory error.
@@ -85,12 +85,22 @@ perfratio owns the JSON export contract (`output-schema-contract.md`, `BenchComm
 - Per-result `"primary_metric"` object (`metric`, `mean`, `stddev`?, `samples`?), emitted only when `metric != wall`. Units: seconds (time metrics), joules (energy), bytes (memory).
 - Existing fields (`mean`, `times`, `relative_speed`, ...) keep their meaning and stay wall-clock based. Only `relative_speed[_stddev]` and result ordering follow the active metric, which is why `metric` is exported.
 - Version impact: new optional fields are a **MINOR** bump. Once `schemaVersion` lands on master (#240), this PR's fields ship with the first MINOR after `"1.0"` (`"1.1"`), and the field table in `output-schema-contract.md` must list `metric` and `primary_metric` in the same PR. Until then the export is unversioned (legacy shape) and consumers must ignore unknown keys.
-- Dependency: `--metric custom:<name>` (#90, `--output-metric` values) would add a new `metric` enum value; `metric` is therefore an open enum for consumers, and `primary_metric.metric` would carry `custom:<name>`.
+- `--metric custom:<name>` (#90, see §8) adds the pattern `custom:<name>` as a `metric` value; `primary_metric.metric` carries it too. Shipped as `schemaVersion` `1.2` (MINOR: only emitted on explicit request).
 
 ### 7. Missing data and import
 - `BenchmarkResult::primary_mean` returns `Option<f64>`. `None` means the result has no data for the metric (no energy reading, no memory samples). It is never replaced by 0, and a `None` result sorts after every result with data. Its relative speed is NaN, and `primary_metric` is omitted from its JSON entry.
 - Under `--metric energy`, every run needs an energy reading. If any run (partial) or all runs (none) lack one, `finish()` fails with an error naming `--metric energy`. Outlier detection therefore never falls back to wall time.
 - `--import-json` reads the top-level `metric`. A file whose `metric` differs from the CLI `--metric` is rejected. Files without the field (older exports) are accepted. Under `--metric energy|memory`, an imported result lacking data for the metric is rejected.
+
+### 8. `--metric custom:<name>` (#90)
+A value extracted with `--output-metric <name>=<regex>` (`custom-output-metrics.md`) can be the primary metric.
+- **Direction:** lower is better, like every other metric. To rank by a higher-is-better quantity (throughput), print or extract its inverse (e.g. seconds per item).
+- **Unit:** none. The value is used as printed; the terminal shows it with three decimals under the header `<name> (mean ± σ)`, and the secondary `Time` line stays. The summary reads `'A' had 2.50 ± 0.10 times lower value than 'B'`, followed by the absolute value and difference.
+- **Validation (OptionsError::InvalidOutputMetric):** `<name>` must match `[A-Za-z0-9_]+` (case-sensitive), and an `--output-metric <name>=...` with the same name must be present. With `--import-json` the second check is skipped because nothing is extracted.
+- **Missing values (checked in `finish()`, same null-alignment as #265):** every recorded run needs a value. If no run produced one, the benchmark fails with `'--metric custom:<name>' requires a value for every run, but no run produced '<name>'`. If only some did (possible with `-i`, which writes `null` for the others), it fails with `... but N of M runs have none for '<name>'`. This keeps ranking from silently using a subset of the runs.
+- **Samples:** `primary_samples`/`primary_mean`/`primary_stddev` use the non-null entries of `custom_metrics[<name>]` and `custom_metrics_summary[<name>]`.
+- **Import:** a file whose `metric` is not the CLI `--metric` is rejected as before. Under `--metric custom:<name>` a result with no values or with `null` entries for `<name>` is rejected.
+- **Implementation note:** `Metric::Custom(&'static str)` keeps `Metric` `Copy`; names are interned (`src/metric.rs`).
 
 ## Verification Plan
 - Unit tests:
@@ -104,3 +114,4 @@ perfratio owns the JSON export contract (`output-schema-contract.md`, `BenchComm
   - JSON export contains the top-level `"metric"` attribute.
 
   - Missing and partial energy fail the run (`benchmark/mod.rs` unit tests); import with mismatched `metric` or missing energy fails (`tests/metric_tests.rs`).
+  - `--metric custom:<name>`: ranking by lower value, JSON `metric`/`primary_metric`, undefined name, no value, partial value (unix), malformed selector, import round trip (`tests/custom_metric_tests.rs`); `Metric` parse/serde unit tests.

@@ -572,7 +572,12 @@ impl<'a> Scheduler<'a> {
                             continue;
                         }
 
-                        let absolute = absolute_difference(reference.result, item.result, unit);
+                        let absolute = match metric {
+                            Metric::Custom(_) => {
+                                custom_difference(reference.result, item.result, metric)
+                            }
+                            _ => absolute_difference(reference.result, item.result, unit),
+                        };
                         let stddev = if let Some(stddev) = item.relative_speed_stddev {
                             format!(" ± {}", colors::green(format!("{stddev:.2}")))
                         } else {
@@ -602,6 +607,9 @@ impl<'a> Scheduler<'a> {
                                     }
                                     Metric::Memory => {
                                         format!("    the same memory ({ratio_str}{stddev}) as")
+                                    }
+                                    Metric::Custom(_) => {
+                                        format!("    the same value ({ratio_str}{stddev}) as")
                                     }
                                 }
                             }
@@ -993,6 +1001,22 @@ fn significance_suffix(reference: &BenchmarkResult, item: &BenchmarkResult) -> S
             format!("  {text}")
         }
         None => String::new(),
+    }
+}
+
+/// Value and difference of a `--metric custom:<name>` metric, which has no unit.
+fn custom_difference(
+    reference: &BenchmarkResult,
+    item: &BenchmarkResult,
+    metric: Metric,
+) -> String {
+    match (item.primary_mean(metric), reference.primary_mean(metric)) {
+        (Some(value), Some(base)) => {
+            let diff = value - base;
+            let sign = if diff >= 0.0 { '+' } else { '−' };
+            format!("({value:.3}, {sign}{:.3})", diff.abs())
+        }
+        _ => String::new(),
     }
 }
 

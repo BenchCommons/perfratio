@@ -763,6 +763,16 @@ impl Options {
         if options.metric == crate::metric::Metric::Energy {
             options.measure_energy = true;
         }
+        // An imported file carries its own values, so nothing is extracted then.
+        if let Some(name) = options.metric.custom_name() {
+            if matches.get_one::<String>("import-json").is_none()
+                && !options.output_metrics.iter().any(|m| m.name == name)
+            {
+                return Err(OptionsError::InvalidOutputMetric(format!(
+                    "'--metric custom:{name}' needs a matching '--output-metric {name}=<REGEX>'"
+                )));
+            }
+        }
         // Only look at the backend choice (and its environment variable) when
         // energy is requested, so a bad value cannot break runs without --energy.
         if options.measure_energy {

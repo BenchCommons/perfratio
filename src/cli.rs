@@ -490,19 +490,7 @@ pub fn build_command() -> Command {
                 .long("metric")
                 .action(ArgAction::Set)
                 .value_name("METRIC")
-                .value_parser([
-                    "wall",
-                    "wall-clock",
-                    "time",
-                    "cpu",
-                    "total-cpu",
-                    "user",
-                    "system",
-                    "energy",
-                    "memory",
-                    "rss",
-                    "peak-memory",
-                ])
+                .value_parser(parse_metric_arg)
                 .default_value("wall")
                 .hide_default_value(true)
                 .help(
@@ -512,7 +500,9 @@ pub fn build_command() -> Command {
                        * 'user': user CPU time\n  \
                        * 'system': system / kernel CPU time\n  \
                        * 'energy': energy consumed in Joules (auto-enables '--energy')\n  \
-                       * 'memory' (aliases: 'rss', 'peak-memory'): peak resident set size (RSS)\n"
+                       * 'memory' (aliases: 'rss', 'peak-memory'): peak resident set size (RSS)\n  \
+                       * 'custom:<name>': a value extracted with '--output-metric <name>=<regex>' \
+                         (lower is better; every run needs a value)\n"
                 ),
         )
         .arg(
@@ -1069,4 +1059,39 @@ pub fn build_command() -> Command {
 #[test]
 fn verify_app() {
     build_command().debug_assert();
+}
+
+/// Validates `--metric`. Mirrors `Metric::from_str` (`src/metric.rs`), which this
+/// file cannot use because `build.rs` compiles it standalone.
+fn parse_metric_arg(s: &str) -> Result<String, String> {
+    const BUILTIN: [&str; 11] = [
+        "wall",
+        "wall-clock",
+        "time",
+        "cpu",
+        "total-cpu",
+        "user",
+        "system",
+        "energy",
+        "memory",
+        "rss",
+        "peak-memory",
+    ];
+    if BUILTIN.contains(&s.to_ascii_lowercase().as_str()) {
+        return Ok(s.to_string());
+    }
+    if let Some(name) = s
+        .get(..7)
+        .filter(|p| p.eq_ignore_ascii_case("custom:"))
+        .map(|_| &s[7..])
+    {
+        if !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            return Ok(s.to_string());
+        }
+        return Err("expected 'custom:<name>' with a name of letters, digits and '_'".into());
+    }
+    Err(format!(
+        "possible values are {}, custom:<name>",
+        BUILTIN.join(", ")
+    ))
 }

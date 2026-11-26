@@ -1,11 +1,36 @@
+use std::collections::HashSet;
 use std::fmt;
 use std::str::FromStr;
+use std::sync::{Mutex, OnceLock};
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+/// Prefix of the selector for a metric extracted with `--output-metric`
+/// (`--metric custom:<name>`).
+pub const CUSTOM_PREFIX: &str = "custom:";
+
+/// Interns a custom metric name so that [`Metric`] stays `Copy`. The set of
+/// names is bounded by the `--output-metric` names and imported files, so the
+/// leaked memory is a few bytes per distinct name.
+fn intern(name: &str) -> &'static str {
+    static NAMES: OnceLock<Mutex<HashSet<&'static str>>> = OnceLock::new();
+    let mut names = NAMES
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    if let Some(existing) = names.get(name) {
+        return existing;
+    }
+    let leaked: &'static str = Box::leak(name.to_string().into_boxed_str());
+    names.insert(leaked);
+    leaked
+}
 
 /// Target metric used as the primary objective for benchmarking, comparison, and sorting.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+///
+/// Serialized as its name (`wall`, `cpu`, ..., or `custom:<name>`), see
+/// `docs/specs/metric-target.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Metric {
     #[default]
     Wall,
@@ -14,10 +39,25 @@ pub enum Metric {
     System,
     Energy,
     Memory,
+    /// A metric extracted with `--output-metric <name>=<regex>`; lower is better.
+    Custom(&'static str),
 }
 
 impl Metric {
-    /// Canonical lowercase name of the metric
+    /// Selector for the custom metric `name`.
+    pub fn custom(name: &str) -> Self {
+        Metric::Custom(intern(name))
+    }
+
+    /// Name of the custom metric, if this is one.
+    pub fn custom_name(&self) -> Option<&'static str> {
+        match self {
+            Metric::Custom(name) => Some(name),
+            _ => None,
+        }
+    }
+
+    /// Canonical lowercase name of the metric (`custom:<name>` is rendered by `Display`)
     pub fn name(&self) -> &'static str {
         match self {
             Metric::Wall => "wall",
@@ -26,6 +66,7 @@ impl Metric {
             Metric::System => "system",
             Metric::Energy => "energy",
             Metric::Memory => "memory",
+            Metric::Custom(name) => name,
         }
     }
 
@@ -38,6 +79,7 @@ impl Metric {
             Metric::System => "System Time",
             Metric::Energy => "Energy",
             Metric::Memory => "Memory",
+            Metric::Custom(name) => name,
         }
     }
 
@@ -46,6 +88,7 @@ impl Metric {
         match self {
             Metric::Wall | Metric::Cpu | Metric::User | Metric::System => "ran",
             Metric::Energy | Metric::Memory => "used",
+            Metric::Custom(_) => "had",
         }
     }
 
@@ -55,6 +98,7 @@ impl Metric {
             Metric::Wall | Metric::Cpu | Metric::User | Metric::System => ("faster", "slower"),
             Metric::Energy => ("less energy", "more energy"),
             Metric::Memory => ("less memory", "more memory"),
+            Metric::Custom(_) => ("lower value", "higher value"),
         }
     }
 
@@ -64,6 +108,7 @@ impl Metric {
             Metric::Wall | Metric::Cpu | Metric::User | Metric::System => "as fast as",
             Metric::Energy => "same energy as",
             Metric::Memory => "same memory as",
+            Metric::Custom(_) => "the same value as",
         }
     }
 
@@ -87,16 +132,49 @@ impl FromStr for Metric {
             "system" => Ok(Metric::System),
             "energy" => Ok(Metric::Energy),
             "memory" | "rss" | "peak-memory" => Ok(Metric::Memory),
-            other => Err(format!(
-                "invalid metric '{other}': possible values are wall, cpu, user, system, energy, memory"
-            )),
+            other => {
+                // names are case-sensitive, so use the original spelling
+                if let Some(name) = s
+                    .get(..CUSTOM_PREFIX.len())
+                    .filter(|p| p.eq_ignore_ascii_case(CUSTOM_PREFIX))
+                    .map(|_| &s[CUSTOM_PREFIX.len()..])
+                {
+                    if !name.is_empty()
+                        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                    {
+                        return Ok(Metric::custom(name));
+                    }
+                    return Err(format!(
+                        "invalid metric '{s}': expected 'custom:<name>' with a name of letters, digits and '_'"
+                    ));
+                }
+                Err(format!(
+                    "invalid metric '{other}': possible values are wall, cpu, user, system, energy, memory, custom:<name>"
+                ))
+            }
         }
     }
 }
 
 impl fmt::Display for Metric {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.name())
+        match self {
+            Metric::Custom(name) => write!(f, "{CUSTOM_PREFIX}{name}"),
+            other => f.write_str(other.name()),
+        }
+    }
+}
+
+impl Serialize for Metric {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for Metric {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        s.parse().map_err(serde::de::Error::custom)
     }
 }
 
@@ -156,5 +234,34 @@ mod tests {
         assert_eq!("rss".parse::<Metric>().unwrap(), Metric::Memory);
         assert_eq!("peak-memory".parse::<Metric>().unwrap(), Metric::Memory);
         assert!("invalid".parse::<Metric>().is_err());
+    }
+
+    #[test]
+    fn test_custom_metric_parse_display_and_serde() {
+        let m: Metric = "custom:latency_ms".parse().unwrap();
+        assert_eq!(m, Metric::custom("latency_ms"));
+        assert_eq!(m.custom_name(), Some("latency_ms"));
+        assert_eq!(m.to_string(), "custom:latency_ms");
+        assert_eq!(m.display_header(), "latency_ms");
+        assert_eq!(m.verb(), "had");
+        assert!(!m.is_time());
+        // the name keeps its case
+        assert_eq!(
+            "custom:Lat".parse::<Metric>().unwrap().to_string(),
+            "custom:Lat"
+        );
+        assert!("custom:".parse::<Metric>().is_err());
+        assert!("custom:a-b".parse::<Metric>().is_err());
+
+        assert_eq!(serde_json::to_string(&m).unwrap(), "\"custom:latency_ms\"");
+        assert_eq!(
+            serde_json::from_str::<Metric>("\"custom:latency_ms\"").unwrap(),
+            m
+        );
+        assert_eq!(serde_json::to_string(&Metric::Cpu).unwrap(), "\"cpu\"");
+        assert_eq!(
+            serde_json::from_str::<Metric>("\"memory\"").unwrap(),
+            Metric::Memory
+        );
     }
 }

@@ -50,7 +50,13 @@ pub fn import_json_for_metric(
     }
     if let Some(cli_metric) = expected {
         for res in &summary.results {
-            if res.primary_mean(cli_metric).is_none() {
+            let partial = cli_metric.custom_name().is_some_and(|name| {
+                res.custom_metrics
+                    .as_ref()
+                    .and_then(|m| m.get(name))
+                    .is_some_and(|v| v.iter().any(Option::is_none))
+            });
+            if partial || res.primary_mean(cli_metric).is_none() {
                 bail!(
                     "Import file '{path}': result '{}' has no data for '--metric {cli_metric}'",
                     escape_control_chars(&res.command)
