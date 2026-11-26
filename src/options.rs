@@ -382,6 +382,12 @@ pub struct Options {
     /// `--expect-output-sha256` / `--validate`: check the result of each run
     pub validation: Option<crate::validation::ValidationConfig>,
 
+    /// `--quality`: what the terminal shows of the measurement quality report
+    pub quality_mode: crate::quality::QualityMode,
+
+    /// `--fail-on-quality`: exit non-zero when a benchmark's grade is worse
+    pub fail_on_quality: Option<crate::quality::Grade>,
+
     /// Modified Z-score above which runs are discarded (--discard-outliers)
     pub discard_outliers: Option<f64>,
 
@@ -472,6 +478,8 @@ impl Default for Options {
             schedule: ScheduleMode::Grouped,
             omit_failed_runs: false,
             validation: None,
+            quality_mode: Default::default(),
+            fail_on_quality: None,
             discard_outliers: None,
             show_resource_usage: false,
             counters: None,
@@ -888,6 +896,13 @@ impl Options {
         }
         options.omit_failed_runs = matches.get_flag("omit-failed-runs");
         options.validation = parse_validation(matches)?;
+        options.quality_mode = matches
+            .get_one::<String>("quality")
+            .and_then(|value| crate::quality::QualityMode::parse(value))
+            .unwrap_or_default();
+        options.fail_on_quality = matches
+            .get_one::<String>("fail-on-quality")
+            .and_then(|value| crate::quality::Grade::parse(value));
         options.show_resource_usage = matches.get_flag("resource-usage");
         let simd = matches.get_flag("simd");
         // `--metric instructions|cycles` collects its own counter

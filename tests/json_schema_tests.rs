@@ -335,7 +335,7 @@ const NEEDS_REAL_HOST: &[&str] = &[
     "omitted_failed_runs",
     "shell",
     // `leftover_processes` needs a command that leaves a child behind (Unix case in
-    // `real_cases`); `energy_per_instance_joules` is no longer written since 1.18
+    // `real_cases`); `energy_per_instance_joules` is no longer written since 1.19
     "leftover_processes",
     "energy_per_instance_joules",
 ];

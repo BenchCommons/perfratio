@@ -93,6 +93,8 @@ pub mod pmu;
 #[doc(hidden)]
 pub mod pmu_scaling;
 #[doc(hidden)]
+pub mod quality;
+#[doc(hidden)]
 pub mod run_id;
 #[doc(hidden)]
 pub mod simd;

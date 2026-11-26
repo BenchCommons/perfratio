@@ -133,6 +133,11 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub validation: Option<crate::validation::ValidationSummary>,
 
+    /// Measurement quality report: checks and the derived grade. See
+    /// `docs/specs/measurement-quality.md`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality: Option<crate::quality::QualityReport>,
+
     /// Zero-based indices of the runs excluded from the statistics by
     /// --discard-outliers
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -285,7 +290,7 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance_percentiles: Option<InstancePercentiles>,
 
-    /// No longer written (1.18): package energy is shared by the instances, so
+    /// No longer written (1.19): package energy is shared by the instances, so
     /// it is not divided per instance (`docs/specs/process-tree.md`). Kept so
     /// that exports of schemaVersion 1.5 to 1.15 still load.
     #[serde(default, skip_serializing_if = "Option::is_none")]

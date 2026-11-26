@@ -1,6 +1,6 @@
 # Spec: unique run identity (`PERFRATIO_RUN_ID`) and per-run artifact directories (#308)
 
-**Status:** Shipped in 1.1 (schemaVersion 1.18).
+**Status:** Shipped in 1.1 (schemaVersion 1.19).
 
 ## Problem / Motivation
 References: #308, #53 (`concurrency.md`), megafine "Run id" (idea only, no code taken).
@@ -60,7 +60,7 @@ Creates `DIR/run-<id>` (and missing parents) for each run before it starts and e
 profiles). Creating a directory happens before the process is spawned and is not part of the
 measured time.
 
-### JSON (additive, `schemaVersion` 1.17 to 1.18)
+### JSON (additive, `schemaVersion` 1.18 to 1.19)
 Per result:
 - `run_ids`: u64 per run, aligned with `times` (with `--first-run=separate` the dropped first run is
   dropped here too). With `--concurrency` it is the id of instance 0.

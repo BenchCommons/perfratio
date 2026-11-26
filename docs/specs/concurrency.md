@@ -59,7 +59,7 @@ Relevant code to build on:
 - Ctrl-C kills all instances of the current run, as today for one.
 - Energy (`--energy`): RAPL measures the whole machine package, so the value is the batch energy
   over the makespan window. ~~Also report `energy_per_instance_joules = batch / N`~~ (shipped in
-  1.5, no longer written since 1.18: the package energy is shared, so it is not attributed per
+  1.5, no longer written since 1.19: the package energy is shared, so it is not attributed per
   instance; `energy_scope: "batch"`, see `process-tree.md`, #309).
 - Hardware counters (#49): batch totals.
 

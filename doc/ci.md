@@ -22,7 +22,7 @@ Comparison with baseline.json
   test on the per-run times, p < 0.05). Noise alone does not fail the gate. Both
   exports need per-run times (every perfratio JSON export has them), and at least 3
   runs each.
-- Exit codes: `0` ok, `3` regression. Any other non-zero code is an ordinary error.
+- Exit codes: `0` ok, `3` regression, `5` measurement quality worse than `--fail-on-quality`. Any other non-zero code is an ordinary error.
 - The exports and the comparison table are written before perfratio exits with 3.
 
 ## GitHub Actions

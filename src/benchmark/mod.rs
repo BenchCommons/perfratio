@@ -1959,7 +1959,7 @@ impl<'a> BenchmarkRunner<'a> {
             b
         });
 
-        let result = BenchmarkResult {
+        let mut result = BenchmarkResult {
             command: self.command.get_name(),
             command_with_unused_parameters: self.command.get_name_with_unused_parameters(),
             mean: t_mean,
@@ -2013,6 +2013,7 @@ impl<'a> BenchmarkRunner<'a> {
                 .collect(),
             omitted_failed_runs,
             validation: validation_summary,
+            quality: None,
             discarded_outliers,
             resources,
             runs_planned,
@@ -2086,6 +2087,21 @@ impl<'a> BenchmarkRunner<'a> {
             custom_metrics,
             custom_metrics_summary,
         };
+        let quality = crate::quality::QualityReport::assess(
+            &result,
+            &crate::quality::QualityContext {
+                metric: self.options.metric,
+                counters_requested: self.options.counters.is_some(),
+                energy_requested: self.options.measure_energy,
+            },
+        );
+        if report.is_some() && self.options.output_style != OutputStyleOption::Disabled {
+            if let Some(text) = quality.render(self.options.quality_mode) {
+                crate::out!("{text}");
+                crate::outln!(" ");
+            }
+        }
+        result.quality = Some(quality);
         Ok((result, warning_texts))
     }
 }
