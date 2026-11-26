@@ -167,7 +167,7 @@ fn json_starts_with_schema_version_and_has_no_joulex_key() {
     let text = std::fs::read_to_string(&path).unwrap();
     // `schemaVersion` must be the first key of the document
     assert!(
-        text.starts_with("{\n  \"schemaVersion\": \"1.2\","),
+        text.starts_with("{\n  \"schemaVersion\": \"1.3\","),
         "{text}"
     );
     let json: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -202,11 +202,30 @@ fn measurements_energy_requested_is_measured_or_unavailable_with_reason() {
         "unavailable" => {
             let reason = m["energy_unavailable_reason"].as_str().unwrap();
             assert!(
-                ["unsupported_platform", "rapl_not_found", "rapl_unreadable"].contains(&reason),
+                [
+                    "unsupported_platform",
+                    "rapl_not_found",
+                    "rapl_unreadable",
+                    "unsupported_cpu",
+                    "ioreport_not_found",
+                    "ioreport_frozen",
+                    "emi_not_found",
+                    "emi_unreadable",
+                ]
+                .contains(&reason),
                 "{reason}"
             );
-            if !cfg!(target_os = "linux") {
-                assert_eq!(reason, "unsupported_platform");
+            if cfg!(target_os = "macos") {
+                assert!(
+                    ["unsupported_cpu", "ioreport_not_found", "ioreport_frozen"].contains(&reason),
+                    "{reason}"
+                );
+            }
+            if cfg!(windows) {
+                assert!(
+                    ["emi_not_found", "emi_unreadable"].contains(&reason),
+                    "{reason}"
+                );
             }
         }
         other => panic!("unexpected energy status {other}"),

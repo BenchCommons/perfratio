@@ -1,7 +1,7 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Partly shipped (schemaVersion 1.2; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
+Partly shipped (schemaVersion 1.3; 1.3 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.2 is 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
@@ -119,7 +119,9 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
   - `"measured"`: requested and the backend works;
   - `"unavailable"`: requested, but the backend could not be used (the reason goes in
     `<group>_unavailable_reason`: `unsupported_platform`, `rapl_not_found`,
-    `rapl_unreadable`, `other`; open enum);
+    `rapl_unreadable`, `unsupported_cpu`, `ioreport_not_found`, `ioreport_frozen`,
+    `emi_not_found`, `emi_unreadable` (1.3), `other`; open enum; `perfratio.energy_backend` is
+    `sysfs_powercap`, `perf_pmu`, `ioreport` or `windows_emi`);
   - `"not_requested"`: the flag was not given.
   Groups in 1.0: `time` (always `measured`), `memory`, `energy` (`-E/--energy`),
   `resources` (`--resource-usage`). New groups are MINOR.
