@@ -946,8 +946,9 @@ pub fn build_command() -> Command {
                 .action(ArgAction::SetTrue)
                 .help("Show the mean voluntary/involuntary context switches, minor/major page \
                        faults and block I/O operations per run, and export them per run in \
-                       JSON ('resources'). Unix only. The counters include the intermediate \
-                       shell unless '--shell=none' is used."),
+                       JSON ('resources'). Counters the OS cannot report (e.g. context switches \
+                       on Windows) are shown as n/a and omitted from the JSON. The counters \
+                       include the intermediate shell unless '--shell=none' is used."),
         )
         .arg(
             Arg::new("counters")

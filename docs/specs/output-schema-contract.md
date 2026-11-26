@@ -1,7 +1,7 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Partly shipped (schemaVersion 1.3; 1.3 adds `--counters` fields from #49; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
+Partly shipped (schemaVersion 1.4; 1.4 adds `--counters` fields from #49; 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
@@ -100,7 +100,7 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
       "energy": "unavailable",
       "energy_unavailable_reason": "rapl_unreadable",
       "resources": "not_requested",
-      "counters": "measured"                                  // new in 1.3, #49
+      "counters": "measured"                                  // new in 1.4, #49
     }
   },
   "interrupted": true,                                        // optional
@@ -123,7 +123,7 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
     `rapl_unreadable`, `other`; open enum);
   - `"not_requested"`: the flag was not given.
   Groups in 1.0: `time` (always `measured`), `memory`, `energy` (`-E/--energy`),
-  `resources` (`--resource-usage`), `counters` (`--counters`, new in 1.3). New groups are MINOR.
+  `resources` (`--resource-usage`), `counters` (`--counters`, new in 1.4). New groups are MINOR.
   `counters` also has the value `"partial"` (some events could not be opened, listed in
   `counters_unavailable_events`) and the reasons `unsupported_platform`, `perf_paranoid`,
   `no_pmu`, `other` in `counters_unavailable_reason`.
@@ -162,11 +162,11 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `custom_metrics_summary` | { name: { `mean`, `stddev`?, `median`, `min`, `max` } } | with `custom_metrics` |
 | `parameters`, `per_run_parameters` | strings / stats | optional (`--parameter-*`) |
 | `omitted_failed_runs`, `discarded_outliers` | indices | optional |
-| `resources` | counts[] per run | when `measurements.resources = "measured"` |
-| `counters` (**new in 1.3**, #49) | { event: (u64 \| null)[] } raw counts per run aligned with `times`; `null` = not readable; events `instructions`, `cycles`, `cache-references`, `cache-misses`, `branches`, `branch-misses` (open set) | when `measurements.counters` is `measured` or `partial` |
-| `counters_summary` (**new in 1.3**) | { event: { `mean`, `stddev`?, `median`, `min`, `max` } } | with `counters` |
-| `counters_scope` (**new in 1.3**) | `"all"` (user + kernel) or `"user"` (kernel counting was denied); the meaning of an event name never changes | with `counters` |
-| `counters_multiplexed_runs` (**new in 1.3**) | count of runs with a scaled counter | optional (> 0) |
+| `resources` { column: counts[] per run } (**columns individually optional since 1.3**, #291) | counts | when `measurements.resources = "measured"`; a column the OS cannot report is omitted (Windows has no `voluntary_ctx_switches`, `involuntary_ctx_switches`, `major_faults`), see `windows-resource-usage.md` |
+| `counters` (**new in 1.4**, #49) | { event: (u64 \| null)[] } raw counts per run aligned with `times`; `null` = not readable; events `instructions`, `cycles`, `cache-references`, `cache-misses`, `branches`, `branch-misses` (open set) | when `measurements.counters` is `measured` or `partial` |
+| `counters_summary` (**new in 1.4**) | { event: { `mean`, `stddev`?, `median`, `min`, `max` } } | with `counters` |
+| `counters_scope` (**new in 1.4**) | `"all"` (user + kernel) or `"user"` (kernel counting was denied); the meaning of an event name never changes | with `counters` |
+| `counters_multiplexed_runs` (**new in 1.4**) | count of runs with a scaled counter | optional (> 0) |
 | `efficiency` { `ipc`, `cpi`, `cache_miss_rate`, `branch_miss_rate` } (#213) | ratios | optional (with the needed counters) |
 | `diagnostics`, `precision`, `baseline`, `shell`, `timed_out`, `timeout`, `runs_planned` | see `BenchmarkResult` | optional |
 

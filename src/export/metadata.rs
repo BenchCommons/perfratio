@@ -163,12 +163,44 @@ fn cpu_model() -> Option<String> {
     }
     #[cfg(windows)]
     {
-        std::env::var("PROCESSOR_IDENTIFIER").ok()
+        // The registry has the marketing name; the environment variable only
+        // has the family/model/stepping.
+        windows_registry_cpu_name().or_else(|| std::env::var("PROCESSOR_IDENTIFIER").ok())
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     {
         None
     }
+}
+
+/// `ProcessorNameString` of the first CPU, e.g. "AMD Ryzen 7 5800X 8-Core Processor".
+#[cfg(windows)]
+fn windows_registry_cpu_name() -> Option<String> {
+    use windows_sys::w;
+    use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ};
+
+    let mut buf = [0u16; 256];
+    let mut bytes = std::mem::size_of_val(&buf) as u32;
+    // SAFETY: the key and value names are NUL-terminated wide strings; `buf` has
+    // room for `bytes` bytes, which RegGetValueW updates to the size it wrote.
+    let err = unsafe {
+        RegGetValueW(
+            HKEY_LOCAL_MACHINE,
+            w!("HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0"),
+            w!("ProcessorNameString"),
+            RRF_RT_REG_SZ,
+            std::ptr::null_mut(),
+            buf.as_mut_ptr().cast(),
+            &mut bytes,
+        )
+    };
+    if err != 0 {
+        return None;
+    }
+    let len = (bytes as usize / 2).min(buf.len());
+    let name = String::from_utf16_lossy(&buf[..len]);
+    let name = name.trim_end_matches('\0').trim();
+    (!name.is_empty()).then(|| name.to_string())
 }
 
 #[cfg(target_os = "macos")]
