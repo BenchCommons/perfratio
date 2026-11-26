@@ -197,15 +197,16 @@ fn real_runs_overlap() {
         "-j4",
         "--pin-workers=none",
         "--style=basic",
-        "sleep 0.2",
+        "sleep 0.5",
     ]);
     let elapsed = start.elapsed().as_secs_f64();
-    // 8 sequential runs would take 1.6 s
-    assert!(elapsed < 1.4, "took {elapsed} s");
+    // 8 sequential runs would take 4 s; 4 workers need about 1 s. The margin
+    // absorbs slow CI runners (emulated targets, loaded machines).
+    assert!(elapsed < 3.0, "took {elapsed} s");
     assert_eq!(run_counts(&json), [8]);
     // every run is timed on its own, not as a batch
     let mean = json["results"][0]["mean"].as_f64().unwrap();
-    assert!((0.19..0.4).contains(&mean), "mean {mean}");
+    assert!((0.49..1.0).contains(&mean), "mean {mean}");
 }
 
 #[cfg(unix)]
