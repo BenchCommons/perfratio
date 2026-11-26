@@ -539,11 +539,9 @@
         "command_line",
         "started_at",
         "system",
-        "measurements",
-        "environment",
-        "environment_fingerprint"
+        "measurements"
       ],
-      "description": "Run metadata."
+      "description": "Run metadata. `environment` and `environment_fingerprint` (new in 1.28, #314) are always written by 1.28 and later; not required here, so that a MINOR addition is not a breaking change for consumers of older exports."
     },
     "metric": {
       "type": "string",
