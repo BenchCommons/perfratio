@@ -1050,7 +1050,11 @@ mod linux {
 
     /// Same for a raw event (`PERF_TYPE_RAW`).
     pub fn probe_raw(config: u64, scope: Scope) -> Result<(), i32> {
-        open_fd(&attr(crate::simd::PERF_TYPE_RAW, config, scope, true)).map(drop)
+        open_fd(
+            &attr(crate::simd::PERF_TYPE_RAW, config, scope, true, false),
+            -1,
+        )
+        .map(drop)
     }
 
     pub struct Open {
