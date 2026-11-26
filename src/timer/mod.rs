@@ -58,6 +58,8 @@ pub struct TimerResult {
     pub custom_metrics: std::collections::BTreeMap<String, f64>,
     /// Identifier of the region SDK that reported (`--region`)
     pub region_sdk: Option<String>,
+    /// Stdout of the run, kept for `--expect-output-sha256` / `--validate`
+    pub validation_stdout: Option<Vec<u8>>,
 }
 
 #[cfg(windows)]
@@ -741,6 +743,7 @@ pub fn execute_and_measure(
         until_matched,
         custom_metrics: std::collections::BTreeMap::new(),
         region_sdk: None,
+        validation_stdout: None,
     })
 }
 
