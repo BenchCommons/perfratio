@@ -284,6 +284,10 @@ pub struct Options {
     /// fraction of the mean (0.01 = ±1%)
     pub target_precision: Option<f64>,
 
+    /// `--estimator`, `--confidence-level`, `--significance-level`,
+    /// `--bootstrap-resamples` and `--seed` (#320)
+    pub stat_settings: crate::stats::settings::StatSettings,
+
     /// `--duration`: sample each command until its summed run time (seconds)
     /// reaches this budget
     pub duration: Option<Second>,
@@ -448,6 +452,7 @@ impl Default for Options {
             first_run: FirstRunPolicy::default(),
             min_benchmarking_time: 3.0,
             target_precision: None,
+            stat_settings: Default::default(),
             duration: None,
             max_benchmarking_time: 60.0,
             command_failure_action: CmdFailureAction::RaiseError,
@@ -748,6 +753,7 @@ impl Options {
                 .ok_or_else(|| OptionsError::InvalidTargetPrecision(value.clone()))?;
             options.target_precision = Some(pct / 100.0);
         }
+        options.stat_settings = parse_stat_settings(matches)?;
         if let Some(time) = matches.get_one::<String>("max-benchmarking-time") {
             options.max_benchmarking_time = time
                 .parse::<f64>()
@@ -1425,4 +1431,49 @@ fn parse_validation<'a>(
         first_only,
         on_invalid: on_invalid.unwrap_or_default(),
     }))
+}
+
+#[cfg(feature = "cli")]
+/// The statistical settings of `--estimator`, `--confidence-level`,
+/// `--significance-level`, `--bootstrap-resamples` and `--seed`.
+fn parse_stat_settings<'a>(
+    matches: &ArgMatches,
+) -> Result<crate::stats::settings::StatSettings, OptionsError<'a>> {
+    let mut settings = crate::stats::settings::StatSettings::default();
+    let err = OptionsError::InvalidStatistics;
+    if let Some(value) = matches.get_one::<String>("estimator") {
+        settings.estimator = value.parse().map_err(err)?;
+    }
+    let number = |name: &str| -> Result<Option<f64>, OptionsError<'a>> {
+        matches
+            .get_one::<String>(name)
+            .map(|v| {
+                v.trim().parse::<f64>().map_err(|_| {
+                    OptionsError::InvalidStatistics(format!(
+                        "invalid --{name} '{v}': expected a number"
+                    ))
+                })
+            })
+            .transpose()
+    };
+    if let Some(v) = number("confidence-level")? {
+        settings.confidence_level = v;
+    }
+    if let Some(v) = number("significance-level")? {
+        settings.significance_level = v;
+    }
+    if let Some(v) = matches.get_one::<String>("bootstrap-resamples") {
+        settings.bootstrap_resamples = v.trim().parse().map_err(|_| {
+            OptionsError::InvalidStatistics(format!(
+                "invalid --bootstrap-resamples '{v}': expected an integer >= 100"
+            ))
+        })?;
+    }
+    if let Some(seed) = matches.get_one::<u64>("seed") {
+        settings.seed = *seed;
+    }
+    settings
+        .validate()
+        .map_err(OptionsError::InvalidStatistics)?;
+    Ok(settings)
 }

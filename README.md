@@ -85,6 +85,7 @@ Common options:
 | `--optimize <VAR> <MIN> <MAX>` | Search a parameter for the value that minimizes `--metric` (golden-section search, assumes a unimodal metric; `--optimize-budget <N>` caps the evaluations; `-D <DELTA>` allows fractional values; the best candidates are re-run once and pooled, `--optimize-confirm <N>`; the HTML report marks the best value). |
 | `-e, --export <FILE>` | Export results. The format follows the file extension. |
 | `--deep-stats` | Bootstrapped confidence intervals and hypothesis tests. |
+| `--estimator <mean\|median\|pNN>`, `--confidence-level`, `--significance-level`, `--bootstrap-resamples`, `--seed` | Choose the central value behind ranking, ratios and tests (default `mean`), and the levels and bootstrap settings of intervals and tests (see `docs/specs/statistics-settings.md`). |
 
 > [!WARNING]
 > Values from `-P`, `-L` and `-F/--parameter-file` are inserted into the command **verbatim**,

@@ -25,7 +25,8 @@ pub struct Delta<'a> {
 
 impl Delta<'_> {
     pub fn is_significant(&self) -> bool {
-        self.p_value.is_some_and(|p| p < MAX_P_VALUE)
+        let alpha = crate::stats::settings::current().significance_level;
+        self.p_value.is_some_and(|p| p < alpha)
     }
 
     /// Slower by more than `threshold` (0.05 = 5%) and significant.
@@ -72,7 +73,7 @@ pub fn compare<'a>(
                 name: key(cur),
                 baseline: base,
                 current: cur,
-                rel_change: cur.mean / base.mean - 1.0,
+                rel_change: rel_change(base, cur),
                 p_value: p_value(base, cur),
             }),
             None => comparison.new.push(key(cur)),
@@ -86,10 +87,33 @@ pub fn compare<'a>(
     comparison
 }
 
-/// Two-sided p-value of the difference in mean run time (bootstrap Welch
-/// test, accounting for any subtracted baseline uncertainty). Two constant
-/// samples with different means and no baseline uncertainty are certainly different.
+/// current / baseline − 1 of the `--estimator` (the mean by default); NaN when
+/// an estimator other than the mean cannot be computed (no per-run times).
+fn rel_change(baseline: &BenchmarkResult, current: &BenchmarkResult) -> f64 {
+    use crate::metric::Metric;
+    match (
+        baseline.primary_center(Metric::Wall),
+        current.primary_center(Metric::Wall),
+    ) {
+        (Some(b), Some(c)) => c / b - 1.0,
+        _ => f64::NAN,
+    }
+}
+
 pub(crate) fn p_value(baseline: &BenchmarkResult, current: &BenchmarkResult) -> Option<f64> {
+    p_value_with(baseline, current, &crate::stats::settings::current())
+}
+
+/// Two-sided p-value of the difference in run time (bootstrap Welch test for
+/// the mean, bootstrap test of the difference of estimates otherwise;
+/// accounting for any subtracted baseline uncertainty, for the mean). Two
+/// constant samples with different means and no baseline uncertainty are
+/// certainly different.
+pub(crate) fn p_value_with(
+    baseline: &BenchmarkResult,
+    current: &BenchmarkResult,
+    settings: &crate::stats::settings::StatSettings,
+) -> Option<f64> {
     let (a, b) = (baseline.times.as_deref()?, current.times.as_deref()?);
     let var_base_a = baseline
         .baseline
@@ -103,12 +127,14 @@ pub(crate) fn p_value(baseline: &BenchmarkResult, current: &BenchmarkResult) -> 
         .unwrap_or(0.0);
 
     if var_base_a > 0.0 || var_base_b > 0.0 {
-        if let Some(stats) =
-            crate::stats::deep::compare_samples_with_baseline_variance(a, b, var_base_a, var_base_b)
-        {
+        if let Some(stats) = crate::stats::deep::compare_samples_with_settings(
+            a, b, var_base_a, var_base_b, settings,
+        ) {
             return Some(stats.p_value);
         }
-    } else if let Some(stats) = crate::stats::deep::compare_samples(a, b) {
+    } else if let Some(stats) =
+        crate::stats::deep::compare_samples_with_settings(a, b, 0.0, 0.0, settings)
+    {
         return Some(stats.p_value);
     }
     let constant = |xs: &[f64]| xs.len() >= 3 && xs.iter().all(|&x| x == xs[0]);
@@ -128,9 +154,12 @@ pub fn parse_threshold(value: &str) -> Result<f64, String> {
 }
 
 fn format_time(result: &BenchmarkResult, unit: Option<Unit>) -> String {
-    let (_, unit) = format_duration_unit(result.mean, unit);
+    let center = result
+        .primary_center(crate::metric::Metric::Wall)
+        .unwrap_or(result.mean);
+    let (_, unit) = format_duration_unit(center, unit);
     let (mean, stddev) =
-        crate::output::format::format_mean_stddev_values(result.mean, result.stddev, unit);
+        crate::output::format::format_mean_stddev_values(center, result.stddev, unit);
     match stddev {
         Some(stddev) => format!("{mean} {} ± {stddev}", unit.short_name()),
         None => format!("{mean} {}", unit.short_name()),
