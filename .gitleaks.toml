@@ -1,0 +1,13 @@
+# gitleaks configuration: the default ruleset plus an allowlist for test
+# fixtures. Used by the `gitleaks` job in .github/workflows/security.yml.
+title = "perfratio gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Test fixtures contain fake keys and tokens on purpose"
+paths = [
+  '''^tests/''',
+  '''^src/.*tests?\.rs$''',
+]

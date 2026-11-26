@@ -310,7 +310,7 @@ fn parent_dir(path: &Path) -> PathBuf {
 /// truncated or partially written export, an existing file is left untouched
 /// if writing fails, and a symlink at `filename` is replaced instead of its
 /// target being overwritten.
-fn write_to_file(filename: &str, content: &[u8]) -> Result<()> {
+pub fn write_to_file(filename: &str, content: &[u8]) -> Result<()> {
     let path = Path::new(filename);
 
     // Devices, FIFOs and other special files (e.g. /dev/stdout, /dev/null or
