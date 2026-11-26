@@ -22,7 +22,7 @@ pub struct ExportMetadata {
     pub energy_backend: Option<&'static str>,
     /// Which measurement groups were measured, unavailable or not requested
     pub measurements: Measurements,
-    /// How the runs were executed; only with `--jobs` > 1 (new in 1.16)
+    /// How the runs were executed; only with `--jobs` > 1 (new in 1.21)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub execution: Option<Execution>,
 }
