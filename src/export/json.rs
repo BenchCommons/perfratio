@@ -24,7 +24,7 @@ pub struct PrimaryMetricStats {
 }
 
 /// Version of the JSON output contract (`docs/specs/output-schema-contract.md`).
-pub const SCHEMA_VERSION: &str = "1.25";
+pub const SCHEMA_VERSION: &str = "1.26";
 
 #[derive(Serialize, Debug)]
 struct PerfratioSummary<'a> {

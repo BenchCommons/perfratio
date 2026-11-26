@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.25 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.26 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.25",
+      "const": "1.26",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -628,6 +628,14 @@
         },
         "met": {
           "type": "boolean"
+        },
+        "stopping_rule": {
+          "type": "string",
+          "description": "New in 1.26 (#322): fixed_ci or confidence_sequence (--target-precision-method). Open enum."
+        },
+        "achieved_half_width": {
+          "type": "number",
+          "description": "New in 1.26 (#322): half-width of the stopping rule's interval, relative to the mean; the same value as reached."
         }
       },
       "required": [
