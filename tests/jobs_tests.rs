@@ -192,6 +192,7 @@ fn real_runs_overlap() {
     let start = std::time::Instant::now();
     let json = export(&[
         "-N",
+        "--calibrate=off",
         "--runs=8",
         "-j4",
         "--pin-workers=none",
@@ -282,6 +283,7 @@ fn ctrl_c_keeps_equal_run_counts_with_fair() {
     let path = dir.path().join("interrupted.json");
     let child = Command::new(assert_cmd::cargo_bin!("perfratio"))
         .args([
+            "--calibrate=off",
             "--runs=400",
             "-N",
             "-j3",

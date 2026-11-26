@@ -130,6 +130,11 @@ pub struct RegressionDetected(pub usize);
 #[error("{0} benchmark(s) have a measurement quality worse than '{1}' ('--fail-on-quality')")]
 pub struct QualityGateFailed(pub usize, pub &'static str);
 
+/// A result is within the runner floor with `--below-floor fail` (exit code 6)
+#[derive(Debug, Error)]
+#[error("{0} benchmark(s) are below the measurement floor ('--below-floor fail'); use a longer-running command or a loop inside the command")]
+pub struct BelowFloor(pub usize);
+
 /// `--check-system=strict` found a problem (exit code 4)
 #[derive(Debug, Error)]
 #[error("The system check did not pass ('--check-system=strict'); fix the problems above, or use '--check-system' to only report them")]
