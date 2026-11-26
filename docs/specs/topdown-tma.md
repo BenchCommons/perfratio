@@ -1,6 +1,9 @@
 # Spec: `--topdown` Top-down Microarchitecture Analysis, level 1 (#221)
 
-**Status:** Proposed. Scheduled for 1.x, not 1.0.
+**Status:** Implemented in `src/topdown.rs` (schemaVersion 1.12). The formulas, event discovery and
+exports are unit-tested with injected sysfs and CPU data. **Not yet run on a PMU:** the hardware
+tests below (`PERFRATIO_TEST_PERF=1`) and the "group + inherit" check on the oldest kernel are
+open, and CI has no PMU. Differences from the text below are listed under "Implementation notes".
 
 ## Problem / Motivation
 References: #221, #49, #217, #218, #219, `perf-stat(1)` (`--topdown`), Ahmad Yasin, "A Top-Down
@@ -135,6 +138,31 @@ Fractions in `0..1`; per run, aligned with `times`; `null` if a run was not meas
 `perfratio.measurements.topdown` plus `topdown_unavailable_reason`. The issue's single object with
 scalar means is replaced by arrays plus a summary, to keep the contract rule that per-run data is
 aligned with `times`. `schemaVersion`: MINOR. Import round-trips the keys.
+
+## Implementation notes (#221)
+- Readings share the `--counters` pipeline: a run's `HwReading` holds the active counters first
+  and the topdown events after them. Calibration, `--concurrency` sums and failed-run alignment
+  therefore need no separate code. Intel metric events get no overhead subtraction.
+- Presentation: the primary class is marked `<- primary bottleneck (hypothesis)`, the block
+  header names the source, and the CLI help says the result is a hypothesis, not a diagnosis.
+- Intel: fractions use `metric / sum(metrics)`. The model-specific `INT_MISC.UOP_DROPPING`
+  correction of newer cores is not applied yet (no event encoding was verified for it), so on
+  those cores frontend bound can read slightly high against `perf stat`. Follow-up.
+- Intel Skylake to Cascade Lake and Atom report `unsupported_cpu`, as in the table above.
+- Intel CPUs are accepted when sysfs lists `slots` and the four `topdown-*` events; the model
+  list only separates `unsupported_kernel` from `unsupported_cpu`. A guest without them is `no_pmu`.
+- Hybrid: `hybrid_cpu_unpinned` unless `--affinity` is given; pinning to E-cores is not detected,
+  such runs read zero slots and export `null`.
+- AMD: model ranges follow perf's `mapfile.csv`, minus family 0x19 model 0x30 to 0x3f (Zen 3
+  Trento, which the map file sends to Zen 4). Event encodings were checked against perf's
+  `amdzen4` and `amdzen5` JSON (`0x76`, `0x1a0` with umasks `0x01`/`0x1e`/`0x60`, `0xaa`/`0x07`, `0xc1`).
+- Scope: user + kernel, falling back to user only when `perf_event_paranoid` denies kernel
+  counting (with one warning). `--scope` (#218) is not implemented yet.
+- Delta table: one row per class. A significant change gets the marker `Δ`, never improvement or
+  regression, because a class moving is not better or worse by itself. The `-> (-34.2 pp)` line
+  is not implemented; the table shows relative change.
+- `--topdown` outside Linux x86_64 is an error (`--topdown is only supported on Linux x86_64`),
+  except with `--debug-mode`, which simulates 25 / 12.5 / 12.5 / 50 percent.
 
 ## Edge cases
 - VM: `slots` is typically not exposed to guests; reported `no_pmu`/`unsupported_kernel`. The

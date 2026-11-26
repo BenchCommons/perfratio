@@ -555,6 +555,10 @@ Collect hardware performance counters per run (Linux): instructions, cycles, cac
 .IP
 Privilege levels that \fB\-\-counters\fR counts: user, kernel, all (default, like 'perf stat') or split (every event as ':u' plus ':k'). Kernel counting needs perf_event_paranoid <= 1 or CAP_PERFMON: the default falls back to user space with one warning, while kernel, split or a ':k' modifier fail with an error. Requires \fB\-\-counters\fR.
 .HP
+\fB\-\-topdown\fR
+.IP
+Collect Top\-down Microarchitecture Analysis level 1 per run (Linux x86_64): the share of pipeline slots that retire work, are lost to bad speculation, or are stalled in the frontend or backend. The largest stall class is a hypothesis about the bottleneck, not a diagnosis. Needs Intel Ice Lake or later, or AMD Zen 4 or later; elsewhere it warns once and continues. On AMD it uses all six core counters, so \fB\-\-counters\fR events are multiplexed. Exported as 'topdown' and 'topdown_summary'.
+.HP
 \fB\-\-first\-run\fR \fIMODE\fP
 .IP
 How to treat the first (cold) timing run of each command: include (default) keeps it in the statistics, separate shows it on its own line ("Cold (1st run)"), exports it as 'first_run' in the JSON and excludes it from all statistics, discard excludes it silently, like an extra warmup run. With separate and discard, one extra run is performed so that the requested number of runs is still measured. If \fB\-\-warmup\fR is used with separate, the first warmup run is the cold one: it is reported (wall-clock time only) and no timing run is excluded.
