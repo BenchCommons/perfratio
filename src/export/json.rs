@@ -7,6 +7,7 @@ use crate::benchmark::benchmark_result::BenchmarkResult;
 use crate::benchmark::relative_speed;
 use crate::metric::Metric;
 use crate::options::SortOrder;
+use crate::pareto::{Analysis, ParetoConfig};
 use crate::stats::significance::{self, Significance};
 use crate::util::units::Unit;
 
@@ -23,7 +24,7 @@ pub struct PrimaryMetricStats {
 }
 
 /// Version of the JSON output contract (`docs/specs/output-schema-contract.md`).
-pub const SCHEMA_VERSION: &str = "1.15";
+pub const SCHEMA_VERSION: &str = "1.16";
 
 #[derive(Serialize, Debug)]
 struct PerfratioSummary<'a> {
@@ -40,6 +41,9 @@ struct PerfratioSummary<'a> {
     /// Result of `--optimize` (object, or array with one entry per search)
     #[serde(skip_serializing_if = "Option::is_none")]
     optimize: Option<serde_json::Value>,
+    /// Pareto analysis of `--pareto` (new in 1.16, #326)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pareto: Option<Analysis>,
     results: Vec<ResultEntry<'a>>,
 }
 
@@ -69,6 +73,8 @@ pub struct JsonExporter {
     pub metadata: Option<ExportMetadata>,
     /// Result of `--optimize`, set once the search is done
     pub optimize: std::sync::Mutex<Option<serde_json::Value>>,
+    /// Pareto analysis of the results being serialized
+    pub pareto: std::sync::Mutex<Option<Analysis>>,
 }
 
 impl Exporter for JsonExporter {
@@ -136,6 +142,11 @@ impl Exporter for JsonExporter {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .clone(),
+            pareto: self
+                .pareto
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone(),
             results,
         });
         if let Ok(ref mut content) = output {
@@ -147,5 +158,9 @@ impl Exporter for JsonExporter {
 
     fn set_optimize(&self, value: Option<&serde_json::Value>) {
         *self.optimize.lock().unwrap_or_else(|e| e.into_inner()) = value.cloned();
+    }
+
+    fn set_pareto(&self, analysis: Option<(&ParetoConfig, &Analysis)>) {
+        *self.pareto.lock().unwrap_or_else(|e| e.into_inner()) = analysis.map(|(_, a)| a.clone());
     }
 }

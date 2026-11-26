@@ -613,6 +613,27 @@ impl<'a> Scheduler<'a> {
         }
     }
 
+    /// `--pareto`, `--constraint`, `--objective`: the frontier of the measured commands.
+    pub fn print_pareto(&self) {
+        let Some(config) = &self.options.pareto else {
+            return;
+        };
+        if self.options.output_style == OutputStyleOption::Disabled {
+            return;
+        }
+        let results: Vec<BenchmarkResult> = self
+            .results
+            .iter()
+            .filter(|r| !(self.options.filter_failed && r.has_failure()))
+            .cloned()
+            .collect();
+        let analysis = crate::pareto::analyze(config, &results);
+        let text = crate::pareto::terminal(config, &analysis, &results);
+        if !text.is_empty() {
+            crate::out!("{text}");
+        }
+    }
+
     pub fn print_relative_speed_comparison(&self) {
         if self.options.output_style == OutputStyleOption::Disabled {
             return;
