@@ -7,7 +7,10 @@
 
 use std::collections::BTreeMap;
 
-use anyhow::{bail, Result};
+#[cfg(feature = "cli")]
+use anyhow::bail;
+use anyhow::Result;
+#[cfg(feature = "cli")]
 use clap::ArgMatches;
 use serde::Serialize;
 
@@ -37,6 +40,7 @@ pub struct OptimizeSpec {
 
 impl OptimizeSpec {
     /// Parse and validate `--optimize` and `--optimize-budget`; `None` without `--optimize`.
+    #[cfg(feature = "cli")]
     pub fn from_cli_arguments(matches: &ArgMatches) -> Result<Option<Self>> {
         let Some(values) = matches.get_many::<String>("optimize") else {
             if matches.contains_id("optimize-budget")
