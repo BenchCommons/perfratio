@@ -472,11 +472,13 @@ pub fn build_command() -> Command {
             Arg::new("energy-backend")
                 .long("energy-backend")
                 .value_name("BACKEND")
-                .value_parser(["auto", "sysfs", "perf"])
+                .value_parser(["auto", "sysfs", "perf", "ioreport", "emi"])
                 .help(
-                    "Energy backend for '--energy' (Linux): 'auto' (default) uses sysfs powercap \
-                     and falls back to the perf power PMU when energy_uj is unreadable, 'sysfs' \
-                     and 'perf' force one. Can also be set with PERFRATIO_ENERGY_BACKEND.",
+                    "Energy backend for '--energy': 'auto' (default) picks the native source: \
+                     on Linux sysfs powercap, falling back to the perf power PMU when energy_uj \
+                     is unreadable; on macOS (Apple Silicon) IOReport; on Windows the Energy \
+                     Meter Interface. 'sysfs', 'perf', 'ioreport' and 'emi' force one (only on \
+                     its own OS). Can also be set with PERFRATIO_ENERGY_BACKEND.",
                 ),
         )
         .arg(
