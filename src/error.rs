@@ -17,6 +17,8 @@ pub enum ParameterScanError {
     ZeroStep,
     #[error("A step size is required when the range bounds are floating point numbers. The step size can be specified with the '-D/--parameter-step-size <DELTA>' parameter")]
     StepRequired,
+    #[error("{0}")]
+    InvalidSpacing(String),
     #[error("'--command-name' has been specified {0} times. It has to appear exactly once, or exactly {1} times (number of benchmarks)")]
     UnexpectedCommandNameCount(usize, usize),
 }
@@ -102,6 +104,8 @@ pub enum OptionsError<'a> {
     InvalidOutputMetric(String),
     #[error("{0}")]
     InvalidOptimize(String),
+    #[error("Invalid '--raw-ratios': {0}")]
+    InvalidRawRatios(&'static str),
     #[error("Invalid Pareto option: {0}")]
     InvalidPareto(String),
 }

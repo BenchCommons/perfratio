@@ -56,7 +56,8 @@ pub fn build_command() -> Command {
                        line like \"grep -i todo\" or a shell command like \"sleep 0.5 && echo test\". \
                        The latter is only available if the shell is not explicitly disabled via \
                        '--shell=none'. If multiple commands are given, perfratio will show a \
-                       comparison of the respective runtimes.")
+                       comparison of the respective runtimes. A single '-' reads one command per line from \
+                       stdin (blank lines and lines starting with '#' are ignored).")
                 .required_unless_present_any(["generate-completions", "import-json", "argv"])
                 .action(ArgAction::Append)
                 .value_hint(ValueHint::CommandString)
@@ -356,6 +357,35 @@ pub fn build_command() -> Command {
                      search runs over these values, which allows fractional parameters.\n\n  \
                      Example:  perfratio -P delay 0.3 0.7 -D 0.2 'sleep {delay}'\n\n\
                      This performs benchmarks for 'sleep 0.3', 'sleep 0.5' and 'sleep 0.7'.",
+                ),
+        )
+        .arg(
+            Arg::new("parameter-step-n")
+                .long("parameter-step-n")
+                .action(ArgAction::Set)
+                .value_name("N")
+                .requires("parameter-scan")
+                .conflicts_with("parameter-step-size")
+                .help(
+                    "Scan every '--parameter-scan' range with N+1 evenly spaced values, \
+                     including MIN and MAX, instead of a step size. Values are rounded to \
+                     integers if MIN and MAX are integers (duplicates are removed, with a \
+                     note).\n\n  \
+                     Example:  perfratio -P n 0 100 --parameter-step-n 4 'sort {n}'\n\n\
+                     This performs benchmarks for 0, 25, 50, 75 and 100.",
+                ),
+        )
+        .arg(
+            Arg::new("parameter-step-log")
+                .long("parameter-step-log")
+                .action(ArgAction::SetTrue)
+                .requires("parameter-step-n")
+                .help(
+                    "With '--parameter-step-n': space the values geometrically (constant \
+                     ratio). MIN must be greater than 0.\n\n  \
+                     Example:  perfratio -P n 10 1000000 --parameter-step-n 5 \
+                     --parameter-step-log 'sort {n}'\n\n\
+                     This performs benchmarks for 10, 100, 1000, 10000, 100000 and 1000000.",
                 ),
         )
         .arg(
@@ -981,6 +1011,20 @@ pub fn build_command() -> Command {
                 ),
         )
         .arg(
+            Arg::new("raw-ratios")
+                .long("raw-ratios")
+                .action(ArgAction::SetTrue)
+                .conflicts_with("show-output")
+                .help(
+                    "Print only the relative values of the primary metric on stdout: one line \
+                     per result in command order (a '--reference' command is the first), the reference (or the best command) being \
+                     1.000000, others mean divided by the reference mean with six decimals and \
+                     a '.' decimal point ('nan' if it cannot be computed). Nothing else is \
+                     printed on stdout (implies '--style none'); warnings go to stderr. \
+                     Exports to stdout ('-') are rejected.",
+                ),
+        )
+        .arg(
             Arg::new("pareto")
                 .long("pareto")
                 .value_name("METRICS")
@@ -1087,10 +1131,15 @@ pub fn build_command() -> Command {
                 .long("command-name")
                 .short('n')
                 .action(ArgAction::Append)
-                .num_args(1)
+                .num_args(0..=1)
+                .default_missing_value("")
                 .value_name("NAME")
                 .help("Give a meaningful name to a command. This can be specified multiple times \
-                       if several commands are benchmarked."),
+                       if several commands are benchmarked.\n\
+                       Without a value, the commands are named by the words in which they differ \
+                       (the common prefix and suffix are stripped; '#1', '#2', ... if nothing is \
+                       shared). Because the next argument would be taken as the name, write \
+                       '--command-name=' or put the option after the commands."),
         )
         // This option is hidden for now, as it is not yet clear yet if we want to 'stabilize' this,
         // see discussion in https://github.com/sharkdp/hyperfine/issues/527

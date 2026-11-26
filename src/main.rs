@@ -57,6 +57,27 @@ fn run() -> Result<()> {
             decimals => util::units::Precision::Fixed(decimals.parse().unwrap_or(3)),
         });
     }
+    if options.raw_ratios {
+        let to_stdout = [
+            "export",
+            "export-asciidoc",
+            "export-json",
+            "export-csv",
+            "export-markdown",
+            "export-orgmode",
+            "export-markdown-runs",
+            "export-orgmode-runs",
+            "export-asciidoc-runs",
+            "export-html",
+        ]
+        .iter()
+        .filter_map(|flag| cli_arguments.get_many::<String>(flag))
+        .flatten()
+        .any(|target| target == "-");
+        if to_stdout {
+            anyhow::bail!("'--raw-ratios' prints only ratios on stdout: it cannot be combined with an export to '-'");
+        }
+    }
     let commands = Commands::from_cli_arguments(&cli_arguments)?;
     let export_manager = ExportManager::from_cli_arguments(
         &cli_arguments,
@@ -124,6 +145,7 @@ fn run() -> Result<()> {
     scheduler.add_imported_results(imported_results);
     scheduler.run_benchmarks()?;
     scheduler.print_relative_speed_comparison();
+    scheduler.print_raw_ratios();
     if cli_arguments.get_flag("delta-table") {
         scheduler.print_delta_table();
     }
