@@ -5,8 +5,9 @@ use std::{mem, os::windows::io::AsRawHandle, process, ptr};
 use windows_sys::Win32::{
     Foundation::{CloseHandle, HANDLE},
     System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, JobObjectBasicAndIoAccountingInformation,
-        QueryInformationJobObject, JOBOBJECT_BASIC_AND_IO_ACCOUNTING_INFORMATION,
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectBasicAccountingInformation,
+        JobObjectBasicAndIoAccountingInformation, QueryInformationJobObject,
+        JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_BASIC_AND_IO_ACCOUNTING_INFORMATION,
     },
 };
 
@@ -206,6 +207,24 @@ impl CPUTimer {
             };
             (0.0, 0.0, peak_memory, counters)
         }
+    }
+
+    /// Number of processes still running in the job: after the main process
+    /// exited, these are descendants that outlived it.
+    pub fn active_processes(&self) -> Option<u32> {
+        let mut info = mem::MaybeUninit::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>::uninit();
+        // SAFETY: the job object is valid; `info` is large enough for the class.
+        let ok = unsafe {
+            QueryInformationJobObject(
+                self.job_object,
+                JobObjectBasicAccountingInformation,
+                info.as_mut_ptr().cast(),
+                mem::size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
+                ptr::null_mut(),
+            )
+        };
+        // SAFETY: initialized by the successful call above.
+        (ok != 0).then(|| unsafe { info.assume_init() }.ActiveProcesses)
     }
 
     pub fn raw_job_handle(&self) -> HANDLE {

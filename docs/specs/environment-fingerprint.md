@@ -1,7 +1,7 @@
 # Specification: Environment, fingerprint and provenance (`--meta`, `--require-compatible-env`)
 
 **Issue:** [#314](https://github.com/BenchCommons/perfratio/issues/314)
-**Status:** Shipped. JSON `schemaVersion` 1.19 (re-bumped on top of master when merged).
+**Status:** Shipped. JSON `schemaVersion` 1.20.
 **Related:** #240 (contract), #291, #315 (`container` limits), `check-system.md`, `measurement-quality.md`.
 
 ## 1. Problem / Motivation
@@ -80,9 +80,9 @@ Warning: The baseline 'base.json' was measured in a different environment: cpu_m
 ```
 
 `--require-compatible-env` turns the warning into an error (exit code 1), and also fails for a file
-that records no environment (exported before 1.19). Without the flag such a file is accepted silently.
+that records no environment (exported before 1.20). Without the flag such a file is accepted silently.
 
-### 2.5 JSON (`schemaVersion` 1.19, additive)
+### 2.5 JSON (`schemaVersion` 1.20, additive)
 
 `perfratio.environment` (object), `perfratio.environment_fingerprint` (string), `perfratio.meta`
 (object of strings, omitted when empty). Schema: `docs/schema/perfratio-export.schema.json`.
