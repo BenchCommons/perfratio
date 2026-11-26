@@ -1,0 +1,40 @@
+name: Fuzz
+
+# Builds the cargo-fuzz targets in fuzz/ on nightly and runs each for a short
+# time. Informational: do not add this workflow to the required checks.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "43 4 * * 3"
+  pull_request:
+    paths:
+      - "fuzz/**"
+      - "src/import.rs"
+      - "src/command.rs"
+      - "src/options.rs"
+      - ".github/workflows/fuzz.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: Build and run fuzz targets (nightly)
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          toolchain: nightly
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      - name: Build the fuzz targets
+        run: cargo fuzz build
+      - name: Run each target for 30 seconds
+        run: |
+          for target in import_json command_splitter; do
+            cargo fuzz run "$target" -- -max_total_time=30
+          done
