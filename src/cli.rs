@@ -974,11 +974,14 @@ pub fn build_command() -> Command {
             Arg::new("output-metric")
                 .long("output-metric")
                 .action(ArgAction::Append)
-                .value_name("NAME=REGEX")
+                .value_name("NAME[unit,higher]=REGEX")
                 .conflicts_with_all(["show-output", "until"])
                 .help("Extract a custom numeric metric from the command's standard output using \
                        the regular expression REGEX, which must contain at least one capture group. \
                        The value is extracted from the first capture group of the last match in the output. \
+                       NAME may declare a unit and a direction in brackets: 'qps[ops/s,higher]=REGEX' \
+                       ('higher' means a larger value is better, 'lower' is the default); they drive ranking, \
+                       relative speed and the exported descriptor. \
                        Can be specified multiple times for different metrics. Works with the default \
                        '--output=null' and with '--output=pipe'. A run where an ignored \
                        failure ('-i') left the metric out is exported as null."),

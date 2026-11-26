@@ -22,7 +22,15 @@ pub fn compare_metric(l: &BenchmarkResult, r: &BenchmarkResult, metric: Metric) 
         (false, true) => Ordering::Less,
         _ => {
             match (l.primary_center(metric), r.primary_center(metric)) {
-                (Some(l_val), Some(r_val)) => l_val.partial_cmp(&r_val).unwrap_or(Ordering::Equal),
+                (Some(l_val), Some(r_val)) => {
+                    let order = l_val.partial_cmp(&r_val).unwrap_or(Ordering::Equal);
+                    // Less always means better
+                    if metric.higher_is_better() {
+                        order.reverse()
+                    } else {
+                        order
+                    }
+                }
                 // a result without data for the metric never ranks above one with data
                 (None, Some(_)) => Ordering::Greater,
                 (Some(_), None) => Ordering::Less,
@@ -114,10 +122,13 @@ fn compute_relative_speeds<'a>(
                 };
             }
 
-            let ratio = match relative_ordering {
-                Ordering::Less => ref_mean / res_mean,
-                Ordering::Equal => 1.0,
-                Ordering::Greater => res_mean / ref_mean,
+            // the ratio is always >= 1: the better value over the worse one, which
+            // are the larger over the smaller one if higher is better
+            let higher = metric.higher_is_better();
+            let ratio = match (relative_ordering, higher) {
+                (Ordering::Less, false) | (Ordering::Greater, true) => ref_mean / res_mean,
+                (Ordering::Equal, _) => 1.0,
+                (Ordering::Greater, false) | (Ordering::Less, true) => res_mean / ref_mean,
             };
 
             // https://en.wikipedia.org/wiki/Propagation_of_uncertainty#Example_formulas
@@ -143,8 +154,8 @@ fn compute_relative_speeds<'a>(
                     })
                     // `ratio` is always >= 1 (how many times better or worse),
                     // the bootstrap gives other / reference
-                    .map(|(lo, hi)| match relative_ordering {
-                        Ordering::Less => (1.0 / hi, 1.0 / lo),
+                    .map(|(lo, hi)| match (relative_ordering, higher) {
+                        (Ordering::Less, false) | (Ordering::Greater, true) => (1.0 / hi, 1.0 / lo),
                         _ => (lo, hi),
                     })
             };
@@ -434,4 +445,50 @@ fn test_compute_relative_speed_energy_and_memory() {
     let mem_speeds = compute_with_check(&results, SortOrder::Command, Metric::Memory).unwrap();
     assert_relative_eq!(1.0, mem_speeds[0].relative_speed);
     assert_relative_eq!(3.0, mem_speeds[1].relative_speed);
+}
+
+#[cfg(test)]
+mod direction_tests {
+    use super::*;
+    use crate::metric::{set_custom_meta, CustomMeta};
+    use std::collections::BTreeMap;
+
+    fn with_value(name: &str, value: f64) -> BenchmarkResult {
+        let mut r = create_result(name, 1.0);
+        r.custom_metrics = Some(BTreeMap::from([(
+            "dir_unit".to_string(),
+            vec![Some(value); 3],
+        )]));
+        r.custom_metrics_summary = Some(BTreeMap::from([(
+            "dir_unit".to_string(),
+            crate::benchmark::benchmark_result::MetricSummary {
+                mean: value,
+                stddev: None,
+                median: value,
+                min: value,
+                max: value,
+            },
+        )]));
+        r
+    }
+
+    #[test]
+    fn higher_is_better_ranks_the_largest_value_first() {
+        set_custom_meta(
+            "dir_unit",
+            CustomMeta {
+                unit: Some("ops/s".into()),
+                higher_is_better: true,
+            },
+        );
+        let metric = Metric::custom("dir_unit");
+        let results = vec![with_value("slow", 100.0), with_value("fast", 250.0)];
+        assert_eq!(best_of(&results, metric).command, "fast");
+        let ranked = compute_with_check(&results, SortOrder::MeanTime, metric).unwrap();
+        assert_eq!(ranked[0].result.command, "fast");
+        assert!(ranked[0].is_reference);
+        assert_eq!(ranked[1].relative_speed, 2.5);
+        assert_eq!(ranked[1].relative_ordering, Ordering::Greater);
+        assert_eq!(metric.comparison_words(), ("higher value", "lower value"));
+    }
 }
