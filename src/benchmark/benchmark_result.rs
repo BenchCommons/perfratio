@@ -283,6 +283,17 @@ pub struct BenchmarkResult {
     /// `--concurrency` with `--energy`: mean batch energy divided by N
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub energy_per_instance_joules: Option<f64>,
+
+    /// `--jobs N` (only when N > 1): number of workers that executed at least
+    /// one timed run
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workers_used: Option<usize>,
+
+    /// `--jobs N` (only when N > 1, then `true`): runs executed in parallel and
+    /// may have disturbed each other, so the times are not comparable with
+    /// sequential samples
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contended: Option<bool>,
 }
 
 /// Percentiles of the per-instance wall times of a `--concurrency` benchmark.

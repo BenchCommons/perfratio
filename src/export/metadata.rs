@@ -22,6 +22,20 @@ pub struct ExportMetadata {
     pub energy_backend: Option<&'static str>,
     /// Which measurement groups were measured, unavailable or not requested
     pub measurements: Measurements,
+    /// How the runs were executed; only with `--jobs` > 1 (new in 1.16)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution: Option<Execution>,
+}
+
+/// Parallel execution of the runs (`--jobs`, #306).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct Execution {
+    /// Runs executing at the same time
+    pub jobs: usize,
+    /// `saturate`, `exclusive` or `fair` (open enum)
+    pub schedule_policy: &'static str,
+    /// The runs disturbed each other; always `true`
+    pub contended: bool,
 }
 
 /// Status of one measurement group (`schemaVersion` 1.0, open enum).
@@ -199,6 +213,7 @@ impl ExportMetadata {
             },
             energy_backend: None,
             measurements,
+            execution: None,
         }
     }
 }

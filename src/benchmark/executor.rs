@@ -34,7 +34,7 @@ impl BenchmarkIteration {
     }
 }
 
-pub trait Executor {
+pub trait Executor: Sync {
     /// Run the given command and measure the execution time
     fn run_command_and_measure(
         &self,
@@ -152,6 +152,10 @@ fn run_command_and_measure_common(
         "PERFRATIO_RANDOMIZED_ENVIRONMENT_OFFSET",
         randomized_environment_offset::value(),
     );
+    // `--jobs`: the worker slot, so that commands can keep per-worker state
+    if let Some(worker) = super::pool::current_worker() {
+        command.env("PERFRATIO_WORKER", worker.to_string());
+    }
 
     if let Some(value) = iteration.to_env_var_value() {
         command.env("PERFRATIO_ITERATION", value);
