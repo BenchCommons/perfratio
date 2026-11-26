@@ -11,6 +11,126 @@ pub struct LinuxRaplSampler {
     max_energy_ranges: Vec<Option<u64>>,
     /// Readings taken by `start()`, or None if any counter could not be read
     start_readings: Option<Vec<u64>>,
+    /// Per-domain breakdown (`--energy-domains`), see `docs/specs/rapl-domains.md`
+    groups: Vec<DomainGroup>,
+    domains_enabled: bool,
+    group_start: Option<Vec<Vec<u64>>>,
+    last_domains: Option<Vec<(String, f64)>>,
+}
+
+/// Counters that share one reported domain name, e.g. the `dram` zones of all packages.
+/// These are only for the breakdown. They are never added to the total, because
+/// `core`, `uncore` and `dram` are sub-zones of a package and `psys` overlaps it.
+struct DomainGroup {
+    name: &'static str,
+    zones: Vec<(PathBuf, Option<u64>)>,
+}
+
+/// Domain names in the order they are reported.
+const DOMAIN_ORDER: [&str; 5] = ["package", "core", "uncore", "dram", "psys"];
+
+fn read_counter(path: &Path) -> Option<u64> {
+    fs::read_to_string(path).ok()?.trim().parse().ok()
+}
+
+fn zone_name(dir: &Path) -> Option<String> {
+    fs::read_to_string(dir.join("name"))
+        .ok()
+        .map(|s| s.trim().to_string())
+}
+
+fn canonical_domain(zone_name: &str, is_sub_zone: bool) -> Option<&'static str> {
+    match (is_sub_zone, zone_name) {
+        (false, n) if n.starts_with("package-") => Some("package"),
+        (false, "psys") => Some("psys"),
+        (true, "core") => Some("core"),
+        (true, "uncore") => Some("uncore"),
+        (true, "dram") => Some("dram"),
+        _ => None,
+    }
+}
+
+/// Finds the readable zones of each reported domain under `base`. Zones whose
+/// `energy_uj` cannot be read are left out.
+fn discover_groups(base: &Path) -> Vec<DomainGroup> {
+    let mut found: Vec<(&'static str, PathBuf, Option<u64>)> = Vec::new();
+    let mut add = |dir: &Path, is_sub: bool| {
+        let Some(name) = zone_name(dir).and_then(|n| canonical_domain(&n, is_sub)) else {
+            return;
+        };
+        let energy = dir.join("energy_uj");
+        if read_counter(&energy).is_some() {
+            found.push((name, energy, read_counter(&dir.join("max_energy_range_uj"))));
+        }
+    };
+    let mut tops: Vec<PathBuf> = fs::read_dir(base)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| is_zone_dir(p, 1))
+        .collect();
+    tops.sort();
+    for top in tops {
+        add(&top, false);
+        let mut subs: Vec<PathBuf> = fs::read_dir(&top)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| is_zone_dir(p, 2))
+            .collect();
+        subs.sort();
+        for sub in subs {
+            add(&sub, true);
+        }
+    }
+    DOMAIN_ORDER
+        .iter()
+        .filter_map(|&name| {
+            let zones: Vec<_> = found
+                .iter()
+                .filter(|(n, _, _)| *n == name)
+                .map(|(_, p, r)| (p.clone(), *r))
+                .collect();
+            (!zones.is_empty()).then_some(DomainGroup { name, zones })
+        })
+        .collect()
+}
+
+/// `intel-rapl:N` has one `:`, `intel-rapl:N:M` has two.
+fn is_zone_dir(path: &Path, colons: usize) -> bool {
+    path.file_name()
+        .map(|n| n.to_string_lossy())
+        .is_some_and(|n| n.starts_with("intel-rapl:") && n.matches(':').count() == colons)
+}
+
+/// The first `energy_uj` that exists but cannot be read, for the permission message.
+pub fn first_unreadable(base: &Path) -> Option<PathBuf> {
+    let mut tops: Vec<PathBuf> = fs::read_dir(base)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| is_zone_dir(p, 1))
+        .collect();
+    tops.sort();
+    tops.into_iter()
+        .map(|p| p.join("energy_uj"))
+        .find(|p| p.exists() && read_counter(p).is_none())
+}
+
+/// Message for `--energy` when sysfs counters exist but cannot be read (PLATYPUS,
+/// CVE-2020-8694, made `energy_uj` root-only).
+pub fn permission_message(unreadable: &Path) -> String {
+    format!(
+        "Cannot read {} (permission denied). Run as root, or grant read access: \
+         sudo chmod o+r /sys/class/powercap/intel-rapl*/*energy_uj \
+         /sys/class/powercap/intel-rapl*/*/energy_uj (resets on reboot; the README has a udev \
+         rule). Granting read access to energy_uj lets any local user infer secrets from the \
+         power signal (PLATYPUS), so do it only on machines you control.",
+        unreadable.display()
+    )
 }
 
 struct RaplDomain {
@@ -112,6 +232,10 @@ impl LinuxRaplSampler {
             energy_files,
             max_energy_ranges,
             start_readings: None,
+            groups: discover_groups(base),
+            domains_enabled: false,
+            group_start: None,
+            last_domains: None,
         })
     }
 
@@ -149,12 +273,58 @@ fn counter_delta(start: u64, stop: u64, max_range: Option<u64>) -> Option<u64> {
     }
 }
 
+impl LinuxRaplSampler {
+    fn read_groups(&self) -> Option<Vec<Vec<u64>>> {
+        self.groups
+            .iter()
+            .map(|g| g.zones.iter().map(|(p, _)| read_counter(p)).collect())
+            .collect()
+    }
+
+    /// Joules per domain between the two readings. A domain whose counter cannot be
+    /// converted (failed read, wrap without a known range) is left out, not reported as 0.
+    fn group_joules(&self, start: &[Vec<u64>], stop: &[Vec<u64>]) -> Vec<(String, f64)> {
+        let mut out = Vec::new();
+        for ((group, s), e) in self.groups.iter().zip(start).zip(stop) {
+            let mut total = 0.0;
+            let mut ok = true;
+            for (((_, range), &a), &b) in group.zones.iter().zip(s).zip(e) {
+                match counter_delta(a, b, *range) {
+                    Some(d) => total += d as f64,
+                    None => ok = false,
+                }
+            }
+            if ok {
+                out.push((group.name.to_string(), total / 1_000_000.0));
+            }
+        }
+        out
+    }
+}
+
 impl EnergySampler for LinuxRaplSampler {
     fn start(&mut self) {
+        if self.domains_enabled {
+            self.group_start = self.read_groups();
+        }
         self.start_readings = self.read_all_uj();
     }
 
+    fn enable_domains(&mut self) {
+        self.domains_enabled = true;
+    }
+
+    fn domain_energy(&self) -> Option<Vec<(String, f64)>> {
+        self.last_domains.clone()
+    }
+
     fn stop(&mut self) -> Option<f64> {
+        self.last_domains = None;
+        if self.domains_enabled {
+            if let (Some(start), Some(stop)) = (self.group_start.take(), self.read_groups()) {
+                self.last_domains = Some(self.group_joules(&start, &stop));
+            }
+        }
         // No sample if either the start or the stop reading failed, rather
         // than reporting a wrong value.
         let start_readings = self.start_readings.take()?;
@@ -326,6 +496,115 @@ mod tests {
         sampler.start();
         fs::write(pkg0.join("energy_uj"), "200000\n").unwrap();
         assert_eq!(sampler.stop(), None);
+    }
+
+    fn sub_zone(parent: &Path, idx: &str, name: &str, uj: u64) -> PathBuf {
+        create_fake_rapl_domain(
+            parent,
+            &format!("{}:{idx}", parent.file_name().unwrap().to_string_lossy()),
+            name,
+            uj,
+            None,
+        )
+    }
+
+    #[test]
+    fn domains_are_reported_but_the_total_stays_package_only() {
+        let dir = tempdir().unwrap();
+        let base = dir.path();
+        let pkg = create_fake_rapl_domain(base, "intel-rapl:0", "package-0", 1_000_000, None);
+        let core = sub_zone(&pkg, "0", "core", 100_000);
+        let uncore = sub_zone(&pkg, "1", "uncore", 10_000);
+        let dram = sub_zone(&pkg, "2", "dram", 200_000);
+        let psys = create_fake_rapl_domain(base, "intel-rapl:1", "psys", 5_000_000, None);
+
+        let mut s = LinuxRaplSampler::try_new_at(base).unwrap();
+        assert_eq!(s.energy_files().len(), 1);
+        s.enable_domains();
+        s.start();
+        fs::write(pkg.join("energy_uj"), "3000000\n").unwrap(); // +2.0 J
+        fs::write(core.join("energy_uj"), "1100000\n").unwrap(); // +1.0 J
+        fs::write(uncore.join("energy_uj"), "60000\n").unwrap(); // +0.05 J
+        fs::write(dram.join("energy_uj"), "700000\n").unwrap(); // +0.5 J
+        fs::write(psys.join("energy_uj"), "9000000\n").unwrap(); // +4.0 J
+
+        let total = s.stop().unwrap();
+        assert!(
+            (total - 2.0).abs() < 1e-9,
+            "total is the package only: {total}"
+        );
+        let d = s.domain_energy().unwrap();
+        let get = |n: &str| d.iter().find(|(k, _)| k == n).map(|(_, v)| *v).unwrap();
+        let names: Vec<&str> = d.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(names, ["package", "core", "uncore", "dram", "psys"]);
+        assert!((get("package") - 2.0).abs() < 1e-9);
+        assert!((get("core") - 1.0).abs() < 1e-9);
+        assert!((get("uncore") - 0.05).abs() < 1e-9);
+        assert!((get("dram") - 0.5).abs() < 1e-9);
+        assert!((get("psys") - 4.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn domains_of_several_packages_are_summed_per_name() {
+        let dir = tempdir().unwrap();
+        let base = dir.path();
+        let p0 = create_fake_rapl_domain(base, "intel-rapl:0", "package-0", 0, None);
+        let p1 = create_fake_rapl_domain(base, "intel-rapl:1", "package-1", 0, None);
+        let d0 = sub_zone(&p0, "0", "dram", 0);
+        let d1 = sub_zone(&p1, "0", "dram", 0);
+        let mut s = LinuxRaplSampler::try_new_at(base).unwrap();
+        s.enable_domains();
+        s.start();
+        fs::write(d0.join("energy_uj"), "1000000\n").unwrap();
+        fs::write(d1.join("energy_uj"), "500000\n").unwrap();
+        fs::write(p0.join("energy_uj"), "2000000\n").unwrap();
+        fs::write(p1.join("energy_uj"), "2000000\n").unwrap();
+        assert!((s.stop().unwrap() - 4.0).abs() < 1e-9);
+        let d = s.domain_energy().unwrap();
+        let dram = d.iter().find(|(k, _)| k == "dram").unwrap().1;
+        assert!((dram - 1.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn domains_are_off_by_default_and_missing_zones_are_left_out() {
+        let dir = tempdir().unwrap();
+        let base = dir.path();
+        let pkg = create_fake_rapl_domain(base, "intel-rapl:0", "package-0", 0, None);
+        let mut s = LinuxRaplSampler::try_new_at(base).unwrap();
+        s.start();
+        fs::write(pkg.join("energy_uj"), "1000000\n").unwrap();
+        s.stop().unwrap();
+        assert!(s.domain_energy().is_none());
+        s.enable_domains();
+        s.start();
+        s.stop().unwrap();
+        let d = s.domain_energy().unwrap();
+        assert_eq!(d.len(), 1, "only package exists: {d:?}");
+    }
+
+    #[test]
+    fn permission_message_names_the_file_and_the_fix() {
+        let m = permission_message(Path::new(
+            "/sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj",
+        ));
+        assert!(m.contains("intel-rapl:0/energy_uj"));
+        assert!(m.contains("chmod o+r"));
+        assert!(m.contains("udev"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn first_unreadable_finds_a_file_that_cannot_be_read() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempdir().unwrap();
+        let pkg = create_fake_rapl_domain(dir.path(), "intel-rapl:0", "package-0", 1, None);
+        let f = pkg.join("energy_uj");
+        assert_eq!(first_unreadable(dir.path()), None);
+        fs::set_permissions(&f, fs::Permissions::from_mode(0o000)).unwrap();
+        // root can still read it
+        if fs::read_to_string(&f).is_err() {
+            assert_eq!(first_unreadable(dir.path()), Some(f));
+        }
     }
 
     #[test]
