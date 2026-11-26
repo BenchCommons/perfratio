@@ -1,7 +1,6 @@
 pub mod affinity;
 pub mod exit_code;
 pub mod interrupt;
-pub mod legacy;
 pub mod min_max;
 pub mod number;
 pub mod priority;
