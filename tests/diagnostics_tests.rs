@@ -17,64 +17,66 @@ fn stable_benchmarks_have_no_diagnostic_warnings() {
         .stderr(predicate::str::contains("variance").not());
 }
 
-#[cfg(unix)]
-mod unix {
-    use super::*;
+/// `--debug-mode` reports exactly the simulated times, so the diagnostics
+/// are independent of machine load. With one run per `-P`/`-L` value and
+/// `--aggregate-parameter-runs`, the pooled times arrive in value order.
+///
+/// A ramp from 10 ms to 39 ms in 1 ms steps: a clear upward trend.
+const RAMP: [&str; 6] = [
+    "--aggregate-parameter-runs",
+    "-P",
+    "i",
+    "10",
+    "39",
+    "sleep 0.0{i}",
+];
+/// Alternates between 50 ms and 150 ms: two separated groups.
+const TWO_GROUPS: [&str; 5] = [
+    "--aggregate-parameter-runs",
+    "-L",
+    "t",
+    "05,15,05,15,05,15,05,15,05,15,05,15,05,15,05,15,05,15,05,15,\
+     05,15,05,15,05,15,05,15,05,15,05,15,05,15,05,15,05,15,05,15",
+    "sleep 0.{t}",
+];
 
-    /// Sleeps 20 ms + 3 ms per run: a clear upward trend. Run with '-N' (an
-    /// explicit 'sh -c') so that no noisy shell spawning time is subtracted.
-    const RAMP: &str = "sh -c 'sleep $(printf 0.%03d $((20 + 3 * PERFRATIO_ITERATION)))'";
-    /// Alternates between 50 ms and 150 ms: two separated groups. Run with
-    /// '-N' (an explicit 'sh -c'), so that no shell spawning time is
-    /// subtracted: under CPU load, that subtraction is the main noise source.
-    const TWO_GROUPS: &str =
-        "sh -c 'if [ $((PERFRATIO_ITERATION % 2)) = 0 ]; then sleep 0.05; else sleep 0.15; fi'";
+#[test]
+fn a_ramp_triggers_the_trend_warning_and_is_exported() {
+    let dir = tempfile::tempdir().unwrap();
+    let json = dir.path().join("out.json");
+    perfratio()
+        .args(["--debug-mode", "--runs=1", "--export-json"])
+        .arg(&json)
+        .args(RAMP)
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("systematic upward trend"));
 
-    #[test]
-    fn a_ramp_triggers_the_trend_warning_and_is_exported() {
-        if common::is_rosetta() {
-            return;
-        }
-        let dir = tempfile::tempdir().unwrap();
-        let json = dir.path().join("out.json");
-        perfratio()
-            .args(["--runs=30", "-N", "--export-json"])
-            .arg(&json)
-            .arg(RAMP)
-            .assert()
-            .success()
-            .stderr(predicate::str::contains("systematic upward trend"));
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&json).unwrap()).unwrap();
+    let diagnostics = &json["results"][0]["diagnostics"];
+    assert!(diagnostics["trend_rel"].as_f64().unwrap() > 0.5);
+    assert!(diagnostics["trend_p"].as_f64().unwrap() < 0.001);
+}
 
-        let json: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(&json).unwrap()).unwrap();
-        let diagnostics = &json["results"][0]["diagnostics"];
-        assert!(diagnostics["trend_rel"].as_f64().unwrap() > 0.5);
-        assert!(diagnostics["trend_p"].as_f64().unwrap() < 0.001);
-    }
+#[test]
+fn two_groups_trigger_the_multimodal_warning() {
+    perfratio()
+        .args(["--debug-mode", "--runs=1", "--first-run=discard"])
+        .args(TWO_GROUPS)
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("looks multimodal"))
+        // The slower group is a mode, not "outliers"
+        .stderr(predicate::str::contains("of the variance").not());
+}
 
-    #[test]
-    fn two_groups_trigger_the_multimodal_warning() {
-        if common::is_rosetta() {
-            return;
-        }
-        perfratio()
-            .args(["--runs=40", "-N", "--first-run=discard", TWO_GROUPS])
-            .assert()
-            .success()
-            .stderr(predicate::str::contains("looks multimodal"))
-            // The slower group is a mode, not "outliers"
-            .stderr(predicate::str::contains("of the variance").not());
-    }
-
-    #[test]
-    fn diagnostic_warnings_can_be_suppressed() {
-        if common::is_rosetta() {
-            return;
-        }
-        perfratio()
-            .args(["--runs=30", "-N", "--suppress-outlier-warnings", RAMP])
-            .assert()
-            .success()
-            .stderr(predicate::str::contains("trend").not());
-    }
+#[test]
+fn diagnostic_warnings_can_be_suppressed() {
+    perfratio()
+        .args(["--debug-mode", "--runs=1", "--suppress-outlier-warnings"])
+        .args(RAMP)
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("trend").not());
 }
