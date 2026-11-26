@@ -54,7 +54,10 @@ class RecorderTests(unittest.TestCase):
 
     def test_clock_is_monotonic_and_measures_the_sleep(self):
         # the protocol needs the monotonic clock, never time.time()
-        self.assertIs(pr._clock, time.monotonic_ns)
+        self.assertIs(
+            pr._clock,
+            time.perf_counter_ns if sys.platform == "win32" else time.monotonic_ns,
+        )
         recorder = pr.Recorder(self.path)
         with recorder.region("a"):
             time.sleep(0.02)

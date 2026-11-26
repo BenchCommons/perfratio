@@ -33,8 +33,9 @@ DEFAULT_REGION = "default"
 
 _NAME = re.compile(r"[A-Za-z0-9_]{1,64}\Z")
 # The monotonic clock of the protocol: CLOCK_MONOTONIC, mach_absolute_time or
-# QueryPerformanceCounter, depending on the platform.
-_clock = time.monotonic_ns
+# QueryPerformanceCounter, depending on the platform. On Windows time.monotonic_ns has a
+# resolution of about 15.6 ms, so use perf_counter_ns there (QueryPerformanceCounter).
+_clock = time.perf_counter_ns if sys.platform == "win32" else time.monotonic_ns
 
 
 class Recorder:
