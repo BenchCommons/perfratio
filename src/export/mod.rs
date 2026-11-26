@@ -116,6 +116,7 @@ impl ExportManager {
         sort_order: SortOrder,
         metric: Metric,
         counters: Option<&crate::perf_counters::CounterConfig>,
+        topdown: Option<&crate::topdown::TopdownConfig>,
     ) -> Result<Self> {
         let labels = parse_labels(
             matches
@@ -144,7 +145,9 @@ impl ExportManager {
         };
         let mut metadata = ExportMetadata::new(
             labels,
-            Measurements::new(energy, matches.get_flag("resource-usage")).with_counters(counters),
+            Measurements::new(energy, matches.get_flag("resource-usage"))
+                .with_counters(counters)
+                .with_topdown(topdown),
         );
         metadata.energy_backend = energy.and_then(Result::ok).map(|b| b.as_str());
         let mut export_manager = Self {

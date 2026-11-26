@@ -1,6 +1,6 @@
 # Spec: software events: CPU migrations and context switches (#220)
 
-**Status:** Implemented on Linux (#220, schemaVersion 1.12) for `cpu-migrations`,
+**Status:** Implemented on Linux (#220, schemaVersion 1.13) for `cpu-migrations`,
 `context-switches`, `page-faults` and `task-clock`. Not implemented: `alignment-faults` and
 `emulation-faults` (names not accepted yet), the `--check-system` line after the runs, and the
 rusage fallback for context switches.
