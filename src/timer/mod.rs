@@ -1,5 +1,7 @@
 mod wall_clock_timer;
 
+pub mod batch;
+
 #[cfg(windows)]
 mod windows_timer;
 
@@ -477,7 +479,19 @@ pub fn execute_and_measure(
 
     let wallclock_timer = WallClockTimer::start();
 
-    let mut child = command.spawn()?;
+    if batch::aborted() {
+        anyhow::bail!("not started: another instance of the --concurrency batch failed to start");
+    }
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            // --concurrency: kill the instances of this run that already started
+            batch::spawn_failed(&error);
+            return Err(error.into());
+        }
+    };
+    // Registered until the end of this function (after the child is reaped)
+    let _spawned = batch::spawned(child.id());
 
     #[cfg(target_os = "linux")]
     let child_start_ts = {

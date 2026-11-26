@@ -141,11 +141,16 @@ impl<'a> Scheduler<'a> {
         // The reference command (if any) is benchmarked first, right after the
         // imported results.
         self.reference_index = reference.as_ref().map(|_| display_offset);
-        let commands_to_run: Vec<(usize, &Command)> = reference
+        // `--concurrency {param}`: the instance count of every parameter combination
+        let resolved: Vec<Command> = reference
             .iter()
             .chain(self.commands.iter())
-            .enumerate()
-            .collect();
+            .map(|command| match &self.options.concurrency_template {
+                Some(template) => command.clone().with_concurrency_template(template),
+                None => Ok(command.clone()),
+            })
+            .collect::<Result<_>>()?;
+        let commands_to_run: Vec<(usize, &Command)> = resolved.iter().enumerate().collect();
 
         if self.options.schedule == ScheduleMode::RoundRobin && commands_to_run.len() > 1 {
             let mut runners: Vec<BenchmarkRunner> = commands_to_run

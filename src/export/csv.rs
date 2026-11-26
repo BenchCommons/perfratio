@@ -52,6 +52,8 @@ impl Exporter for CsvExporter {
         let mut writer = WriterBuilder::new().from_writer(vec![]);
 
         let has_efficiency = results.iter().any(|r| r.efficiency.is_some());
+        // `--concurrency`: only when a result ran more than one instance per run
+        let has_concurrency = results.iter().any(|r| r.concurrency.is_some());
         let mut all_param_names = BTreeSet::new();
         let mut all_metric_names = BTreeSet::new();
         for res in results {
@@ -97,6 +99,10 @@ impl Exporter for CsvExporter {
                 for name in EFFICIENCY_COLUMNS {
                     headers.push(Cow::Borrowed(name.as_bytes()));
                 }
+            }
+
+            if has_concurrency {
+                headers.push(Cow::Borrowed(b"concurrency"));
             }
 
             writer.write_record(headers)?;
@@ -212,6 +218,10 @@ impl Exporter for CsvExporter {
                     fields.push(optional(v));
                 }
             }
+            if has_concurrency {
+                let n = res.concurrency.unwrap_or(1);
+                fields.push(Cow::Owned(n.to_string().into_bytes()));
+            }
             writer.write_record(fields)?;
         }
 
@@ -251,6 +261,33 @@ fn test_csv_efficiency_columns_only_when_present() {
         .unwrap()
         .ends_with(",ipc,cpi,cache_miss_rate,branch_miss_rate"));
     assert!(lines.next().unwrap().ends_with(",2,,0.25,"));
+}
+
+#[test]
+fn test_csv_concurrency_column_only_when_present() {
+    let out = |results: &[BenchmarkResult]| {
+        let b = CsvExporter::default()
+            .serialize(
+                results,
+                None,
+                None,
+                SortOrder::Command,
+                crate::metric::Metric::Wall,
+            )
+            .unwrap();
+        String::from_utf8(b).unwrap()
+    };
+    let result = |concurrency| BenchmarkResult {
+        command: "a".into(),
+        concurrency,
+        ..Default::default()
+    };
+    assert!(!out(&[result(None)]).contains("concurrency"));
+    let text = out(&[result(None), result(Some(4))]);
+    let lines: Vec<&str> = text.lines().collect();
+    assert!(lines[0].ends_with(",concurrency"), "{text}");
+    assert!(lines[1].ends_with(",1"), "{text}");
+    assert!(lines[2].ends_with(",4"), "{text}");
 }
 
 #[test]

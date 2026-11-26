@@ -133,6 +133,10 @@ pub struct Command<'a> {
     /// Parameters substituted per run (`--parameter-sample`,
     /// `--aggregate-parameter-runs`)
     per_run: Vec<PerRunParameters<'a>>,
+
+    /// `--concurrency` resolved for this benchmark (a `{param}` value differs per
+    /// parameter combination). `None`: use `Options::concurrency`.
+    concurrency: Option<usize>,
 }
 
 impl<'a> Command<'a> {
@@ -151,6 +155,7 @@ impl<'a> Command<'a> {
             argv: None,
             parameters: parameters.into_iter().collect(),
             per_run: Vec::new(),
+            concurrency: None,
         }
     }
 
@@ -166,6 +171,7 @@ impl<'a> Command<'a> {
             argv: Some(argv),
             parameters: parameters.into_iter().collect(),
             per_run: Vec::new(),
+            concurrency: None,
         }
     }
 
@@ -299,6 +305,33 @@ impl<'a> Command<'a> {
         } else {
             bail!("Can not execute empty command")
         }
+    }
+
+    /// The number of instances per run: the value resolved for this command
+    /// (`--concurrency {param}`) or `default`.
+    pub fn concurrency_or(&self, default: usize) -> usize {
+        self.concurrency.unwrap_or(default)
+    }
+
+    /// Substitute this command's parameters in a `--concurrency` value such as
+    /// `{c}` and return the command with the resolved instance count.
+    pub fn with_concurrency_template(mut self, template: &str) -> Result<Command<'a>> {
+        let value = self.replace_parameters_in(template);
+        let n = value
+            .trim()
+            .parse::<usize>()
+            .ok()
+            .filter(|&n| n >= 1)
+            .with_context(|| {
+                format!(
+                    "'--concurrency {template}' resolves to '{value}' for the command '{}': \
+                     expected an integer >= 1 (is every parameter in the value defined with \
+                     '-L' or '-P'?)",
+                    self.get_command_line()
+                )
+            })?;
+        self.concurrency = Some(n);
+        Ok(self)
     }
 
     /// A copy of this command with one more parameter (`--optimize`).

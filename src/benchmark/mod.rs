@@ -682,9 +682,14 @@ impl<'a> BenchmarkRunner<'a> {
         Ok(())
     }
 
+    /// Instances per run of this benchmark (`--concurrency`, possibly `{param}`)
+    fn concurrency(&self) -> usize {
+        self.command.concurrency_or(self.options.concurrency)
+    }
+
     /// `--concurrency`: remember the instances of the run just measured.
     fn push_instances(&mut self, res: &TimingResult) {
-        if self.options.concurrency > 1 {
+        if self.concurrency() > 1 {
             self.instance_times
                 .push(res.instances.iter().map(|i| i.time_real).collect());
             self.instance_exit_codes
@@ -1087,8 +1092,8 @@ impl<'a> BenchmarkRunner<'a> {
         };
 
         // --concurrency: per-instance statistics (the primary series is the makespan)
-        let concurrency = (self.options.concurrency > 1 && !self.instance_times.is_empty())
-            .then_some(self.options.concurrency);
+        let concurrency = (self.concurrency() > 1 && !self.instance_times.is_empty())
+            .then_some(self.concurrency());
         let instance_flat: Vec<Second> = self.instance_times.iter().flatten().copied().collect();
         let instance_percentiles =
             concurrency.and_then(|_| benchmark_result::InstancePercentiles::new(&instance_flat));
@@ -1508,10 +1513,8 @@ impl<'a> BenchmarkRunner<'a> {
                 warnings.push(Warnings::FastExecutionTime);
             }
 
-            if self.options.concurrency > 1
-                && t_mean < MIN_EXECUTION_TIME * self.options.concurrency as f64
-            {
-                warnings.push(Warnings::ConcurrencySpawnCost(self.options.concurrency));
+            if self.concurrency() > 1 && t_mean < MIN_EXECUTION_TIME * self.concurrency() as f64 {
+                warnings.push(Warnings::ConcurrencySpawnCost(self.concurrency()));
             }
 
             if self.options.measure_energy
