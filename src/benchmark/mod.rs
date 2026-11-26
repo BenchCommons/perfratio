@@ -1578,6 +1578,13 @@ impl<'a> BenchmarkRunner<'a> {
                         colors::green("mean").bold(),
                         colors::green("σ")
                     );
+                    // a long metric name (`region:<name>`) must not touch the value
+                    let title =
+                        if self.options.metric.is_region() && header.chars().count() + 12 >= 21 {
+                            format!("{title} ")
+                        } else {
+                            title
+                        };
                     if let Some(s) = p_stddev_str {
                         crate::outln!(
                             "  {:<21}{:>width$} ± {:>width$}",
