@@ -345,6 +345,9 @@ pub struct Options {
     /// `--optimize`: search a parameter for the best value of the primary metric
     pub optimize: Option<crate::optimize::OptimizeSpec>,
 
+    /// `--raw-ratios`: print only the relative values of the primary metric
+    pub raw_ratios: bool,
+
     /// Measure energy consumption in Joules and display Performance per Watt
     pub measure_energy: bool,
 
@@ -450,6 +453,7 @@ impl Default for Options {
             command_input_policy: CommandInputPolicy::Null,
             metric: crate::metric::Metric::Wall,
             optimize: None,
+            raw_ratios: false,
             measure_energy: false,
             energy_baseline: None,
             energy_domains: false,
@@ -623,6 +627,19 @@ impl Options {
                 }
             }
         };
+
+        if matches.get_flag("raw-ratios") {
+            if options
+                .command_output_policies
+                .contains(&CommandOutputPolicy::Inherit)
+            {
+                return Err(OptionsError::InvalidRawRatios(
+                    "it cannot be combined with '--output=inherit'",
+                ));
+            }
+            options.output_style = OutputStyleOption::Disabled;
+            options.raw_ratios = true;
+        }
 
         match options.output_style {
             OutputStyleOption::Basic | OutputStyleOption::NoColor => {

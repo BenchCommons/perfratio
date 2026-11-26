@@ -613,6 +613,24 @@ impl<'a> Scheduler<'a> {
         }
     }
 
+    /// `--raw-ratios`: one relative value per line on stdout, nothing else.
+    pub fn print_raw_ratios(&self) {
+        if !self.options.raw_ratios {
+            return;
+        }
+        let results: Vec<BenchmarkResult> = self
+            .results
+            .iter()
+            .filter(|r| !(self.options.filter_failed && r.has_failure()))
+            .cloned()
+            .collect();
+        let metric = self.options.metric;
+        let lines = raw_ratio_lines(&results, self.get_reference_result(&results), metric);
+        for line in lines {
+            crate::outln!("{line}");
+        }
+    }
+
     pub fn print_relative_speed_comparison(&self) {
         if self.options.output_style == OutputStyleOption::Disabled {
             return;
@@ -955,6 +973,29 @@ impl<'a> Scheduler<'a> {
         self.export_manager
             .write_results(&results, reference, false)
     }
+}
+
+/// The lines of `--raw-ratios`: mean of the metric divided by the mean of the reference
+/// (or the best result), in result order, with six decimals and a `.` as decimal point.
+pub fn raw_ratio_lines(
+    results: &[BenchmarkResult],
+    reference: Option<&BenchmarkResult>,
+    metric: Metric,
+) -> Vec<String> {
+    if results.is_empty() {
+        return Vec::new();
+    }
+    let reference = reference.unwrap_or_else(|| relative_speed::best_of(results, metric));
+    let Some(reference_mean) = reference.primary_mean(metric).filter(|m| *m != 0.0) else {
+        return results.iter().map(|_| "nan".to_string()).collect();
+    };
+    results
+        .iter()
+        .map(|r| match r.primary_mean(metric) {
+            Some(mean) if !r.timed_out => format!("{:.6}", mean / reference_mean),
+            _ => "nan".to_string(),
+        })
+        .collect()
 }
 
 #[cfg(feature = "cli")]
