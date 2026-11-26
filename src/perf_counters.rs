@@ -22,6 +22,7 @@ use crate::counters::{CounterSample, Efficiency};
 use crate::frequency::{self, Basis};
 use crate::pmu::{self, PmuStatus};
 use crate::pmu_scaling::{multiplex_warning, ScaledCounter};
+use crate::simd::{self, SimdState};
 use crate::stats::basic;
 use std::collections::BTreeMap;
 
@@ -323,6 +324,10 @@ pub enum UnavailableReason {
     NoPmu,
     /// Software scheduler events need kernel-scope access (`perf_event_paranoid <= 1`)
     KernelScopeDenied,
+    /// `--simd`: no verified event set for this CPU model
+    UnsupportedCpu,
+    /// `--simd`: Intel hybrid CPU, the events exist on the P-core PMU only
+    HybridCpuUnpinned,
     Other,
 }
 
@@ -333,6 +338,8 @@ impl UnavailableReason {
             UnavailableReason::PerfParanoid => "perf_paranoid",
             UnavailableReason::NoPmu => "no_pmu",
             UnavailableReason::KernelScopeDenied => "kernel_scope_denied",
+            UnavailableReason::UnsupportedCpu => "unsupported_cpu",
+            UnavailableReason::HybridCpuUnpinned => "hybrid_cpu_unpinned",
             UnavailableReason::Other => "other",
         }
     }
@@ -366,11 +373,19 @@ pub struct CounterConfig {
     pub hidden: Vec<CounterKind>,
     /// `--debug-mode`: synthetic values, nothing is opened
     pub mock: bool,
+    /// `--simd` (#211). Its raw events are opened after `active`, so a
+    /// reading holds the `active` counters first, then the SIMD buckets.
+    pub simd: Option<SimdState>,
 }
 
 impl CounterConfig {
     pub fn is_active(&self) -> bool {
-        !self.active.is_empty()
+        self.event_count() > 0
+    }
+
+    /// Events opened per run: the basic counters plus the SIMD buckets.
+    pub fn event_count(&self) -> usize {
+        self.active.len() + self.simd.as_ref().map_or(0, |s| s.events.len())
     }
 
     /// JSON key of the event at `index` of `active`.
@@ -536,6 +551,7 @@ pub fn plan(
             partial_reason,
             hidden,
             mock: false,
+            simd: None,
         },
         warnings,
     ))
@@ -546,6 +562,18 @@ pub fn plan(
 pub fn resolve(
     requested: Vec<CounterSpec>,
     requested_scope: Scope,
+    debug_mode: bool,
+) -> Result<(CounterConfig, Vec<String>), String> {
+    resolve_with_simd(requested, requested_scope, false, debug_mode)
+}
+
+/// Like [`resolve`], with the `--simd` events when `simd` is set. `requested`
+/// may be empty (`--simd` without `--counters`). The SIMD events use the
+/// default scope only.
+pub fn resolve_with_simd(
+    requested: Vec<CounterSpec>,
+    requested_scope: Scope,
+    simd: bool,
     debug_mode: bool,
 ) -> Result<(CounterConfig, Vec<String>), String> {
     let (requested, hidden) = with_frequency_divisor(requested);
@@ -560,11 +588,12 @@ pub fn resolve(
                 partial_reason: None,
                 hidden,
                 mock: true,
+                simd: simd.then(|| SimdState::mock(requested_scope)),
             },
             vec![],
         ));
     }
-    resolve_native(requested, hidden, requested_scope)
+    resolve_native(requested, hidden, requested_scope, simd)
 }
 
 #[cfg(target_os = "linux")]
@@ -572,11 +601,28 @@ fn resolve_native(
     requested: Vec<CounterSpec>,
     hidden: Vec<CounterKind>,
     requested_scope: Scope,
+    want_simd: bool,
 ) -> Result<(CounterConfig, Vec<String>), String> {
     let paranoid = std::fs::read_to_string("/proc/sys/kernel/perf_event_paranoid")
         .ok()
         .and_then(|c| pmu::parse_paranoid(&c));
-    plan(requested, hidden, requested_scope, paranoid, linux::probe)
+    let has_basic = !requested.is_empty();
+    let (mut config, mut warnings) =
+        plan(requested, hidden, requested_scope, paranoid, linux::probe)?;
+    if want_simd {
+        // `--counters` may already have fallen back to user space (one warning)
+        let settled = has_basic.then_some(config.scope);
+        let (state, w) = simd::plan(
+            &crate::cpu_id::detect(),
+            paranoid,
+            requested_scope,
+            settled,
+            linux::probe_raw,
+        );
+        config.simd = Some(state);
+        warnings.extend(w);
+    }
+    Ok((config, warnings))
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -584,63 +630,87 @@ fn resolve_native(
     requested: Vec<CounterSpec>,
     hidden: Vec<CounterKind>,
     requested_scope: Scope,
+    want_simd: bool,
 ) -> Result<(CounterConfig, Vec<String>), String> {
     let why = if cfg!(target_os = "macos") {
         "on macOS the kperf framework needs root and cannot follow child processes"
     } else {
         "no supported counter API on this platform"
     };
+    let mut warnings = Vec::new();
+    let availability = if requested.is_empty() {
+        Availability::Measured
+    } else {
+        warnings.push(format!(
+            "'--counters' is only supported on Linux ({why}); continuing without hardware counters."
+        ));
+        Availability::Unavailable(UnavailableReason::UnsupportedPlatform)
+    };
+    if want_simd {
+        warnings.push(format!(
+            "'--simd' is only supported on Linux ({why}); continuing without the SIMD breakdown."
+        ));
+    }
     Ok((
         CounterConfig {
             requested,
             active: vec![],
             scope: requested_scope,
             requested_scope,
-            availability: Availability::Unavailable(UnavailableReason::UnsupportedPlatform),
+            availability,
             partial_reason: None,
             hidden,
             mock: false,
+            simd: want_simd.then(|| SimdState::unavailable(UnavailableReason::UnsupportedPlatform)),
         },
-        vec![format!(
-            "'--counters' is only supported on Linux ({why}); continuing without hardware counters."
-        )],
+        warnings,
     ))
 }
 
 /// Deterministic values for `--debug-mode`, derived from the simulated time.
 pub fn mock_reading(config: &CounterConfig, time_real: f64) -> HwReading {
-    config
-        .active
+    let basic = config.active.iter().map(|&spec| {
+        let per_second = match spec.kind {
+            CounterKind::Instructions => 2_000_000_000.0,
+            CounterKind::Cycles => 1_000_000_000.0,
+            CounterKind::CacheReferences => 10_000_000.0,
+            CounterKind::CacheMisses => 1_000_000.0,
+            CounterKind::Branches => 400_000_000.0,
+            CounterKind::BranchMisses => 4_000_000.0,
+            CounterKind::CpuMigrations => 0.0,
+            CounterKind::ContextSwitches => 100.0,
+            CounterKind::PageFaults => 1_000.0,
+            // nanoseconds: with 1e9 cycles/s the mock clock runs at 1 GHz
+            CounterKind::TaskClock => 1_000_000_000.0,
+        };
+        let all = (per_second * time_real) as u64;
+        // user is a quarter of everything, so user + kernel = all
+        let value = match spec.scope {
+            Scope::All => all,
+            Scope::User => all / 4,
+            Scope::Kernel => all - all / 4,
+        };
+        Some(ScaledCounter {
+            value,
+            raw: value,
+            time_enabled: 1,
+            time_running: 1,
+        })
+    });
+    let simd = config
+        .simd
         .iter()
-        .map(|&spec| {
-            let per_second = match spec.kind {
-                CounterKind::Instructions => 2_000_000_000.0,
-                CounterKind::Cycles => 1_000_000_000.0,
-                CounterKind::CacheReferences => 10_000_000.0,
-                CounterKind::CacheMisses => 1_000_000.0,
-                CounterKind::Branches => 400_000_000.0,
-                CounterKind::BranchMisses => 4_000_000.0,
-                CounterKind::CpuMigrations => 0.0,
-                CounterKind::ContextSwitches => 100.0,
-                CounterKind::PageFaults => 1_000.0,
-                // nanoseconds: with 1e9 cycles/s the mock clock runs at 1 GHz
-                CounterKind::TaskClock => 1_000_000_000.0,
-            };
-            let all = (per_second * time_real) as u64;
-            // user is a quarter of everything, so user + kernel = all
-            let value = match spec.scope {
-                Scope::All => all,
-                Scope::User => all / 4,
-                Scope::Kernel => all - all / 4,
-            };
+        .flat_map(|s| s.events.iter())
+        .map(|&(bucket, _)| {
+            let value = (simd::mock_per_second(bucket) * time_real) as u64;
             Some(ScaledCounter {
                 value,
                 raw: value,
                 time_enabled: 1,
                 time_running: 1,
             })
-        })
-        .collect()
+        });
+    basic.chain(simd).collect()
 }
 
 /// Median per event of the readings of calibration runs.
@@ -789,7 +859,7 @@ pub fn export(
     runs: &[Option<HwReading>],
     ctx: &RunContext,
 ) -> Option<CounterExport> {
-    if !config.is_active() || runs.is_empty() {
+    if config.active.is_empty() || runs.is_empty() {
         return None;
     }
     let cell =
@@ -1180,6 +1250,11 @@ pub fn open(config: &CounterConfig) -> Option<OpenCounters> {
             .active
             .iter()
             .map(|s| (s.kind.perf_type(), s.kind.hw_config(), s.scope))
+            .chain(config.simd.iter().flat_map(|s| {
+                s.events
+                    .iter()
+                    .map(move |&(_, raw)| (simd::PERF_TYPE_RAW, raw, s.scope))
+            }))
             .collect();
         Some(OpenCounters {
             inner: linux::open_events(&events),
@@ -1237,7 +1312,7 @@ pub fn open_run(
     #[cfg(not(target_os = "linux"))]
     let open_topdown = |_: &crate::topdown::TopdownConfig| None;
     Some(RunCounters {
-        n_counters: counters.map_or(0, |c| c.active.len()),
+        n_counters: counters.map_or(0, |c| c.event_count()),
         n_topdown: topdown.map_or(0, |t| t.event_count()),
         counters: counters.and_then(open),
         topdown: topdown.and_then(open_topdown),
@@ -1278,7 +1353,7 @@ pub fn calibrated_overhead(
     counters: Option<&CounterConfig>,
     topdown: Option<&crate::topdown::TopdownConfig>,
 ) -> Vec<u64> {
-    let n_counters = counters.map_or(0, |c| c.active.len());
+    let n_counters = counters.map_or(0, |c| c.event_count());
     let mut overhead = median_overhead(samples, crate::topdown::reading_len(counters, topdown));
     if topdown
         .and_then(|t| t.plan.as_ref())
@@ -1355,6 +1430,15 @@ mod linux {
     pub fn probe(kind: CounterKind, scope: Scope) -> Result<(), i32> {
         open_fd(
             &attr(kind.perf_type(), kind.hw_config(), scope, true, false),
+            -1,
+        )
+        .map(drop)
+    }
+
+    /// Same for a raw event (`PERF_TYPE_RAW`).
+    pub fn probe_raw(config: u64, scope: Scope) -> Result<(), i32> {
+        open_fd(
+            &attr(crate::simd::PERF_TYPE_RAW, config, scope, true, false),
             -1,
         )
         .map(drop)
@@ -1803,6 +1887,7 @@ mod tests {
             partial_reason: None,
             hidden: vec![],
             mock: false,
+            simd: None,
         }
     }
 

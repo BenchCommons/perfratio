@@ -37,10 +37,12 @@ pub enum Dimension {
     BadSpeculation,
     FrontendBound,
     BackendBound,
+    /// `--simd` vectorization ratio (#211). Neither direction is better.
+    VectorizationRatio,
 }
 
 impl Dimension {
-    pub const ALL: [Dimension; 18] = [
+    pub const ALL: [Dimension; 19] = [
         Dimension::WallTime,
         Dimension::PeakMemory,
         Dimension::Energy,
@@ -59,13 +61,14 @@ impl Dimension {
         Dimension::BadSpeculation,
         Dimension::FrontendBound,
         Dimension::BackendBound,
+        Dimension::VectorizationRatio,
     ];
 
     /// Whether a lower value is an improvement. A topdown class is a share of
     /// the slots: it moves from one class to another, which is neither better
     /// nor worse by itself.
     fn directional(self) -> bool {
-        !self.is_topdown()
+        !self.is_topdown() && self != Dimension::VectorizationRatio
     }
 
     fn is_topdown(self) -> bool {
@@ -124,6 +127,7 @@ impl Dimension {
             Dimension::BadSpeculation => "Topdown: bad speculation",
             Dimension::FrontendBound => "Topdown: frontend bound",
             Dimension::BackendBound => "Topdown: backend bound",
+            Dimension::VectorizationRatio => "Vectorization ratio",
         }
     }
 
@@ -138,7 +142,8 @@ impl Dimension {
             Dimension::Retiring
             | Dimension::BadSpeculation
             | Dimension::FrontendBound
-            | Dimension::BackendBound => format!("{:.1}%", value * 100.0),
+            | Dimension::BackendBound
+            | Dimension::VectorizationRatio => format!("{:.1}%", value * 100.0),
             Dimension::Instructions
             | Dimension::Cycles
             | Dimension::CacheMisses
@@ -166,6 +171,11 @@ impl Dimension {
                 .map(|v| v.iter().map(|&b| b as f64).collect()),
             Dimension::Energy => r.energy_joules.clone(),
             Dimension::Power => None,
+            // Runs without floating-point arithmetic have no ratio and are left out
+            Dimension::VectorizationRatio => r
+                .simd
+                .as_ref()
+                .map(|s| s.vectorization_ratio.iter().flatten().copied().collect()),
             Dimension::Retiring
             | Dimension::BadSpeculation
             | Dimension::FrontendBound
@@ -202,6 +212,11 @@ impl Dimension {
             Dimension::Energy => r.mean_energy_joules,
             Dimension::Power => r.mean_watts,
             Dimension::PeakMemory => None,
+            Dimension::VectorizationRatio => r
+                .simd_summary
+                .as_ref()
+                .and_then(|s| s.get("vectorization_ratio"))
+                .map(|s| s.mean),
             Dimension::Retiring
             | Dimension::BadSpeculation
             | Dimension::FrontendBound
@@ -944,6 +959,32 @@ Benchmark comparison (Reference: 'cmd_a')
         let text = render_terminal(&results, Some(&results[0]), false);
         assert!(text.contains("Note: counter values are scaled"), "{text}");
         assert!(markdown(&results, Some(&results[0])).contains("_Note: counter"));
+    }
+
+    #[test]
+    fn vectorization_row_is_a_shift_not_a_verdict() {
+        let series = |ratios: &[f64]| crate::simd::SimdSeries {
+            unit: "instructions".into(),
+            arch: "x86_64".into(),
+            vectorization_ratio: ratios.iter().map(|r| Some(*r)).collect(),
+            ..Default::default()
+        };
+        let mut a = full("a", 1.0);
+        let mut b = full("b", 1.0);
+        a.simd = Some(series(&[0.01, 0.02, 0.01, 0.015]));
+        assert!(compute_rows(&a, &b)
+            .iter()
+            .all(|r| r.dimension != Dimension::VectorizationRatio));
+        b.simd = Some(series(&[0.96, 0.97, 0.96, 0.965]));
+        let rows = compute_rows(&a, &b);
+        let row = rows
+            .iter()
+            .find(|r| r.dimension == Dimension::VectorizationRatio)
+            .expect("ratio row");
+        assert!(row.p_value.is_some_and(|p| p < 0.05));
+        assert_ne!(row.verdict, Verdict::Improvement);
+        assert_ne!(row.verdict, Verdict::Regression);
+        assert_eq!(Dimension::VectorizationRatio.format(0.964), "96.4%");
     }
 
     #[test]

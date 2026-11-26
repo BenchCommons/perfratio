@@ -5,7 +5,7 @@ use clap::{
         styling::{AnsiColor, Effects},
         NonEmptyStringValueParser, PossibleValuesParser, Styles,
     },
-    crate_version, Arg, ArgAction, ArgMatches, Command, ValueHint,
+    crate_version, Arg, ArgAction, ArgGroup, ArgMatches, Command, ValueHint,
 };
 
 pub const SHELLS: [&str; 5] = ["bash", "zsh", "fish", "powershell", "elvish"];
@@ -45,6 +45,8 @@ pub fn build_command() -> Command {
         .styles(STYLES)
         .next_line_help(true)
         .hide_possible_values(true)
+        // `--scope` applies to both of these
+        .group(ArgGroup::new("pmu-request").args(["counters", "simd"]).multiple(true))
         .about("A multi-dimensional command-line benchmarking tool with Performance per Watt, Hardware Counter Ratios, and Deep Statistics.")
         .help_expected(true)
         .max_term_width(80)
@@ -1053,7 +1055,7 @@ pub fn build_command() -> Command {
                 .long("scope")
                 .value_name("SCOPE")
                 .value_parser(["user", "kernel", "all", "split"])
-                .requires("counters")
+                .requires("pmu-request")
                 .help("Privilege levels that '--counters' counts: user, kernel, all (default, \
                        like 'perf stat') or split (every event as ':u' plus ':k'). Counting \
                        kernel space needs perf_event_paranoid <= 1 or CAP_PERFMON: with the \
@@ -1071,6 +1073,19 @@ pub fn build_command() -> Command {
                        diagnosis. Needs Intel Ice Lake or later, or AMD Zen 4 or later; \
                        elsewhere it warns once and continues. On AMD it uses all six \
                        core counters, so '--counters' events are multiplexed."),
+        )
+        .arg(
+            Arg::new("simd")
+                .long("simd")
+                .action(ArgAction::SetTrue)
+                .help("Collect a floating-point scalar/vector breakdown per run (Linux, \
+                       x86_64): retired scalar, 128-, 256- and 512-bit packed floating-point \
+                       arithmetic and the vectorization ratio. Intel counts instructions, \
+                       AMD Zen 4/5 counts uops, so compare ratios only within one vendor. \
+                       Integer SIMD is not counted. Works with or without '--counters' \
+                       and honors '--scope' (except 'split'). \
+                       Unsupported CPUs, hybrid Intel CPUs, VMs without PMU and denied \
+                       permissions give one warning, never an error."),
         )
         .arg(
             Arg::new("first-run")

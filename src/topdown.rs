@@ -553,7 +553,7 @@ pub fn reading_len(
     counters: Option<&crate::perf_counters::CounterConfig>,
     topdown: Option<&TopdownConfig>,
 ) -> usize {
-    counters.map_or(0, |c| c.active.len()) + topdown.map_or(0, TopdownConfig::event_count)
+    counters.map_or(0, |c| c.event_count()) + topdown.map_or(0, TopdownConfig::event_count)
 }
 
 /// Splits a combined reading into its `--counters` part and its topdown part.

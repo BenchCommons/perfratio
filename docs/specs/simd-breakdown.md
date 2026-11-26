@@ -1,6 +1,6 @@
 # Spec: `--simd` floating-point vectorization breakdown (#211)
 
-**Status:** Proposed. Scheduled for 1.x, not 1.0.
+**Status:** Implemented for Intel and AMD Zen 4/5 (schemaVersion 1.9). AArch64 is `unavailable` (see "Implementation notes"). Hardware validation pending.
 
 ## Problem / Motivation
 References: #211, #49, #217, #218, #219, `andrewrk/poop#84`.
@@ -30,14 +30,15 @@ Checked against perf's event JSON (`tools/perf/pmu-events/arch/x86/...`, kernel 
 
 ### CLI
 ```
--s, --simd     Collect a floating-point scalar/vector breakdown (Linux only).
+--simd     Collect a floating-point scalar/vector breakdown (Linux only).
 ```
 - Works with or without `--counters`. Counters requested by both are opened once each.
-- `-s` is a new short flag; it must not collide with an existing one in `cli.rs`
-  (see `cli-short-flags.md`). If it collides, ship the long form only.
+- `-s` is taken by `--setup`, so only the long form `--simd` ships (see `cli-short-flags.md`).
 - Honors `--scope` (`counter-scope-modifiers.md`). Default scope applies; per-event modifiers do
   not (the four events are one unit); `split` is rejected.
-- Non-Linux: error `--simd is only supported on Linux`.
+- Non-Linux: one warning `'--simd' is only supported on Linux`, then the run continues with
+  `measurements.simd = "unavailable"` (reason `unsupported_platform`), like `--counters` and as the
+  acceptance criteria require.
 - Unsupported CPU, no PMU, denied permission: warn once, continue without the breakdown
   (never abort), `measurements.simd = "unavailable"`.
 
@@ -169,3 +170,34 @@ Intel SDM vol. 3 (events `FP_ARITH_INST_RETIRED`); AMD PPR (FP retired ops by wi
 perf JSON: `tools/perf/pmu-events/arch/x86/skylakex/floating-point.json`,
 `.../icelake/floating-point.json`, `.../amdzen4/floating-point.json`; Arm Architecture
 Reference Manual (PMU events `ASE_SPEC`, `VFP_SPEC`, `SVE_INST_SPEC`).
+
+## Implementation notes (#211)
+Checked against perf's event JSON on kernel master with `gh api`:
+- **Broadwell has `FP_ARITH_INST_RETIRED.*`** (broadwell and broadwellx JSON, same umasks as
+  Skylake), contrary to the correction above. Haswell (haswell, haswellx) does not. The
+  allow-list therefore includes Broadwell (models 0x3D, 0x47, 0x4F, 0x56) and no Haswell.
+- Intel allow-list (family 6, from `mapfile.csv`): Broadwell, Skylake client (0x4E, 0x5E, 0x8E,
+  0x9E, 0xA5, 0xA6), 0x55 (Skylake-X, Cascade Lake, Cooper Lake), Ice Lake (0x7D, 0x7E, 0x6A,
+  0x6C), Tiger Lake (0x8C, 0x8D), Rocket Lake (0xA7), Sapphire and Emerald Rapids (0x8F, 0xCF),
+  Granite Rapids (0xAD, 0xAE). Buckets with 512 bits only from Skylake-X on.
+- Intel hybrid parts (Alder, Raptor, Meteor, Arrow, Lunar Lake, or `/sys/devices/cpu_core`
+  present) are `unavailable (hybrid_cpu_unpinned)` for now: the events live on the `cpu_core`
+  PMU type, and reading them pinned to P-cores is a follow-up.
+- AMD: Zen 4 is family 0x19 outside perf's Zen 3 ranges (models 0x00-0x0F, 0x20-0x2F, 0x40-0x5F).
+  Zen 5 is family 0x1a models 0x00-0x2F, 0x40-0x4F, 0x60-0x7F. Other models are
+  `unsupported_cpu` until their JSON is checked.
+- **AArch64 is unavailable.** `ASE_SPEC` (0x74) and `VFP_SPEC` (0x75) are `ARMV8_IMPDEF_*` in
+  `include/linux/perf/arm_pmuv3.h`, not architectural, and perf's common arm64 JSON lists only
+  `ASE_INST_SPEC` (0x8005) and `SVE_INST_SPEC` (0x8006). A per-core table needs each core's TRM
+  and hardware to test on, so the spec's AArch64 set stays unimplemented (`unsupported_cpu`).
+- Raw config is `event[7:0] | umask << 8 | event[11:8] << 32` with `PERF_TYPE_RAW` (4).
+- A bucket that cannot be opened makes the whole breakdown `unavailable` (all or nothing),
+  because a missing bucket would bias the ratio. A run's ratio is `null` unless every bucket of
+  that run could be read.
+- `--simd` alone does not set `measurements.counters`. `simd_scope` records `all` or `user`.
+- The delta table gets a "Vectorization ratio" row with a p-value but no verdict, since more
+  vectorization is neither better nor worse.
+- Not run on hardware (development was on macOS, CI has no PMU). The event tables, the
+  allow-list, the raw encoding, the ratio and the export are unit-tested with injected CPU
+  text and readings. The kernel-compare test in the test plan still needs an Intel and an AMD host
+  with `PERFRATIO_TEST_PERF=1`.

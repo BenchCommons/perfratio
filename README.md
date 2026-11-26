@@ -99,6 +99,7 @@ how to reduce noise. The manual page is [doc/perfratio.1](doc/perfratio.1).
 page faults and I/O operation counts only; the other counters show as `n/a` ([spec](docs/specs/windows-resource-usage.md)).
 `--counters` (Linux) adds hardware counters (instructions, cycles, cache and branch misses), IPC and the effective CPU frequency per run, and with `--counters=default,sw` CPU migrations and context switches (a warning points to `--affinity` when migrations slow runs down); see `docs/specs/hardware-counters.md`, `docs/specs/software-events-migrations.md` and `docs/specs/effective-frequency.md`. `--scope user|kernel|all|split` and per-event `:u` / `:k` modifiers (`--counters=instructions:u,instructions:k`) choose the privilege level; see `docs/specs/counter-scope-modifiers.md`.
 `--topdown` (Linux x86_64; Intel Ice Lake or later, AMD Zen 4 or later) adds Top-down level 1: the share of pipeline slots that retire work or are lost to bad speculation, frontend stalls or backend stalls. The largest stall class is a hypothesis about the bottleneck, not a diagnosis; see `docs/specs/topdown-tma.md`.
+`--simd` (Linux, Intel and AMD Zen 4/5) adds a floating-point breakdown (scalar, 128-, 256- and 512-bit) and a vectorization ratio per run; see `docs/specs/simd-breakdown.md`.
 
 **Energy.** `-E, --energy` measures energy in joules and average power in watts. It reads RAPL
 counters through Linux powercap sysfs, so it needs **bare-metal Linux with a readable
@@ -123,7 +124,9 @@ Benchmark 1: sleep 0.1
 `--energy-backend <auto|sysfs|perf|ioreport|emi>` (or `PERFRATIO_ENERGY_BACKEND`) picks the source (`ioreport` on macOS, `emi` on Windows; `auto` picks the native one). On Linux:
 `auto`, the default, uses sysfs powercap and falls back to the perf power PMU
 (`power/energy-pkg`) when `energy_uj` is unreadable. `--energy-baseline <DURATION>` measures
-idle power first and also reports net energy (measured minus idle power times run time).
+idle power first and also reports net energy (measured minus idle power times run time). It is
+off by default so that `--energy` does not add a delay; `--energy-baseline 2s` is a good value
+when you compare commands of different duration.
 `--metric energy` ranks by energy and turns on `--energy`.
 
 `--energy-domains` adds a per-run breakdown (`package`, `core`, `uncore`, `dram`, `psys`) to the

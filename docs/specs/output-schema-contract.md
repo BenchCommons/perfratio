@@ -1,7 +1,7 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Shipped except the `.product` link (schemaVersion 1.14; 1.14 adds `optimize.reevaluated` and fractional `optimize` values with `-D` (#98); 1.13 adds the software events and the effective frequency fields of #220 and #222; 1.12 adds `--topdown` fields from #221 (`topdown-tma.md`); 1.11 adds `results[].energy_samples` (#240) and the JSON Schema file `docs/schema/perfratio-export.schema.json`, validated by `tests/json_schema_tests.rs`; 1.10 adds `results[].counters_coverage` (#219); 1.9 adds the `:u`/`:k` counter key suffixes, `counters_scope` values `kernel` and `perfratio.measurements.counters_requested_scope` from #218 (`counter-scope-modifiers.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
+Shipped except the `.product` link (schemaVersion 1.15; 1.15 adds `optimize.reevaluated` and fractional `optimize` values with `-D` (#98); 1.14 adds `--simd` fields from #211 (`simd-breakdown.md`); 1.13 adds the software events and the effective frequency fields of #220 and #222; 1.12 adds `--topdown` fields from #221 (`topdown-tma.md`); 1.11 adds `results[].energy_samples` (#240) and the JSON Schema file `docs/schema/perfratio-export.schema.json`, validated by `tests/json_schema_tests.rs`; 1.10 adds `results[].counters_coverage` (#219); 1.9 adds the `:u`/`:k` counter key suffixes, `counters_scope` values `kernel` and `perfratio.measurements.counters_requested_scope` from #218 (`counter-scope-modifiers.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
@@ -102,6 +102,7 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
       "resources": "not_requested",
       "counters": "measured",                                 // new in 1.8, #49
       "topdown": "measured"                                   // new in 1.12, #221
+      "simd": "measured"                                      // new in 1.14, #211
     }
   },
   "interrupted": true,                                        // optional
@@ -136,6 +137,9 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
   optional, string) is the scope that was asked for when it differs from `counters_scope`:
   `"all"` next to `"user"` means kernel counting was denied (`perf_event_paranoid >= 2`).
   `counters_unavailable_events` lists keys, so suffixed ones read `instructions:k`.
+  `simd` (`--simd`, new in 1.14) has the values `measured`, `unavailable`, `not_requested`, and
+  `simd_unavailable_reason` is one of `unsupported_platform`, `unsupported_cpu`,
+  `perf_paranoid`, `no_pmu`, `hybrid_cpu_unpinned`, `other` (open enum).
 - `interrupted` (bool, optional, only `true`): the run was stopped by Ctrl-C.
 - `optimize` (object or array of objects, optional, **new in 1.6**, #98): present with
   `--optimize <VAR> <MIN> <MAX>`. One object per search (an array when other parameters
@@ -144,7 +148,7 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
   `evaluations`, `best`, `best_value` (mean of `metric`), `best_command`, `evaluated` (values in
   evaluation order), `at_boundary`, `unimodal_warning`; optional `runner_up`, `p_value`,
   `significant` (best vs runner-up; omitted when not computable), `fixed` (values of the
-  other parameters of this search), `reevaluated` (**new in 1.14**: the values that
+  other parameters of this search), `reevaluated` (**new in 1.15**: the values that
   `--optimize-confirm` ran a second time; their samples are pooled into `best_value`, while
   `results[]` keeps the first run) and `interrupted` (only `true`). With `-D DELTA` the
   searched values are `MIN, MIN+DELTA, ...`; `min`, `max`, `best`, `runner_up`, `evaluated`
@@ -203,6 +207,10 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `counters_coverage` (**new in 1.10**, #219) | { event: number } lowest `time_running / time_enabled` (0..1) over the runs, only for events that were multiplexed or never scheduled | optional (with `counters_multiplexed_runs`) |
 | `topdown` (**new in 1.12**, #221) | { `level`: 1, `source`: `intel_perf_metrics` \| `amd_pipeline_util`, `retiring`, `bad_speculation`, `frontend_bound`, `backend_bound`, `smt_contention` (AMD only): (0..1 \| null)[] } per run, aligned with `times`; `null` = run not measured. Hypothesis about the stall class, not a diagnosis | with `--topdown` |
 | `topdown_summary` (**new in 1.12**) | { class: { `mean`, `stddev`?, `median`, `min`, `max` }, `bottleneck`: `backend_bound` \| `frontend_bound` \| `bad_speculation` \| `smt_contention` (open enum; retiring is never named) } | with `topdown` |
+| `simd` (**new in 1.14**, #211) | { `unit` (`instructions` \| `uops`), `arch`, `scalar_fp`, `simd_128`, `simd_256`, `simd_512`?, `vectorization_ratio` }: per-run arrays aligned with `times`, `null` = not readable (or no FP arithmetic for the ratio); `simd_512` only on CPUs that have the bucket; Intel and AMD units are not comparable | when `measurements.simd` is `measured` |
+| `simd_summary` (**new in 1.14**) | { bucket or `vectorization_ratio`: { `mean`, `stddev`?, `median`, `min`, `max` } } | with `simd` |
+| `simd_scope` (**new in 1.14**) | `"all"`, `"user"` or `"kernel"`, like `counters_scope` | with `simd` |
+| `simd_scaling` (**new in 1.14**) | { bucket: { `scaled_runs`, `coverage` (lowest) } } for buckets scaled for multiplexing | optional |
 | `efficiency` { `ipc`, `cpi`, `cache_miss_rate`, `branch_miss_rate` } (#213) | ratios | optional (with the needed counters) |
 | `diagnostics`, `precision`, `baseline`, `shell`, `timed_out`, `timeout`, `runs_planned` | see `BenchmarkResult` | optional |
 
