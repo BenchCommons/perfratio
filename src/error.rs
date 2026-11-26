@@ -115,6 +115,11 @@ pub struct Interrupted;
 #[error("{0} benchmark(s) regressed compared with the baseline ('--fail-if-regressed')")]
 pub struct RegressionDetected(pub usize);
 
+/// `--fail-on-quality` found a benchmark with a worse grade (exit code 5)
+#[derive(Debug, Error)]
+#[error("{0} benchmark(s) have a measurement quality worse than '{1}' ('--fail-on-quality')")]
+pub struct QualityGateFailed(pub usize, pub &'static str);
+
 /// `--check-system=strict` found a problem (exit code 4)
 #[derive(Debug, Error)]
 #[error("The system check did not pass ('--check-system=strict'); fix the problems above, or use '--check-system' to only report them")]
