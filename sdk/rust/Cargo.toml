@@ -1,0 +1,16 @@
+[package]
+name = "perfratio-region"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.88"
+description = "Client of the perfratio region timing protocol: measure only the code you bracket with `perfratio --region`"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/BenchCommons/perfratio"
+readme = "../README.md"
+keywords = ["benchmark", "perfratio", "timing"]
+categories = ["development-tools::profiling"]
+
+# This crate lives inside the perfratio repository but is built on its own.
+[workspace]
+
+[dependencies]
