@@ -16,6 +16,13 @@ pub struct ExportMetadata {
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub labels: BTreeMap<String, String>,
     pub system: SystemInfo,
+    /// Hardware and software the benchmarks ran on (new in 1.19, #314)
+    pub environment: crate::environment::Environment,
+    /// `sha256:<hex>` over the documented subset of `environment`
+    pub environment_fingerprint: String,
+    /// `--meta KEY=VALUE` and `--meta git`
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub meta: BTreeMap<String, String>,
     /// Energy backend that produced the samples (`sysfs_powercap` or `perf_pmu`).
     /// Omitted unless `--energy` is given and a backend is usable.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -245,6 +252,7 @@ impl ExportMetadata {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
+        let environment = crate::environment::Environment::collect();
         ExportMetadata {
             version: env!("CARGO_PKG_VERSION"),
             command_line: command_line(std::env::args_os()),
@@ -259,6 +267,9 @@ impl ExportMetadata {
                 cpu_model: cpu_model(),
                 kernel: kernel_release(),
             },
+            environment_fingerprint: environment.fingerprint(),
+            environment,
+            meta: BTreeMap::new(),
             energy_backend: None,
             region_protocol: None,
             measurements,
@@ -269,7 +280,7 @@ impl ExportMetadata {
 }
 
 /// The CPU model, e.g. "Intel(R) Core(TM) i7-8550U CPU @ 1.80GHz" or "Apple M2".
-fn cpu_model() -> Option<String> {
+pub(crate) fn cpu_model() -> Option<String> {
     #[cfg(target_os = "linux")]
     {
         let cpuinfo = std::fs::read_to_string("/proc/cpuinfo").unwrap_or_default();
@@ -414,7 +425,7 @@ fn arm_cpu_name(implementer: u32, part: Option<u32>) -> String {
 }
 
 /// The kernel release from `uname`, on Unix.
-fn kernel_release() -> Option<String> {
+pub(crate) fn kernel_release() -> Option<String> {
     #[cfg(unix)]
     {
         // SAFETY: an all-zero utsname is valid, and uname fills it in.

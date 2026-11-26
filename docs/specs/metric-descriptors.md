@@ -60,7 +60,7 @@ import; `--import-json` ignores the key and the descriptors are regenerated on t
   groups are described and carry no values.
 - Unit tests in `src/metric_registry.rs` for ids, directions and the status mapping.
 
-## Declaring unit and direction (1.28)
+## Declaring unit and direction (1.29)
 `--output-metric NAME[unit,higher]=REGEX`. The brackets are optional and follow `NAME`:
 
 | Form | Meaning |
@@ -88,7 +88,7 @@ Direction is read by:
 `--compare` and the delta table (#212) only handle wall time (always lower is better), so they
 have nothing to flip. `--fail-if-regressed` budgets apply to wall time too.
 
-## Import (1.28)
+## Import (1.29)
 `--import-json` reads `perfratio.metrics[]` of the file: for each `custom.<name>` descriptor
 whose name is in the results, `unit` and `direction` (`higher_is_better`; every other value
 means lower) are used for ranking and written again by the next export. A declaration on the
@@ -96,7 +96,7 @@ command line wins over the file. Descriptors are untrusted: a unit that breaks t
 is dropped, other ids and malformed entries are ignored. Files without descriptors import as
 before (lower is better).
 
-## Tests (1.28)
+## Tests (1.29)
 `tests/metric_direction_tests.rs`, unit tests in `src/output_metric.rs` (syntax) and
 `src/benchmark/relative_speed.rs` (direction-aware ranking).
 
