@@ -253,6 +253,7 @@ fn create_result(name: &str, mean: Scalar) -> BenchmarkResult {
         energy_joules: None,
         idle_watts: None,
         mean_net_energy_joules: None,
+        energy_domains_joules: None,
         exit_codes: Vec::new(),
         parameters: BTreeMap::new(),
         omitted_failed_runs: Vec::new(),

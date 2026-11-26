@@ -12,6 +12,32 @@ pub trait EnergySampler: Send + Sync {
 
     /// Check if energy measurement is supported and available on this platform
     fn is_available(&self) -> bool;
+
+    /// Ask the backend to also record a per-domain breakdown (`--energy-domains`).
+    /// Backends without domains ignore it.
+    fn enable_domains(&mut self) {}
+
+    /// Joules per domain (`package`, `core`, `uncore`, `dram`, `psys`) of the window closed
+    /// by the last `stop()`. The domains overlap, so they must not be added to each other
+    /// or to the total (`rapl-domains.md`). `None` if unsupported or the read failed.
+    fn domain_energy(&self) -> Option<Vec<(String, f64)>> {
+        None
+    }
+}
+
+/// Energy of the child's lifetime from the energy of the whole sampling window.
+///
+/// The window opens before the spawn and closes after the wait, so it also covers the
+/// shell start-up and the fork/exec latency that `time_real` already removes. Power is
+/// assumed constant over the window, so the energy is scaled by `time_real / window`
+/// (never above 1). The error is at most `(window - time_real) * |P_overhead - P_child|`,
+/// about 1 to 3 ms times a few watts, i.e. a few mJ (`rapl-domains.md`).
+pub fn align_to_child(energy: f64, time_real: f64, window: f64) -> f64 {
+    if window > 0.0 && time_real >= 0.0 && time_real < window {
+        energy * (time_real / window)
+    } else {
+        energy
+    }
 }
 
 /// Environment variable that forces an energy backend (same values as `--energy-backend`).
@@ -206,9 +232,22 @@ pub fn select_sampler(pref: BackendPreference) -> Option<Selected> {
 }
 
 pub fn get_energy_sampler(pref: BackendPreference) -> Box<dyn EnergySampler> {
-    match select_sampler(pref) {
-        Some((sampler, _)) => sampler,
-        None => Box::new(DummySampler::new()),
+    match select_sampler_detailed(pref) {
+        Ok((sampler, _)) => sampler,
+        Err(reason) => {
+            warn_unreadable(reason);
+            Box::new(DummySampler::new())
+        }
+    }
+}
+
+/// Explains the fix once per process when sysfs counters exist but are unreadable.
+fn warn_unreadable(reason: Unavailable) {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    if reason == Unavailable::RaplUnreadable {
+        if let Some(path) = rapl::first_unreadable(std::path::Path::new(rapl::SYSFS_ROOT)) {
+            ONCE.call_once(|| eprintln!("Warning: {}", rapl::permission_message(&path)));
+        }
     }
 }
 
@@ -245,11 +284,15 @@ impl EnergySampler for DummySampler {
 
 pub struct MockEnergySampler {
     active: bool,
+    domains: bool,
 }
 
 impl MockEnergySampler {
     pub fn new() -> Self {
-        Self { active: false }
+        Self {
+            active: false,
+            domains: false,
+        }
     }
 }
 
@@ -275,6 +318,21 @@ impl EnergySampler for MockEnergySampler {
 
     fn is_available(&self) -> bool {
         true
+    }
+
+    fn enable_domains(&mut self) {
+        self.domains = true;
+    }
+
+    fn domain_energy(&self) -> Option<Vec<(String, f64)>> {
+        // Fixed breakdown for tests. `core` and `dram` are inside `package`.
+        self.domains.then(|| {
+            vec![
+                ("package".to_string(), 1.25),
+                ("core".to_string(), 0.75),
+                ("dram".to_string(), 0.25),
+            ]
+        })
     }
 }
 
@@ -320,6 +378,15 @@ pub const SHORT_RUN_SECONDS: f64 = 0.010;
 mod tests {
     #![cfg_attr(windows, allow(dead_code, unused_imports))]
     use super::*;
+
+    #[test]
+    fn align_scales_the_window_energy_to_the_child_lifetime() {
+        assert!((align_to_child(1.0, 0.009, 0.010) - 0.9).abs() < 1e-12);
+        // child time at or above the window, or a missing window: unchanged
+        assert_eq!(align_to_child(1.0, 0.010, 0.010), 1.0);
+        assert_eq!(align_to_child(1.0, 0.020, 0.010), 1.0);
+        assert_eq!(align_to_child(1.0, 0.005, 0.0), 1.0);
+    }
 
     #[test]
     fn preference_resolution() {

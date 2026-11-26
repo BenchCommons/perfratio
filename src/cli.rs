@@ -469,6 +469,15 @@ pub fn build_command() -> Command {
                        report net energy = measured - idle power x run time. Off by default."),
         )
         .arg(
+            Arg::new("energy-domains")
+                .long("energy-domains")
+                .action(ArgAction::SetTrue)
+                .requires("energy")
+                .help("Also report energy per RAPL domain (package, core, uncore, dram, psys) \
+                       where the hardware exposes them. The domains overlap: the total energy \
+                       is the package energy and the other domains must not be added to it."),
+        )
+        .arg(
             Arg::new("energy-backend")
                 .long("energy-backend")
                 .value_name("BACKEND")

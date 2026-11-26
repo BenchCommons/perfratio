@@ -1,7 +1,7 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Partly shipped (schemaVersion 1.4; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
+Partly shipped (schemaVersion 1.5; 1.5 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
@@ -155,6 +155,7 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `energy_joules` | J[] | only when every run has a sample |
 | `energy_samples` | count (**new**) | when `measurements.energy = "measured"`: runs with a sample, so partial coverage is visible |
 | `idle_watts` (**new in 1.1**, #59) | W | optional (`--energy-baseline` and the idle measurement succeeded) |
+| `energy_domains_joules` (**new in 1.5**, #59) | object `{package,core,uncore,dram,psys: J per run[]}`, aligned with `times`; overlapping domains, not additive, `energy_joules` is the package total | optional (with `--energy-domains` on sysfs RAPL, when every run has the same domains) |
 | `mean_net_energy_joules` (**new in 1.1**, #59) | J, per run `max(energy - idle_watts * time, 0)` | optional (with `idle_watts` and ≥ 1 energy sample) |
 | `custom_metrics` | { name: (f64 \| null)[] }, one entry per run aligned with `times`; `null` = not extracted with `-i` | optional (`--output-metric`, see `custom-output-metrics.md`) |
 | `custom_metrics_summary` | { name: { `mean`, `stddev`?, `median`, `min`, `max` } } | with `custom_metrics` |
