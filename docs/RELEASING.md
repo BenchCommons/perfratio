@@ -37,4 +37,4 @@ skips every publishing step (it prints a notice). Crates.io trusted publishing (
 - Make the repository (or at least releases) public.
 - Create the crates.io token, or configure trusted publishing, and store it as `CARGO_REGISTRY_TOKEN`.
 - Create the Homebrew tap repository and give it a way to receive the formula.
-- Confirm the repository owner in `Cargo.toml` URLs and the formula (currently `UnitedOpen-Source/perfratio`).
+- Confirm the repository owner in `Cargo.toml` URLs and the formula (currently `BenchCommons/perfratio`).
