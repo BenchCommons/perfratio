@@ -350,6 +350,8 @@ pub struct Options {
 
     /// Idle-power measurement window for net energy (--energy-baseline)
     pub energy_baseline: Option<std::time::Duration>,
+    /// Report energy per RAPL domain (`--energy-domains`)
+    pub energy_domains: bool,
     /// Which energy backend to use (`--energy-backend`)
     pub energy_backend: crate::energy::BackendPreference,
 
@@ -440,6 +442,7 @@ impl Default for Options {
             optimize: None,
             measure_energy: false,
             energy_baseline: None,
+            energy_domains: false,
             energy_backend: crate::energy::BackendPreference::Auto,
             deep_stats: false,
             filter_failed: false,
@@ -707,6 +710,7 @@ impl Options {
                     .map_err(|e| OptionsError::InvalidTimeout(val.clone(), e))?,
             );
         }
+        options.energy_domains = matches.get_flag("energy-domains");
         if let Some(val) = matches.get_one::<String>("concurrency") {
             options.concurrency = val
                 .parse::<usize>()

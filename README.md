@@ -124,6 +124,18 @@ Benchmark 1: sleep 0.1
 idle power first and also reports net energy (measured minus idle power times run time).
 `--metric energy` ranks by energy and turns on `--energy`.
 
+`--energy-domains` adds a per-run breakdown (`package`, `core`, `uncore`, `dram`, `psys`) to the
+console and to `energy_domains_joules` in the JSON export. The domains overlap, so the total stays
+the package energy ([spec](docs/specs/rapl-domains.md)). If `energy_uj` is root-only, give your user
+read access. The `chmod` below resets on reboot; a udev rule persists. Both let any local user
+read the power signal (PLATYPUS, CVE-2020-8694), so use them only on machines you control:
+
+```sh
+sudo chmod o+r /sys/class/powercap/intel-rapl*/*energy_uj /sys/class/powercap/intel-rapl*/*/energy_uj
+# or persistently, in /etc/udev/rules.d/99-rapl.rules:
+SUBSYSTEM=="powercap", ACTION=="add|change", RUN+="/bin/sh -c 'chmod o+r /sys%p/energy_uj'"
+```
+
 `--delta-table` prints one table per command against the reference, with a row for each measured
 dimension (wall time, peak memory, energy, power, CPU time): mean ± σ, relative delta with its
 95% confidence interval, and the p-value. `--metric <wall|cpu|user|system|energy|memory>` sets the
@@ -166,7 +178,7 @@ request comment. A GitHub Actions example is in [doc/ci.md](doc/ci.md).
 
 `--export-json <FILE>` (or `-e results.json`) writes the summary statistics and every run's
 timings. perfratio owns this output, and consumers such as `tools-benchmark` read it.
-The current version is `"1.5"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested. The legacy top-level `joulex` key was removed in `schemaVersion` 1.0: read `perfratio` instead ([docs/MIGRATION.md](docs/MIGRATION.md)).
+The current version is `"1.7"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested. The legacy top-level `joulex` key was removed in `schemaVersion` 1.0: read `perfratio` instead ([docs/MIGRATION.md](docs/MIGRATION.md)).
 
 The contract is a top-level `"schemaVersion": "MAJOR.MINOR"` string. Consumers must ignore
 unknown keys and accept any MINOR version of the MAJOR version they support. A removed or
