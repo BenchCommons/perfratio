@@ -766,7 +766,10 @@ pub fn build_command() -> Command {
                        * 'instructions': retired instructions (auto-enables '--counters', Linux)\n  \
                        * 'cycles': CPU cycles (auto-enables '--counters', Linux)\n  \
                        * 'custom:<name>': a value extracted with '--output-metric <name>=<regex>' \
-                         (lower is better; every run needs a value)\n"
+                         (lower is better; every run needs a value)\n  \
+                       * 'region:<name>': the time inside the region <name> that the program \
+                         brackets with the region SDK (implies '--region=<name>'; every run \
+                         needs the region)\n"
                 ),
         )
         .arg(
@@ -855,6 +858,23 @@ pub fn build_command() -> Command {
                        maximum of any instance. The JSON export gains per-instance times \
                        and a throughput. N may contain a parameter, e.g. '-L c 1,2,4,8 \
                        --concurrency {c}', for one benchmark per value. Default: 1."),
+        )
+        .arg(
+            Arg::new("region")
+                .long("region")
+                .action(ArgAction::Append)
+                .value_name("NAME")
+                .num_args(0..=1)
+                .require_equals(true)
+                .default_missing_value("default")
+                .conflicts_with_all(["concurrency", "subtract"])
+                .help("Measure only the region(s) the program brackets with the region SDK \
+                       (perfratio_region_start/stop, see sdk/ and docs/specs/region-protocol.md). \
+                       Without NAME the region 'default' is measured. Can be given several \
+                       times. The JSON export lists the region times next to the whole-process \
+                       time; use '--metric region:NAME' to rank on a region. CPU time, memory, \
+                       counters and energy still cover the whole process. A command that \
+                       reports no region fails."),
         )
         .arg(
             Arg::new("jobs")
@@ -1522,8 +1542,21 @@ fn parse_metric_arg(s: &str) -> Result<String, String> {
         }
         return Err("expected 'custom:<name>' with a name of letters, digits and '_'".into());
     }
+    if let Some(name) = s
+        .get(..7)
+        .filter(|p| p.eq_ignore_ascii_case("region:"))
+        .map(|_| &s[7..])
+    {
+        if !name.is_empty()
+            && name.len() <= 64
+            && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            return Ok(s.to_string());
+        }
+        return Err("expected 'region:<name>' with a name of letters, digits and '_'".into());
+    }
     Err(format!(
-        "possible values are {}, custom:<name>",
+        "possible values are {}, custom:<name>, region:<name>",
         BUILTIN.join(", ")
     ))
 }

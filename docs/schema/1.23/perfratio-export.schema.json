@@ -169,6 +169,10 @@
         "simd_unavailable_reason": {
           "type": "string",
           "description": "Open enum: unsupported_platform, unsupported_cpu, perf_paranoid, no_pmu, hybrid_cpu_unpinned, other."
+        },
+        "region": {
+          "$ref": "#/$defs/status",
+          "description": "`--region` (1.23): `measured` when requested, otherwise `not_requested`. A run that did not report a region shows as null in `results[].regions[]`."
         }
       },
       "required": [
@@ -239,6 +243,11 @@
           "type": "string",
           "description": "Backend that produced the energy samples. Open enum: sysfs_powercap, perf_pmu, ioreport, windows_emi."
         },
+        "region_protocol": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Region protocol version perfratio speaks (1.23). Present only with --region or --metric region:<name>."
+        },
         "measurements": {
           "$ref": "#/$defs/measurements"
         },
@@ -308,93 +317,6 @@
             "bootstrap_seed"
           ],
           "description": "New in 1.21 (#320): how the ranking, ratios, intervals and significance were computed. Always written by 1.21 and later; not required here, so that a MINOR addition is not a breaking change for consumers of older exports."
-        },
-        "compare": {
-          "type": "object",
-          "properties": {
-            "baseline": {
-              "type": "string",
-              "description": "Path of the --compare baseline; absent for absolute budgets without a baseline."
-            },
-            "on_unavailable": {
-              "type": "string",
-              "description": "--on-unavailable policy: fail, warn or skip."
-            },
-            "verdict": {
-              "type": "string",
-              "description": "pass, fail, or not_evaluated (no budget could be evaluated). Open enum."
-            },
-            "budgets": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "command": {
-                    "type": "string"
-                  },
-                  "metric": {
-                    "type": "string",
-                    "description": "The metric with its statistic as written, e.g. wall, memory, wall.p95, throughput."
-                  },
-                  "kind": {
-                    "type": "string",
-                    "description": "relative or absolute. Open enum."
-                  },
-                  "op": {
-                    "type": "string",
-                    "description": "<= or >=."
-                  },
-                  "limit": {
-                    "type": "number",
-                    "description": "Relative: a fraction of the baseline (0.05 = +5%). Absolute: seconds, bytes, joules or a count."
-                  },
-                  "budget": {
-                    "type": "string",
-                    "description": "The budget as written."
-                  },
-                  "baseline": {
-                    "type": "number",
-                    "description": "Value in the baseline; omitted when unavailable, never 0."
-                  },
-                  "current": {
-                    "type": "number",
-                    "description": "Value of this run; omitted when unavailable, never 0."
-                  },
-                  "change": {
-                    "type": "number",
-                    "description": "current / baseline - 1; relative budgets only."
-                  },
-                  "p_value": {
-                    "type": "number",
-                    "description": "p-value of the difference of the per-run samples, when it was computed."
-                  },
-                  "verdict": {
-                    "type": "string",
-                    "description": "pass, fail, within_noise or not_evaluated. Open enum."
-                  },
-                  "reason": {
-                    "type": "string",
-                    "description": "Why the budget is not_evaluated: unavailable_in_baseline, unavailable_in_current, baseline_not_positive, too_few_runs. Open enum."
-                  }
-                },
-                "required": [
-                  "command",
-                  "metric",
-                  "kind",
-                  "op",
-                  "limit",
-                  "budget",
-                  "verdict"
-                ]
-              }
-            }
-          },
-          "required": [
-            "on_unavailable",
-            "verdict",
-            "budgets"
-          ],
-          "description": "New in 1.23 (#325): the outcome of --budget and --fail-if-regressed. Not required here, so that a MINOR addition is not a breaking change for consumers of older exports."
         }
       },
       "required": [
@@ -408,8 +330,8 @@
     },
     "metric": {
       "type": "string",
-      "pattern": "^(wall|cpu|user|system|energy|memory|instructions|cycles|custom:[A-Za-z0-9_]+)$",
-      "description": "Metric used for ranking. The built-in set is closed; `custom:<name>` is a pattern (unitless, lower is better)."
+      "pattern": "^(wall|cpu|user|system|energy|memory|instructions|cycles|custom:[A-Za-z0-9_]+|region:[A-Za-z0-9_]+)$",
+      "description": "Metric used for ranking. The built-in set is closed; `custom:<name>` is a pattern (unitless, lower is better); `region:<name>` ranks on the time inside an instrumented region (seconds, lower is better, 1.21)."
     },
     "primaryMetric": {
       "type": "object",
@@ -1312,6 +1234,13 @@
           "type": "boolean",
           "description": "Only present when true (1.19): processes started by the command outlived it in at least one run and were killed."
         },
+        "regions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/region"
+          },
+          "description": "`--region` (1.23): time inside each instrumented region. `mean`, `times` and the other time fields keep measuring the whole process."
+        },
         "workers_used": {
           "type": "integer",
           "minimum": 0,
@@ -1437,6 +1366,73 @@
         "exit_codes"
       ],
       "description": "One benchmarked command."
+    },
+    "region": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_]{1,64}$"
+        },
+        "status": {
+          "enum": [
+            "measured",
+            "region_missing"
+          ],
+          "description": "`region_missing`: some runs did not report the region (null entries, left out of the statistics). A region no run reported is an error, never exported."
+        },
+        "mean": {
+          "$ref": "#/$defs/seconds"
+        },
+        "stddev": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "null with a single reporting run."
+        },
+        "min": {
+          "$ref": "#/$defs/seconds"
+        },
+        "max": {
+          "$ref": "#/$defs/seconds"
+        },
+        "count_per_run": {
+          "type": "array",
+          "items": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "description": "Start/stop pairs summed into each run's time; null where the run did not report the region."
+        },
+        "times": {
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "description": "Seconds inside the region per run, aligned with `results[].times`; null = not reported, never 0."
+        },
+        "sdk": {
+          "type": "string",
+          "description": "Identifier the SDK announced in its hello line."
+        }
+      },
+      "required": [
+        "name",
+        "status",
+        "mean",
+        "min",
+        "max",
+        "count_per_run",
+        "times"
+      ],
+      "description": "Time inside one instrumented region, in seconds (see docs/specs/region-protocol.md)."
     },
     "optimize": {
       "type": "object",

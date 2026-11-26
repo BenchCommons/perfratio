@@ -1,6 +1,6 @@
 # Specification: Per-metric regression budgets (`--budget`)
 
-**Issue:** #325. **Status:** shipped in 1.1 (`schemaVersion` 1.23 or later). Extends `compare-baseline.md`.
+**Issue:** #325. **Status:** shipped in 1.1 (`schemaVersion` 1.24 or later). Extends `compare-baseline.md`.
 
 ## Problem / Motivation
 `--compare baseline.json --fail-if-regressed 5%` applies one relative threshold to wall time and
@@ -60,7 +60,7 @@ change, budget and verdict, and a warning per budget that was not evaluated. The
 appended to `--export-diff-markdown`. The table is printed for explicit budgets only, so a plain
 `--fail-if-regressed` run looks as before.
 
-## Contract (JSON, additive, `schemaVersion` 1.22 to 1.23)
+## Contract (JSON, additive, `schemaVersion` 1.23 to 1.24)
 `perfratio.compare`, present when a budget or `--fail-if-regressed` is given:
 ```json
 { "baseline": "base.json", "on_unavailable": "warn", "verdict": "fail",
