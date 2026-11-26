@@ -5,6 +5,7 @@ use super::metadata::ExportMetadata;
 use super::Exporter;
 use crate::benchmark::benchmark_result::BenchmarkResult;
 use crate::benchmark::relative_speed;
+use crate::calibration::Floor;
 use crate::metric::Metric;
 use crate::options::SortOrder;
 use crate::pareto::{Analysis, ParetoConfig};
@@ -24,7 +25,7 @@ pub struct PrimaryMetricStats {
 }
 
 /// Version of the JSON output contract (`docs/specs/output-schema-contract.md`).
-pub const SCHEMA_VERSION: &str = "1.18";
+pub const SCHEMA_VERSION: &str = "1.19";
 
 #[derive(Serialize, Debug)]
 struct PerfratioSummary<'a> {
@@ -35,7 +36,7 @@ struct PerfratioSummary<'a> {
     metric: Metric,
     /// Information about the perfratio run (version, command line, date, labels, system)
     #[serde(skip_serializing_if = "Option::is_none")]
-    perfratio: Option<&'a ExportMetadata>,
+    perfratio: Option<MetadataEntry<'a>>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     interrupted: bool,
     /// Result of `--optimize` (object, or array with one entry per search)
@@ -45,6 +46,16 @@ struct PerfratioSummary<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pareto: Option<Analysis>,
     results: Vec<ResultEntry<'a>>,
+}
+
+/// The run metadata plus what is only known after the benchmarks started
+#[derive(Serialize, Debug)]
+struct MetadataEntry<'a> {
+    #[serde(flatten)]
+    metadata: &'a ExportMetadata,
+    /// Runner floor of `--calibrate` (new in 1.19, #313)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    calibration: Option<Floor>,
 }
 
 #[derive(Serialize, Debug)]
@@ -75,6 +86,8 @@ pub struct JsonExporter {
     pub optimize: std::sync::Mutex<Option<serde_json::Value>>,
     /// Pareto analysis of the results being serialized
     pub pareto: std::sync::Mutex<Option<Analysis>>,
+    /// Runner floor measured by `--calibrate`
+    pub calibration: std::sync::Mutex<Option<Floor>>,
 }
 
 impl Exporter for JsonExporter {
@@ -135,7 +148,10 @@ impl Exporter for JsonExporter {
         let mut output = to_vec_pretty(&PerfratioSummary {
             schema_version: SCHEMA_VERSION,
             metric,
-            perfratio: self.metadata.as_ref(),
+            perfratio: self.metadata.as_ref().map(|metadata| MetadataEntry {
+                metadata,
+                calibration: *self.calibration.lock().unwrap_or_else(|e| e.into_inner()),
+            }),
             interrupted: crate::util::interrupt::interrupted(),
             optimize: self
                 .optimize
@@ -158,6 +174,10 @@ impl Exporter for JsonExporter {
 
     fn set_optimize(&self, value: Option<&serde_json::Value>) {
         *self.optimize.lock().unwrap_or_else(|e| e.into_inner()) = value.cloned();
+    }
+
+    fn set_calibration(&self, floor: Option<&Floor>) {
+        *self.calibration.lock().unwrap_or_else(|e| e.into_inner()) = floor.copied();
     }
 
     fn set_pareto(&self, analysis: Option<(&ParetoConfig, &Analysis)>) {

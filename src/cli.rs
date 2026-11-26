@@ -501,6 +501,43 @@ pub fn build_command() -> Command {
                 ),
         )
         .arg(
+            Arg::new("calibrate")
+                .long("calibrate")
+                .action(ArgAction::Set)
+                .value_name("MODE")
+                .num_args(0..=1)
+                .require_equals(true)
+                .default_missing_value("auto")
+                .value_parser(["auto", "off"])
+                .help("Measure the runner floor with a trivial command: auto (default) or off.")
+                .long_help(
+                    "Measure the runner floor before benchmarking: the wall time and peak memory \
+                     of a trivial command ('true', or 'exit 0' through a shell) started the same \
+                     way as the benchmarks (shell, affinity, priority, output policy). About 20 \
+                     runs, at most about a second, once per session and shell.\n\n  \
+                     auto  Measure the floor (default)\n  \
+                     off   Do not measure it\n\n\
+                     A command is 'below resolution' when its mean is less than 3 floors, or the \
+                     lower end of its 95% CI reaches the floor. It is flagged in the quality \
+                     report ('measurement_floor') and in the summary; the numbers are still \
+                     shown. The floor is exported as 'perfratio.calibration'.",
+                ),
+        )
+        .arg(
+            Arg::new("below-floor")
+                .long("below-floor")
+                .action(ArgAction::Set)
+                .value_name("ACTION")
+                .value_parser(["warn", "fail"])
+                .help("Action for a result within the runner floor: warn (default) or fail.")
+                .long_help(
+                    "What to do when a result is within the runner floor (see '--calibrate').\n\n  \
+                     warn  The quality check warns (default)\n  \
+                     fail  The quality check fails and perfratio exits with code 6 after \
+                     printing and exporting the statistics",
+                ),
+        )
+        .arg(
             Arg::new("fail-on-quality")
                 .long("fail-on-quality")
                 .action(ArgAction::Set)

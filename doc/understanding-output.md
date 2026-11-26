@@ -248,6 +248,17 @@ is different from an energy of `0`.
 | `counters`, `counters_summary`, `counters_scope`, `counters_multiplexed_runs`, `counters_coverage`, `efficiency` | Hardware counters per run (`null` = not readable), their summary, the scope of unsuffixed keys (`all`, `user`, `kernel`; keys may carry `:u` or `:k`), runs with scaled counters, the lowest share of time each multiplexed event was scheduled (0..1), and `ipc`, `cpi`, `cache_miss_rate`, `branch_miss_rate`. |
 | `concurrency`, `instance_times`, `throughput`, `instance_percentiles`, `energy_per_instance_joules` | With `--concurrency N`: `times` then holds the makespan of each run, and `exit_codes` has N entries per run. |
 
+### Measurement floor
+
+At start perfratio runs a trivial command (`true`, or `exit 0` through a shell) about 20 times the way it
+starts your command and keeps the median wall time (`perfratio.calibration.wall_floor`), its spread
+(`wall_floor_mad`) and the peak memory (`rss_floor`). A command is *below resolution* when its mean is
+under 3 floors or its 95% CI reaches the floor; spawn cost and timer resolution then matter as much as
+the command. The result carries `quality.below_resolution: true` and a `measurement_floor` check, and the
+numbers stay. `perfratio -N true` is below resolution, `perfratio 'sleep 0.1'` is not. `--calibrate=off`
+skips the measurement; `--below-floor fail` exits with code 6. See
+[docs/specs/measurement-floor.md](../docs/specs/measurement-floor.md).
+
 ### Comparing implementations across languages
 
 Use the same flags for every language so that startup and runtime effects are handled the same way:

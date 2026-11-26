@@ -61,6 +61,15 @@ pub trait Executor {
     fn uses_shell(&self) -> bool {
         false
     }
+
+    /// The measured runner floor (`--calibrate`); [`FloorState::Off`] for
+    /// executors that have none
+    fn floor(&self) -> crate::calibration::FloorState {
+        crate::calibration::FloorState::Off
+    }
+
+    /// Store the floor measured with this executor
+    fn set_floor(&mut self, _floor: crate::calibration::FloorState) {}
 }
 
 /// How every benchmarked (and intermediate) process is started
@@ -610,6 +619,7 @@ pub struct RawExecutor<'a> {
     options: &'a Options,
     /// Median fork/exec counter overhead per active event (`--counters`)
     counter_overhead: Vec<u64>,
+    floor: crate::calibration::FloorState,
 }
 
 impl<'a> RawExecutor<'a> {
@@ -617,6 +627,7 @@ impl<'a> RawExecutor<'a> {
         RawExecutor {
             options,
             counter_overhead: vec![],
+            floor: Default::default(),
         }
     }
 }
@@ -709,6 +720,14 @@ impl Executor for RawExecutor<'_> {
     fn time_overhead(&self) -> Second {
         0.0
     }
+
+    fn floor(&self) -> crate::calibration::FloorState {
+        self.floor
+    }
+
+    fn set_floor(&mut self, floor: crate::calibration::FloorState) {
+        self.floor = floor;
+    }
 }
 
 pub struct ShellExecutor<'a> {
@@ -717,6 +736,7 @@ pub struct ShellExecutor<'a> {
     shell_spawning_time: Option<TimingResult>,
     /// Median shell spawn counter overhead per active event (`--counters`)
     counter_overhead: Vec<u64>,
+    floor: crate::calibration::FloorState,
 }
 
 impl<'a> ShellExecutor<'a> {
@@ -726,6 +746,7 @@ impl<'a> ShellExecutor<'a> {
             options,
             shell_spawning_time: None,
             counter_overhead: vec![],
+            floor: Default::default(),
         }
     }
 }
@@ -925,6 +946,14 @@ impl Executor for ShellExecutor<'_> {
         self.shell_spawning_time
             .as_ref()
             .map_or(0.0, |t| t.time_real)
+    }
+
+    fn floor(&self) -> crate::calibration::FloorState {
+        self.floor
+    }
+
+    fn set_floor(&mut self, floor: crate::calibration::FloorState) {
+        self.floor = floor;
     }
 }
 

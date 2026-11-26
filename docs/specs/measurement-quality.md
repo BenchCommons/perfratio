@@ -1,7 +1,7 @@
 # Specification: Measurement quality report (`--quality`, `--fail-on-quality`)
 
 **Issue:** [#318](https://github.com/BenchCommons/perfratio/issues/318)
-**Status:** Completed except the checks that wait for sibling issues (§4). JSON `schemaVersion` 1.18.
+**Status:** Completed except the checks that wait for sibling issues (§4). JSON `schemaVersion` 1.19.
 **Related:** #54 (interference), #219 (counter coverage), #240 (contract), #316 (workload validation),
 `interference-diagnostics.md`, `tukey-outliers.md`, `target-precision.md`, `workload-validation.md`.
 
@@ -31,6 +31,7 @@ ignore unknown ids), an optional `metric`, a `status` and an optional `detail` (
 | `outlier_burden` | `time`, and `memory` / `energy` when their outlier statistics exist | outliers < 10% of the runs | ≥ 10% (`is_severe`), or outliers cause most of the variance | | fewer than 4 runs (time) | |
 | `trend` | `time` | no significant drift | Mann–Kendall trend, the thresholds of `interference-diagnostics.md` | | fewer than 8 runs | |
 | `interference` | `time` | one cluster of run times | two separated clusters (multimodal) | | fewer than 8 runs | |
+| `measurement_floor` | `wall` | mean at least 3 runner floors and its CI above the floor (#313) | within the floor (`--below-floor warn`) | within the floor with `--below-floor fail` | the floor could not be measured | `--calibrate=off`, `--debug-mode` |
 | `counter_coverage` | `counters` | all counters read, scheduled ≥ 90% | scheduled < 90% (PMU multiplexing), or some readings missing | scheduled < 50% | counters requested, none read | `--counters` not given |
 | `energy_coverage` | `energy` | every run has an energy sample | some runs without | fewer than half of the runs have one | `--energy` given, no sample | `--energy` not given |
 | `workload_validation` | none | all validated runs correct | | any run invalid (also when omitted) | no run validated | no validation options |
@@ -93,8 +94,8 @@ result and of what was requested (`--metric`, `--counters`, `--energy`), so chec
 
 ## 4. Not yet covered
 
-These checks are reserved ids and appear once their data exists (#313, #314, #315 are open):
-`measurement_floor` (below the calibrated floor), `environment_stability` (cgroup throttling,
+These checks are reserved ids and appear once their data exists (#314, #315 are open; `measurement_floor` shipped with #313, `measurement-floor.md`):
+`environment_stability` (cgroup throttling,
 thermal), `environment_compatibility` (only in `--compare`). Adding a check changes the report, so
 it raises the JSON MINOR version only if it adds fields; a new `id` alone does not.
 
