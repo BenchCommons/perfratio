@@ -5,6 +5,7 @@ use super::metadata::ExportMetadata;
 use super::Exporter;
 use crate::benchmark::benchmark_result::BenchmarkResult;
 use crate::benchmark::relative_speed;
+use crate::calibration::Floor;
 use crate::metric::Metric;
 use crate::options::SortOrder;
 use crate::pareto::{Analysis, ParetoConfig};
@@ -24,7 +25,7 @@ pub struct PrimaryMetricStats {
 }
 
 /// Version of the JSON output contract (`docs/specs/output-schema-contract.md`).
-pub const SCHEMA_VERSION: &str = "1.27";
+pub const SCHEMA_VERSION: &str = "1.28";
 
 #[derive(Serialize, Debug)]
 struct PerfratioSummary<'a> {
@@ -103,6 +104,8 @@ pub struct JsonExporter {
     pub optimize: std::sync::Mutex<Option<serde_json::Value>>,
     /// Pareto analysis of the results being serialized
     pub pareto: std::sync::Mutex<Option<Analysis>>,
+    /// Runner floor measured by `--calibrate`
+    pub calibration: std::sync::Mutex<Option<Floor>>,
     /// `perfratio.schedule` (new in 1.23, #324)
     pub schedule: std::sync::Mutex<Option<serde_json::Value>>,
     /// `perfratio.compare` (#325)
@@ -141,10 +144,19 @@ impl Exporter for JsonExporter {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone();
-        let perfratio = self
+        let mut perfratio = self
             .metadata
             .as_ref()
             .map(|m| with_metrics(m, results, schedule, compare));
+        // Runner floor of `--calibrate` (new in 1.27, #313)
+        if let (Some(serde_json::Value::Object(object)), Some(floor)) = (
+            perfratio.as_mut(),
+            *self.calibration.lock().unwrap_or_else(|e| e.into_inner()),
+        ) {
+            if let Ok(floor) = serde_json::to_value(floor) {
+                object.insert("calibration".into(), floor);
+            }
+        }
         let results = results
             .iter()
             .enumerate()
@@ -212,6 +224,10 @@ impl Exporter for JsonExporter {
 
     fn set_compare(&self, value: Option<&serde_json::Value>) {
         *self.compare.lock().unwrap_or_else(|e| e.into_inner()) = value.cloned();
+    }
+
+    fn set_calibration(&self, floor: Option<&Floor>) {
+        *self.calibration.lock().unwrap_or_else(|e| e.into_inner()) = floor.copied();
     }
 
     fn set_schedule(&self, value: Option<&serde_json::Value>) {

@@ -315,6 +315,34 @@
             "$ref": "#/$defs/metricDescriptor"
           }
         },
+        "calibration": {
+          "type": "object",
+          "properties": {
+            "wall_floor": {
+              "$ref": "#/$defs/seconds",
+              "description": "Median wall time of a trivial command, net of the shell spawn time, in seconds."
+            },
+            "wall_floor_mad": {
+              "$ref": "#/$defs/seconds",
+              "description": "Median absolute deviation of the calibration wall times."
+            },
+            "rss_floor": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Median peak RSS of the trivial command in bytes. Omitted when the platform reports none."
+            },
+            "runs": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "wall_floor",
+            "wall_floor_mad",
+            "runs"
+          ],
+          "description": "Runner floor measured by --calibrate (new in 1.27, #313). Omitted with --calibrate=off, with --debug-mode, or when it could not be measured."
+        },
         "statistics": {
           "type": "object",
           "properties": {
@@ -376,93 +404,6 @@
             "mode"
           ],
           "description": "New in 1.25 (#324): how the runs of several commands were ordered. Always written by 1.25 and later; not required here, so that a MINOR addition is not a breaking change for consumers of older exports."
-        },
-        "compare": {
-          "type": "object",
-          "properties": {
-            "baseline": {
-              "type": "string",
-              "description": "Path of the --compare baseline; absent for absolute budgets without a baseline."
-            },
-            "on_unavailable": {
-              "type": "string",
-              "description": "--on-unavailable policy: fail, warn or skip."
-            },
-            "verdict": {
-              "type": "string",
-              "description": "pass, fail, or not_evaluated (no budget could be evaluated). Open enum."
-            },
-            "budgets": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "command": {
-                    "type": "string"
-                  },
-                  "metric": {
-                    "type": "string",
-                    "description": "The metric with its statistic as written, e.g. wall, memory, wall.p95, throughput."
-                  },
-                  "kind": {
-                    "type": "string",
-                    "description": "relative or absolute. Open enum."
-                  },
-                  "op": {
-                    "type": "string",
-                    "description": "<= or >=."
-                  },
-                  "limit": {
-                    "type": "number",
-                    "description": "Relative: a fraction of the baseline (0.05 = +5%). Absolute: seconds, bytes, joules or a count."
-                  },
-                  "budget": {
-                    "type": "string",
-                    "description": "The budget as written."
-                  },
-                  "baseline": {
-                    "type": "number",
-                    "description": "Value in the baseline; omitted when unavailable, never 0."
-                  },
-                  "current": {
-                    "type": "number",
-                    "description": "Value of this run; omitted when unavailable, never 0."
-                  },
-                  "change": {
-                    "type": "number",
-                    "description": "current / baseline - 1; relative budgets only."
-                  },
-                  "p_value": {
-                    "type": "number",
-                    "description": "p-value of the difference of the per-run samples, when it was computed."
-                  },
-                  "verdict": {
-                    "type": "string",
-                    "description": "pass, fail, within_noise or not_evaluated. Open enum."
-                  },
-                  "reason": {
-                    "type": "string",
-                    "description": "Why the budget is not_evaluated: unavailable_in_baseline, unavailable_in_current, baseline_not_positive, too_few_runs. Open enum."
-                  }
-                },
-                "required": [
-                  "command",
-                  "metric",
-                  "kind",
-                  "op",
-                  "limit",
-                  "budget",
-                  "verdict"
-                ]
-              }
-            }
-          },
-          "required": [
-            "on_unavailable",
-            "verdict",
-            "budgets"
-          ],
-          "description": "New in 1.27 (#325): the outcome of --budget and --fail-if-regressed. Not required here, so that a MINOR addition is not a breaking change for consumers of older exports."
         }
       },
       "required": [
@@ -955,6 +896,10 @@
               "status"
             ]
           }
+        },
+        "below_resolution": {
+          "type": "boolean",
+          "description": "The mean is within the runner floor (new in 1.27, #313). Omitted when no floor was measured."
         }
       },
       "required": [

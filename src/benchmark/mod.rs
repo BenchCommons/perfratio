@@ -2243,6 +2243,8 @@ impl<'a> BenchmarkRunner<'a> {
                 metric: self.options.metric,
                 counters_requested: self.options.counters.is_some(),
                 energy_requested: self.options.measure_energy,
+                floor: self.executor.floor(),
+                below_floor: self.options.below_floor,
             },
         );
         if report.is_some() && self.options.output_style != OutputStyleOption::Disabled {

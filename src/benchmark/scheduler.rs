@@ -125,7 +125,17 @@ impl<'a> Scheduler<'a> {
                 ExecutorKind::Shell(shell) => Box::new(ShellExecutor::new(shell, self.options)),
             };
             executor.calibrate()?;
+            if self.options.calibrate == crate::calibration::CalibrateMode::Auto
+                && !matches!(kind, ExecutorKind::Mock(_))
+            {
+                let floor = crate::calibration::measure_floor(&*executor, self.options);
+                executor.set_floor(floor);
+            }
             executors.push((kind, executor));
+        }
+        // The first executor's floor is the one exported
+        if let crate::calibration::FloorState::Measured(floor) = executors[0].1.floor() {
+            self.export_manager.set_calibration(Some(floor));
         }
         // --subtract: one baseline per executor (i.e. per shell)
         let baselines: Vec<Option<super::benchmark_result::Baseline>> =
@@ -683,6 +693,34 @@ impl<'a> Scheduler<'a> {
             })
     }
 
+    /// After the summary: the ratios involving a result within the runner
+    /// floor (#313) are shown, but they compare spawn cost as much as the commands.
+    pub fn print_below_floor_warning(&self) {
+        if self.options.output_style == OutputStyleOption::Disabled || self.results.len() < 2 {
+            return;
+        }
+        let below: Vec<&str> = self
+            .results
+            .iter()
+            .filter(|r| r.quality.as_ref().and_then(|q| q.below_resolution) == Some(true))
+            .map(|r| r.command_with_unused_parameters.as_str())
+            .collect();
+        if below.is_empty() {
+            return;
+        }
+        crate::outln!(
+            "{} the relative speed involves {} below the measurement floor ('--calibrate'): {}. \
+             Their times are dominated by process spawn cost; run more work per invocation.",
+            colors::yellow("Warning:"),
+            if below.len() == 1 {
+                "a command"
+            } else {
+                "commands"
+            },
+            below.join(", ")
+        );
+    }
+
     /// `--delta-table`: compare every measured dimension with the reference.
     pub fn print_delta_table(&self) {
         if self.options.output_style == OutputStyleOption::Disabled {
@@ -1213,6 +1251,9 @@ fn scheduler_basic() -> Result<()> {
             metric: time
             status: unavailable
             detail: needs at least 8 runs
+          - id: measurement_floor
+            metric: wall
+            status: not_applicable
           - id: counter_coverage
             metric: counters
             status: not_applicable
@@ -1274,6 +1315,9 @@ fn scheduler_basic() -> Result<()> {
             metric: time
             status: unavailable
             detail: needs at least 8 runs
+          - id: measurement_floor
+            metric: wall
+            status: not_applicable
           - id: counter_coverage
             metric: counters
             status: not_applicable
@@ -1344,6 +1388,9 @@ fn scheduler_round_robin() -> Result<()> {
             metric: time
             status: unavailable
             detail: needs at least 8 runs
+          - id: measurement_floor
+            metric: wall
+            status: not_applicable
           - id: counter_coverage
             metric: counters
             status: not_applicable
@@ -1405,6 +1452,9 @@ fn scheduler_round_robin() -> Result<()> {
             metric: time
             status: unavailable
             detail: needs at least 8 runs
+          - id: measurement_floor
+            metric: wall
+            status: not_applicable
           - id: counter_coverage
             metric: counters
             status: not_applicable

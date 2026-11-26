@@ -555,7 +555,12 @@ fn an_interrupted_run_matches_the_schema() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("interrupted.json");
     let child = Command::new(assert_cmd::cargo_bin!("perfratio"))
-        .args(["--runs=50", "--shell=none", "--export-json"])
+        .args([
+            "--runs=50",
+            "--calibrate=off",
+            "--shell=none",
+            "--export-json",
+        ])
         .arg(&path)
         .arg("sleep 0.1")
         .stdout(Stdio::piped())
