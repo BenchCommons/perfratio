@@ -1,5 +1,7 @@
 mod wall_clock_timer;
 
+pub mod batch;
+
 #[cfg(windows)]
 mod windows_timer;
 
@@ -427,6 +429,10 @@ pub fn execute_and_measure(
     stdout_capture_limit: Option<usize>,
     stderr_capture_limit: Option<usize>,
 ) -> Result<TimerResult> {
+    if batch::aborted() {
+        anyhow::bail!("not started: another instance of the --concurrency batch failed to start");
+    }
+
     // On Linux the affinity is applied by the caller (pre_exec); on other
     // Unix systems --affinity is rejected during option validation. The
     // priority is also applied by the caller (pre_exec) on Unix.
@@ -454,7 +460,10 @@ pub fn execute_and_measure(
         // SAFETY: fds points to a valid 2-element i32 array.
         let ret = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) };
         if ret != 0 {
-            return Err(std::io::Error::last_os_error().into());
+            let error = std::io::Error::last_os_error();
+            // e.g. EMFILE: an instance of a --concurrency batch could not start
+            batch::spawn_failed(&error);
+            return Err(error.into());
         }
         use std::os::fd::AsRawFd;
         use std::os::unix::process::CommandExt;
@@ -477,7 +486,16 @@ pub fn execute_and_measure(
 
     let wallclock_timer = WallClockTimer::start();
 
-    let mut child = command.spawn()?;
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            // --concurrency: kill the instances of this run that already started
+            batch::spawn_failed(&error);
+            return Err(error.into());
+        }
+    };
+    // Registered until the end of this function (after the child is reaped)
+    let _spawned = batch::spawned(child.id());
 
     #[cfg(target_os = "linux")]
     let child_start_ts = {
