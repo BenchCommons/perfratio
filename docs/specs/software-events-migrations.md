@@ -1,6 +1,37 @@
 # Spec: software events: CPU migrations and context switches (#220)
 
-**Status:** Proposed. Scheduled for 1.x, not 1.0.
+**Status:** Implemented on Linux (#220, schemaVersion 1.9) for `cpu-migrations`,
+`context-switches`, `page-faults` and `task-clock`. Not implemented: `alignment-faults` and
+`emulation-faults` (names not accepted yet), the `--check-system` line after the runs, and the
+rusage fallback for context switches.
+
+## Implementation notes (deviations from the proposal)
+- Code: `src/perf_counters.rs` (`CounterKind::SOFTWARE`, `plan`, `jitter_warning`),
+  `src/system_check.rs` (`scheduler_check`), `src/delta_table.rs` (rows).
+- Accepted names: `cpu-migrations`, `context-switches`, `page-faults`, `task-clock`.
+  Shorthands in `--counters`: `sw` (`cpu-migrations,context-switches`), `default` (the hardware
+  list, so `--counters=default,sw` works) and `frequency` (see `effective-frequency.md`).
+  The default list is unchanged.
+- Every software event is opened with `exclude_kernel = 0`, whatever the hardware scope became.
+  `counters_scope` describes the hardware events only.
+- Denied kernel scope: the events are `unavailable` with `kernel_scope_denied`. With only
+  software events requested, `measurements.counters` is `unavailable`; mixed with hardware
+  events it is `partial`, with `counters_unavailable_events` and
+  `counters_unavailable_reason: "kernel_scope_denied"` (the reason is now also written for any
+  `partial` result).
+- Terminal: `cpu-migr 0.4 · ctx-sw 123`, appended in the order requested. `task-clock` prints
+  as a duration. The warning is printed per benchmark after the runs (stderr) and is hidden by
+  `--suppress-outlier-warnings`.
+- `--check-system`: `i Scheduler migrations  not measurable (kernel scope denied)` when
+  `--counters` includes `cpu-migrations` and the open was denied. The post-run line is not
+  implemented: the jitter warning above already names the number of migrations.
+- Delta table (`--delta-table`): rows `Context switches`, `CPU migrations`, `Page faults`
+  (lower is better) when both commands have the series.
+- Tests: pure tests for parsing, planning (mocked opener, `EACCES` gives
+  `kernel_scope_denied`), the warning condition and the delta rows;
+  `tests/software_events_linux_tests.rs` opens the real events and skips when denied.
+  Not run on hardware: the `PERFRATIO_TEST_PERF=1` comparisons with `perf stat`, the
+  `cpu-migrations:u` privilege check and the affinity checks.
 
 ## Problem / Motivation
 References: #220, #49, #47 (rusage context switches), #64 (`--check-system`), #217, #218,

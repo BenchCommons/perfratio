@@ -1,7 +1,7 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Partly shipped (schemaVersion 1.8; 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
+Partly shipped (schemaVersion 1.9; 1.9 adds the software events and the effective frequency fields of #220 and #222; 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
@@ -183,6 +183,10 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `instance_percentiles` { `p50`, `p95`, `max` } (**new in 1.5**, #53) | s, over all `runs x N` instance times | with `concurrency` |
 | `energy_per_instance_joules` (**new in 1.5**, #53) | J, `mean_energy_joules / N` | with `concurrency` and `mean_energy_joules` |
 | `counters` (**new in 1.8**, #49) | { event: (u64 \| null)[] } raw counts per run aligned with `times`; `null` = not readable; events `instructions`, `cycles`, `cache-references`, `cache-misses`, `branches`, `branch-misses` (open set) | when `measurements.counters` is `measured` or `partial` |
+| `counters` events `cpu-migrations`, `context-switches`, `page-faults` (counts), `task-clock` (ns) (**new in 1.9**, #220) | counts | when requested by name or with `--counters=sw`; scheduler events are never counted when kernel scope is denied: then they are absent and `measurements.counters_unavailable_*` says `kernel_scope_denied` |
+| `effective_frequency_hz` (**new in 1.9**, #222) | Hz (f64 \| null)[] aligned with `times`, `cycles` / time on CPU | when `cycles` was counted and a time source exists |
+| `mean_effective_frequency_hz`, `stddev_effective_frequency_hz` (**new in 1.9**) | Hz, over the runs with at least 5 ms on CPU | with `effective_frequency_hz` (omitted when no run is long enough; the stddev with one eligible run) |
+| `effective_frequency_basis` (**new in 1.9**) | `"task_clock"`, `"user_time"` or `"system_time"` (open enum) | with `effective_frequency_hz` |
 | `counters_summary` (**new in 1.8**) | { event: { `mean`, `stddev`?, `median`, `min`, `max` } } | with `counters` |
 | `counters_scope` (**new in 1.8**) | `"all"` (user + kernel) or `"user"` (kernel counting was denied); the meaning of an event name never changes | with `counters` |
 | `counters_multiplexed_runs` (**new in 1.8**) | count of runs with a scaled counter | optional (> 0) |

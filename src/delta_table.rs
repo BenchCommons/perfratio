@@ -26,10 +26,16 @@ pub enum Dimension {
     Cycles,
     CacheMisses,
     BranchMisses,
+    /// Software events (`--counters=sw`, #220)
+    ContextSwitches,
+    CpuMigrations,
+    PageFaults,
+    /// `cycles` / time on CPU (#222). Informational: neither direction is better
+    EffectiveFrequency,
 }
 
 impl Dimension {
-    pub const ALL: [Dimension; 10] = [
+    pub const ALL: [Dimension; 14] = [
         Dimension::WallTime,
         Dimension::PeakMemory,
         Dimension::Energy,
@@ -40,6 +46,10 @@ impl Dimension {
         Dimension::Cycles,
         Dimension::CacheMisses,
         Dimension::BranchMisses,
+        Dimension::ContextSwitches,
+        Dimension::CpuMigrations,
+        Dimension::PageFaults,
+        Dimension::EffectiveFrequency,
     ];
 
     /// Name of the counter in `BenchmarkResult::counters`
@@ -49,6 +59,9 @@ impl Dimension {
             Dimension::Cycles => Some("cycles"),
             Dimension::CacheMisses => Some("cache-misses"),
             Dimension::BranchMisses => Some("branch-misses"),
+            Dimension::ContextSwitches => Some("context-switches"),
+            Dimension::CpuMigrations => Some("cpu-migrations"),
+            Dimension::PageFaults => Some("page-faults"),
             _ => None,
         }
     }
@@ -65,6 +78,10 @@ impl Dimension {
             Dimension::Cycles => "CPU cycles",
             Dimension::CacheMisses => "Cache misses",
             Dimension::BranchMisses => "Branch misses",
+            Dimension::ContextSwitches => "Context switches",
+            Dimension::CpuMigrations => "CPU migrations",
+            Dimension::PageFaults => "Page faults",
+            Dimension::EffectiveFrequency => "CPU frequency",
         }
     }
 
@@ -80,6 +97,14 @@ impl Dimension {
             | Dimension::Cycles
             | Dimension::CacheMisses
             | Dimension::BranchMisses => crate::benchmark::format_count(value),
+            Dimension::ContextSwitches | Dimension::CpuMigrations | Dimension::PageFaults => {
+                if value < 10.0 {
+                    format!("{value:.1}")
+                } else {
+                    format!("{value:.0}")
+                }
+            }
+            Dimension::EffectiveFrequency => crate::frequency::format_hz(value),
         }
     }
 
@@ -98,11 +123,16 @@ impl Dimension {
             Dimension::Instructions
             | Dimension::Cycles
             | Dimension::CacheMisses
-            | Dimension::BranchMisses => {
+            | Dimension::BranchMisses
+            | Dimension::ContextSwitches
+            | Dimension::CpuMigrations
+            | Dimension::PageFaults => {
                 // Only when every run has a value (`null` marks a failed read)
                 let values = r.counters.as_ref()?.get(self.counter_name()?)?;
                 values.iter().map(|v| v.map(|v| v as f64)).collect()
             }
+            // Only the aggregate over the runs long enough to count is exported
+            Dimension::EffectiveFrequency => None,
         }
         .filter(|v| !v.is_empty())
     }
@@ -122,11 +152,15 @@ impl Dimension {
             Dimension::Instructions
             | Dimension::Cycles
             | Dimension::CacheMisses
-            | Dimension::BranchMisses => r
+            | Dimension::BranchMisses
+            | Dimension::ContextSwitches
+            | Dimension::CpuMigrations
+            | Dimension::PageFaults => r
                 .counters_summary
                 .as_ref()
                 .and_then(|s| s.get(self.counter_name()?))
                 .map(|s| s.mean),
+            Dimension::EffectiveFrequency => r.mean_effective_frequency_hz,
         }
         .filter(|m| m.is_finite())
     }
@@ -171,6 +205,7 @@ fn stat(dimension: Dimension, r: &BenchmarkResult) -> Option<Stat> {
         Some(s) if s.len() >= 2 => Some(basic::standard_deviation(&s, Some(mean))),
         // Wall time keeps its stored deviation (it may stem from an import)
         _ if dimension == Dimension::WallTime => r.stddev,
+        _ if dimension == Dimension::EffectiveFrequency => r.stddev_effective_frequency_hz,
         _ => None,
     };
     Some(Stat { mean, stddev })
@@ -292,7 +327,7 @@ fn welch(a: &[f64], b: &[f64]) -> Option<(f64, f64)> {
 }
 
 /// One row per dimension measured for both commands. Lower is better in every
-/// dimension.
+/// dimension except the CPU frequency, which has no verdict.
 pub fn compute_rows(reference: &BenchmarkResult, target: &BenchmarkResult) -> Vec<DeltaRow> {
     Dimension::ALL
         .into_iter()
@@ -309,6 +344,8 @@ pub fn compute_rows(reference: &BenchmarkResult, target: &BenchmarkResult) -> Ve
                 _ => (None, None),
             };
             let verdict = match (p_value, relative) {
+                // A different clock is context, not a better or worse result
+                _ if dimension == Dimension::EffectiveFrequency => Verdict::Unknown,
                 (Some(p), Some(rel)) if p < ALPHA && rel < 0.0 => Verdict::Improvement,
                 (Some(p), Some(rel)) if p < ALPHA && rel > 0.0 => Verdict::Regression,
                 (Some(_), _) => Verdict::Noise,
@@ -723,6 +760,50 @@ Benchmark comparison (Reference: 'cmd_a')
         assert!((row.relative.unwrap() - 1.0).abs() < 0.01);
         assert_eq!(row.verdict, Verdict::Regression);
         assert_eq!(Dimension::Instructions.label(), "Instructions");
+    }
+
+    #[test]
+    fn software_and_frequency_rows() {
+        let counters = |name: &str, base: u64| {
+            let v: Vec<Option<u64>> = [0u64, 1, 0, 2, 1, 0]
+                .iter()
+                .map(|v| Some(v + base))
+                .collect();
+            std::collections::BTreeMap::from([(name.to_string(), v)])
+        };
+        let mut a = full("a", 1.0);
+        let mut b = full("b", 1.0);
+        a.counters = Some(counters("cpu-migrations", 0));
+        b.counters = Some(counters("cpu-migrations", 10));
+        a.mean_effective_frequency_hz = Some(3.4e9);
+        a.stddev_effective_frequency_hz = Some(1.0e8);
+        b.mean_effective_frequency_hz = Some(2.9e9);
+        let rows = compute_rows(&a, &b);
+        let mig = rows
+            .iter()
+            .find(|r| r.dimension == Dimension::CpuMigrations)
+            .expect("migrations row");
+        assert_eq!(mig.verdict, Verdict::Regression);
+        assert_eq!(Dimension::CpuMigrations.format(1.0 / 3.0), "0.3");
+        assert_eq!(Dimension::ContextSwitches.format(123.4), "123");
+        let freq = rows
+            .iter()
+            .find(|r| r.dimension == Dimension::EffectiveFrequency)
+            .expect("frequency row");
+        assert_eq!(freq.reference.mean, 3.4e9);
+        assert_eq!(freq.reference.stddev, Some(1.0e8));
+        assert_eq!(freq.target.stddev, None);
+        assert!((freq.relative.unwrap() + 0.147).abs() < 0.001);
+        // a lower clock is not a "result": no verdict
+        assert_eq!(freq.verdict, Verdict::Unknown);
+        assert_eq!(
+            fmt_stat(Dimension::EffectiveFrequency, &freq.reference),
+            "3.40 GHz ± 100 MHz"
+        );
+        // not measured for both: no row
+        assert!(!compute_rows(&full("a", 1.0), &b)
+            .iter()
+            .any(|r| r.dimension == Dimension::EffectiveFrequency));
     }
 
     #[test]

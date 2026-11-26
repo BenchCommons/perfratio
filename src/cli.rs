@@ -1014,12 +1014,18 @@ pub fn build_command() -> Command {
                 .num_args(0..=1)
                 .require_equals(true)
                 .default_missing_value("instructions,cycles,cache-references,cache-misses,branches,branch-misses")
-                .help("Collect hardware performance counters per run (Linux). LIST is \
+                .help("Collect performance counters per run (Linux). LIST is \
                        comma-separated: instructions, cycles, cache-references, cache-misses, \
-                       branches, branch-misses (default: all). Use '--counters=cycles' to \
-                       give a list. Counts user and kernel space, or user space only when \
-                       perf_event_paranoid > 1. Unavailable counters give one warning, never \
-                       an error. Not available on macOS and Windows."),
+                       branches, branch-misses (default: all), plus the software events \
+                       cpu-migrations, context-switches, page-faults and task-clock. \
+                       Shorthands: 'default' (hardware list), 'sw' (cpu-migrations, \
+                       context-switches), 'frequency' (cycles). With cycles, the effective CPU \
+                       frequency (cycles / task-clock) is shown and a warning is printed when \
+                       it varies or drops. Counts user and kernel space, or user space only \
+                       when perf_event_paranoid > 1; the scheduler events need kernel scope \
+                       (perf_event_paranoid <= 1) and are otherwise reported as unavailable. \
+                       Unavailable counters give one warning, never an error. Not available \
+                       on macOS and Windows."),
         )
         .arg(
             Arg::new("first-run")

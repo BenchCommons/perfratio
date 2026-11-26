@@ -1,6 +1,29 @@
 # Spec: effective CPU frequency and throttling detection (#222)
 
-**Status:** Proposed. Scheduled for 1.x, not 1.0.
+**Status:** Implemented on Linux (#222, schemaVersion 1.9). Not run on hardware: the
+`PERFRATIO_TEST_PERF=1` checks against `perf stat` and fixed-frequency governors.
+
+## Implementation notes (deviations from the proposal)
+- Code: `src/frequency.rs` (basis, per-run quotient, CV/drift warnings, sysfs reader),
+  `src/perf_counters.rs` (`export`, hidden `task-clock`), `src/delta_table.rs`.
+- `task-clock` is added automatically whenever `cycles` is requested and is not exported or
+  printed unless the user lists it (then it is a counter in nanoseconds). `--counters=frequency`
+  collects `cycles` (and the hidden `task-clock`); `cycles` is still printed.
+- Basis: scope `all` with `task-clock` gives `task_clock`; scope `user` gives `user_time`
+  (marked `~`); `all` without `task-clock` gives no frequency. `system_time` is reserved for
+  `--scope kernel` (#218) and not produced yet.
+- Runs under 5 ms on CPU keep their value in `effective_frequency_hz` (`null` only when `cycles`
+  or the time is missing) but are left out of `mean_effective_frequency_hz`,
+  `stddev_effective_frequency_hz`, the terminal value and the warnings. The mean and stddev are
+  omitted when no run is long enough.
+- Terminal: `cycles 4.24G (IPC 1.21) @3.42 GHz ± 0.18 GHz` (`±` only when it is > 0).
+- Warnings (stderr, at least 10 eligible runs, hidden by `--suppress-outlier-warnings`): the CV
+  and drift texts above, plus one against the hardware limit: the mean is below 70% of
+  `cpuinfo_max_freq` (highest value of `/sys/devices/system/cpu/cpu*/cpufreq`, restricted to the
+  `--affinity` CPUs). The sysfs value is read only on Linux and is not exported. The tip is
+  printed once after the warnings.
+- Delta table: row `CPU frequency` (mean ± stddev), always without a verdict.
+- Hybrid CPUs: `hybrid_cpu_unpinned` is not implemented; the number is the time-weighted mean.
 
 ## Problem / Motivation
 References: #222, #49, #213, #218, #64, `perf-stat(1)`, `tools/perf/util/stat-shadow.c`.
