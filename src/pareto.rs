@@ -174,7 +174,7 @@ impl Constraint {
 }
 
 /// Parse a number with an optional unit, into the base unit of `metric`.
-fn parse_quantity(metric: Metric, s: &str) -> Result<f64, String> {
+pub(crate) fn parse_quantity(metric: Metric, s: &str) -> Result<f64, String> {
     let split = s
         .find(|c: char| !(c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E')))
         .unwrap_or(s.len());
@@ -551,7 +551,7 @@ pub fn analyze(config: &ParetoConfig, results: &[BenchmarkResult]) -> Analysis {
     }
 }
 
-fn format_value(metric: Metric, value: f64) -> String {
+pub(crate) fn format_value(metric: Metric, value: f64) -> String {
     match metric {
         m if m.is_time() => format_duration(value, None),
         Metric::Energy => format!("{value:.3} J"),
