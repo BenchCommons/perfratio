@@ -1,0 +1,32 @@
+name: perf-parity
+
+# Compares `perfratio --counters` with `perf stat` (#312). Needs bare-metal Linux with perf
+# and a readable PMU, so it never runs on hosted runners: start it by hand on a self-hosted
+# runner labelled `pmu`. See docs/specs/perf-parity-harness.md.
+on:
+  workflow_dispatch:
+    inputs:
+      pin_cpu:
+        description: "CPU number to pin both tools to (required on hybrid P/E-core CPUs)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  parity:
+    name: perf stat parity
+    runs-on: [self-hosted, linux, pmu]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      - name: Run the parity harness
+        env:
+          PERFRATIO_PARITY_PIN: ${{ inputs.pin_cpu }}
+        run: |
+          if [ -z "${PERFRATIO_PARITY_PIN}" ]; then unset PERFRATIO_PARITY_PIN; fi
+          cargo test --locked --test perf_parity_tests -- --ignored --nocapture
