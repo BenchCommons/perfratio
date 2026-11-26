@@ -568,6 +568,20 @@ pub fn build_command() -> Command {
                 ),
         )
         .arg(
+            Arg::new("thermal")
+                .long("thermal")
+                .action(ArgAction::SetTrue)
+                .help("Sample the CPU temperature while the benchmark runs (Linux).")
+                .long_help(
+                    "Sample the hottest CPU temperature sensor (thermal zones and hwmon) on a \
+                     background thread while the benchmark runs, and report it as \
+                     'interference.thermal' and in the 'environment_stability' quality check. \
+                     Off by default: on some hosts (cloud VMs) reading the sensors takes about a \
+                     second and slows perfratio down. '--cooldown until-temp' reads the sensors \
+                     either way.",
+                ),
+        )
+        .arg(
             Arg::new("cooldown")
                 .long("cooldown")
                 .action(ArgAction::Set)

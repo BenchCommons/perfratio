@@ -469,6 +469,9 @@ pub struct Options {
     /// `--fail-on-quality`: exit non-zero when a benchmark's grade is worse
     pub fail_on_quality: Option<crate::quality::Grade>,
 
+    /// `--thermal`: sample the CPU temperature during the benchmark
+    pub thermal: bool,
+
     /// `--cooldown`: wait before every run
     pub cooldown: Option<crate::cooldown::Cooldown>,
 
@@ -584,6 +587,7 @@ impl Default for Options {
             validation: None,
             quality_mode: Default::default(),
             fail_on_quality: None,
+            thermal: false,
             cooldown: None,
             cooldown_timeout: crate::cooldown::DEFAULT_TIMEOUT,
             calibrate: Default::default(),
@@ -1077,6 +1081,7 @@ impl Options {
         options.fail_on_quality = matches
             .get_one::<String>("fail-on-quality")
             .and_then(|value| crate::quality::Grade::parse(value));
+        options.thermal = matches.get_flag("thermal");
         options.cooldown = matches
             .get_one::<String>("cooldown")
             .map(|value| {

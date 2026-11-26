@@ -617,7 +617,13 @@ fn interference_matches_the_schema() {
     let path = dir.path().join("out.json");
     perfratio()
         .env("PERFRATIO_SYSTEM_CHECK_ROOT", root.path())
-        .args(["--debug-mode", "--runs=3", "sleep 0.1", "--export-json"])
+        .args([
+            "--debug-mode",
+            "--thermal",
+            "--runs=3",
+            "sleep 0.1",
+            "--export-json",
+        ])
         .arg(&path)
         .assert()
         .success();
