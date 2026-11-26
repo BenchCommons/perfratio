@@ -796,6 +796,9 @@ impl Options {
         if options.metric == crate::metric::Metric::Energy {
             options.measure_energy = true;
         }
+        // An imported file carries its own values, so nothing is measured then.
+        let importing = matches.get_one::<String>("import-json").is_some();
+        let metric_counter = options.metric.counter_kind();
         // An imported file carries its own values, so nothing is extracted then.
         if let Some(name) = options.metric.custom_name() {
             if matches.get_one::<String>("import-json").is_none()
@@ -845,9 +848,21 @@ impl Options {
         }
         options.omit_failed_runs = matches.get_flag("omit-failed-runs");
         options.show_resource_usage = matches.get_flag("resource-usage");
-        if let Some(list) = matches.get_one::<String>("counters") {
-            let requested =
+        let counters_list = matches.get_one::<String>("counters").cloned().or_else(|| {
+            // `--metric instructions|cycles` collects its own counter
+            (!importing)
+                .then_some(metric_counter)
+                .flatten()
+                .map(|kind| kind.name().to_string())
+        });
+        if let Some(list) = counters_list.as_deref() {
+            let mut requested =
                 crate::perf_counters::parse_list(list).map_err(OptionsError::InvalidCounters)?;
+            if let Some(kind) = metric_counter.filter(|_| !importing) {
+                if !requested.contains(&kind) {
+                    requested.push(kind);
+                }
+            }
             let (config, warnings) =
                 crate::perf_counters::resolve(requested, matches.get_flag("debug-mode"));
             for warning in warnings {

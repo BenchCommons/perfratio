@@ -348,6 +348,9 @@ pub struct CounterExport {
     pub counters: BTreeMap<String, Vec<Option<u64>>>,
     pub summary: BTreeMap<String, crate::benchmark::benchmark_result::MetricSummary>,
     pub multiplexed_runs: usize,
+    /// Lowest `time_running / time_enabled` over the runs, only for counters that
+    /// were scaled or never ran (`counters_coverage` in the JSON export).
+    pub coverage: BTreeMap<String, f64>,
     pub efficiency: Option<Efficiency>,
     pub line: Option<String>,
     pub warning: Option<String>,
@@ -402,12 +405,24 @@ pub fn export(config: &CounterConfig, runs: &[Option<HwReading>]) -> Option<Coun
             }
         })
         .collect();
+    let coverage: BTreeMap<String, f64> = scaling
+        .iter()
+        .filter_map(|(name, cells)| {
+            let worst = cells
+                .iter()
+                .filter(|c| c.scaled() || c.never_ran())
+                .map(|c| c.coverage())
+                .reduce(f64::min)?;
+            Some((name.to_string(), worst))
+        })
+        .collect();
     let efficiency = Efficiency::mean_of(&samples);
     let line = summary_line(&means, efficiency.as_ref(), multiplexed_runs);
     Some(CounterExport {
         counters,
         summary,
         multiplexed_runs,
+        coverage,
         efficiency,
         line,
         warning: multiplex_warning(&scaling),
@@ -752,6 +767,8 @@ mod tests {
         assert_eq!(e.counters["cycles"], vec![Some(1000), None, Some(2000)]);
         assert_eq!(e.summary["instructions"].mean, 3000.0);
         assert_eq!(e.multiplexed_runs, 1);
+        assert_eq!(e.coverage.len(), 1);
+        assert!((e.coverage["cycles"] - 0.5).abs() < 1e-12);
         assert!(e.warning.unwrap().contains("cycles"));
         let ipc = e.efficiency.unwrap().ipc.unwrap();
         assert!((ipc - 2.0).abs() < 1e-9, "{ipc}");

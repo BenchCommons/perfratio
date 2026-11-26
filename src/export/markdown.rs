@@ -79,3 +79,45 @@ fn test_markdown_command_escaping() {
     assert_eq!(formatter.command("a ``` b"), "````a ``` b````");
     assert_eq!(formatter.command("`start"), "`` `start ``");
 }
+
+/// Derived counter columns appear only when a result has `efficiency` (#213)
+#[test]
+fn test_markdown_efficiency_columns_only_when_present() {
+    use crate::benchmark::benchmark_result::BenchmarkResult;
+    use crate::benchmark::relative_speed::BenchmarkResultWithRelativeSpeed;
+    use crate::counters::Efficiency;
+    use crate::util::units::Unit;
+
+    let result = |efficiency| BenchmarkResult {
+        command: "a".into(),
+        command_with_unused_parameters: "a".into(),
+        mean: 1.0,
+        efficiency,
+        ..Default::default()
+    };
+    let entry = |result| BenchmarkResultWithRelativeSpeed {
+        result,
+        relative_speed: 1.0,
+        relative_speed_stddev: None,
+        is_reference: true,
+        relative_ordering: std::cmp::Ordering::Equal,
+    };
+    let formatter = MarkdownExporter::default();
+    let none = result(None);
+    let plain = formatter.table_results(&[entry(&none)], Unit::Second);
+    assert!(!plain.contains("IPC"), "{plain}");
+
+    let derived = result(Some(Efficiency {
+        ipc: Some(1.15),
+        cpi: Some(0.87),
+        cache_miss_rate: Some(0.182),
+        branch_miss_rate: None,
+    }));
+    let with = formatter.table_results(&[entry(&derived)], Unit::Second);
+    assert!(
+        with.contains("| IPC | CPI | Cache miss rate [%] |"),
+        "{with}"
+    );
+    assert!(!with.contains("Branch miss rate"), "{with}");
+    assert!(with.contains("| 1.15 | 0.87 | 18.20 |"), "{with}");
+}

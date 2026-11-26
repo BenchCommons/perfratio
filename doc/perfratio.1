@@ -399,7 +399,7 @@ Perform deep statistical analysis (bootstrapped confidence intervals for mean, m
 .HP
 \fB\-\-metric\fR \fIMETRIC\fP
 .IP
-Primary metric used for statistics, outlier detection, comparison, and sorting: wall (default, aliases: wall-clock, time) for wall-clock time; cpu (alias: total-cpu) for total CPU time (user + system); user for user CPU time; system for system / kernel CPU time; energy for energy consumed in Joules (auto-enables \fB\-\-energy\fR); memory (aliases: rss, peak-memory) for peak resident set size (RSS).
+Primary metric used for statistics, outlier detection, comparison, and sorting: wall (default, aliases: wall-clock, time) for wall-clock time; cpu (alias: total-cpu) for total CPU time (user + system); user for user CPU time; system for system / kernel CPU time; energy for energy consumed in Joules (auto-enables \fB\-\-energy\fR); memory (aliases: rss, peak-memory) for peak resident set size (RSS); instructions for retired instructions and cycles for CPU cycles (both auto-enable \fB\-\-counters\fR, Linux only, every run needs a reading).
 .HP
 \fB\-t\fR, \fB\-\-sort\fR \fIMETHOD\fP
 .IP

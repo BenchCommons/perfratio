@@ -28,9 +28,10 @@ was on the PMU and silently undercounts. `perf stat` avoids this by reading
   `counters_multiplexed_runs` when any of its counters was scaled; a counter that was
   never scheduled on the PMU (`time_running == 0`) is `null` in that run, matching the
   failed-counter rule there. `CounterScaling` (`time_enabled`, `time_running`, `scaled`,
-  `coverage`) is internal for now. Exporting per-run coverage would be a MINOR
-  `schemaVersion` 1.x addition and must be added to `hardware-counters.md` and
-  `output-schema-contract.md` in the same PR.
+  `coverage`) is internal. schemaVersion 1.9 exports the lowest coverage per affected
+  counter as `results[].counters_coverage` (`{ "cycles": 0.742 }`, absent when nothing
+  was multiplexed). Per-run `time_enabled`/`time_running` stay internal: the scaled
+  value per run is already in `counters`.
 
 ## Implementation
 `src/pmu_scaling.rs` holds the pure math, the annotation/warning text and the

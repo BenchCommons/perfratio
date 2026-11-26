@@ -397,6 +397,7 @@ fn format_value(metric: Metric, value: f64) -> String {
         m if m.is_time() => format_duration(value, None),
         Metric::Energy => format!("{value:.3} J"),
         Metric::Memory => format!("{value:.0} B"),
+        Metric::Instructions | Metric::Cycles => format!("{value:.0}"),
         _ => format!("{value:.4}"),
     }
 }
