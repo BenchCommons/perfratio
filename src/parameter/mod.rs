@@ -2,6 +2,7 @@ use crate::util::number::Number;
 use std::fmt::Display;
 
 pub mod range_step;
+pub mod spacing;
 pub mod tokenize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
