@@ -182,6 +182,9 @@ impl Exporter for JsonExporter {
             .metadata
             .as_ref()
             .map(|m| with_metrics(m, results, schedule, compare));
+        if let (Some(value), Some(assessments)) = (perfratio.as_mut(), assessments.as_ref()) {
+            add_correction(value, &settings, assessments);
+        }
         // Runner floor of `--calibrate` (new in 1.27, #313)
         if let (Some(serde_json::Value::Object(object)), Some(floor)) = (
             perfratio.as_mut(),
