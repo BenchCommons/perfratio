@@ -57,6 +57,13 @@ pub struct Measurements {
     /// Requested events that could not be opened (status `partial`)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub counters_unavailable_events: Option<Vec<&'static str>>,
+    /// Top-down analysis (`--topdown`)
+    pub topdown: MeasurementStatus,
+    /// Why topdown is `unavailable`: `unsupported_platform`, `unsupported_cpu`,
+    /// `unsupported_kernel`, `perf_paranoid`, `no_pmu`, `hybrid_cpu_unpinned`
+    /// or `other` (open enum)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub topdown_unavailable_reason: Option<&'static str>,
 }
 
 impl Measurements {
@@ -84,7 +91,24 @@ impl Measurements {
             counters: NotRequested,
             counters_unavailable_reason: None,
             counters_unavailable_events: None,
+            topdown: NotRequested,
+            topdown_unavailable_reason: None,
         }
+    }
+
+    /// Records the outcome of `--topdown` (`None`: not requested).
+    pub fn with_topdown(mut self, config: Option<&crate::topdown::TopdownConfig>) -> Self {
+        let Some(config) = config else {
+            return self;
+        };
+        match config.unavailable {
+            None => self.topdown = MeasurementStatus::Measured,
+            Some(reason) => {
+                self.topdown = MeasurementStatus::Unavailable;
+                self.topdown_unavailable_reason = Some(reason.as_str());
+            }
+        }
+        self
     }
 
     /// Records the outcome of `--counters` (`None`: not requested).

@@ -469,6 +469,106 @@ pub fn open(config: &CounterConfig) -> Option<OpenCounters> {
     }
 }
 
+/// Tries to open the `--topdown` group once and closes it again. The error is
+/// the `errno` of `perf_event_open`.
+pub fn probe_group(events: &[(u32, u64)], scope: Scope) -> Result<(), i32> {
+    #[cfg(target_os = "linux")]
+    {
+        linux::open_group(events, scope).map(drop)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (events, scope);
+        Err(95) // EOPNOTSUPP
+    }
+}
+
+/// The counters of one run: the `--counters` events and the `--topdown`
+/// group. Their readings are joined into one [`HwReading`], counters first.
+pub struct RunCounters {
+    counters: Option<OpenCounters>,
+    topdown: Option<OpenCounters>,
+    n_counters: usize,
+    n_topdown: usize,
+}
+
+/// Opens everything that is active for the next child spawned on this thread.
+/// `None` when nothing is to be measured.
+pub fn open_run(
+    counters: Option<&CounterConfig>,
+    topdown: Option<&crate::topdown::TopdownConfig>,
+) -> Option<RunCounters> {
+    let counters = counters.filter(|c| c.is_active() && !c.mock);
+    let topdown = topdown.filter(|t| t.is_active() && !t.mock);
+    if counters.is_none() && topdown.is_none() {
+        return None;
+    }
+    #[cfg(target_os = "linux")]
+    let open_topdown = |t: &crate::topdown::TopdownConfig| {
+        let plan = t.plan.as_ref()?;
+        let events: Vec<(u32, u64)> = plan.events.iter().map(|e| (e.pmu_type, e.config)).collect();
+        // A group that cannot be opened leaves the reading empty (null runs)
+        linux::open_group(&events, t.scope)
+            .ok()
+            .map(|inner| OpenCounters { inner })
+    };
+    #[cfg(not(target_os = "linux"))]
+    let open_topdown = |_: &crate::topdown::TopdownConfig| None;
+    Some(RunCounters {
+        n_counters: counters.map_or(0, |c| c.active.len()),
+        n_topdown: topdown.map_or(0, |t| t.event_count()),
+        counters: counters.and_then(open),
+        topdown: topdown.and_then(open_topdown),
+    })
+}
+
+impl RunCounters {
+    /// Reads the totals after the child was reaped. An event group that could
+    /// not be opened gives `None` entries.
+    pub fn read(&self) -> HwReading {
+        let mut reading = self
+            .counters
+            .as_ref()
+            .map_or_else(|| vec![None; self.n_counters], OpenCounters::read);
+        reading.extend(
+            self.topdown
+                .as_ref()
+                .map_or_else(|| vec![None; self.n_topdown], OpenCounters::read),
+        );
+        reading
+    }
+}
+
+/// Whether calibration runs are needed: some real (non-mock) events are open.
+pub fn needs_calibration(
+    counters: Option<&CounterConfig>,
+    topdown: Option<&crate::topdown::TopdownConfig>,
+) -> bool {
+    counters.is_some_and(|c| c.is_active() && !c.mock)
+        || topdown.is_some_and(|t| t.is_active() && !t.mock)
+}
+
+/// Median overhead of the calibration runs per event of a combined reading.
+/// The Intel metric events are fractions of a register, a fixed overhead has
+/// no meaning for them: their entries stay 0.
+pub fn calibrated_overhead(
+    samples: &[HwReading],
+    counters: Option<&CounterConfig>,
+    topdown: Option<&crate::topdown::TopdownConfig>,
+) -> Vec<u64> {
+    let n_counters = counters.map_or(0, |c| c.active.len());
+    let mut overhead = median_overhead(samples, crate::topdown::reading_len(counters, topdown));
+    if topdown
+        .and_then(|t| t.plan.as_ref())
+        .is_some_and(|p| p.source == crate::topdown::Source::IntelPerfMetrics)
+    {
+        for o in overhead.iter_mut().skip(n_counters) {
+            *o = 0;
+        }
+    }
+    overhead
+}
+
 impl OpenCounters {
     /// Reads the totals after the child was reaped.
     pub fn read(&self) -> HwReading {
@@ -493,34 +593,39 @@ mod linux {
 
     /// `struct perf_event_attr` as 16 words: type/size, config,
     /// sample_period, sample_type, read_format, flags.
-    fn attr(type_: u32, config: u64, scope: Scope, for_run: bool) -> [u64; 16] {
+    fn attr(type_: u32, config: u64, scope: Scope, for_run: bool, member: bool) -> [u64; 16] {
         let mut attr = [0u64; 16];
         attr[0] = u64::from(type_) | (u64::from(std::mem::size_of_val(&attr) as u32) << 32);
         attr[1] = config;
         attr[4] = READ_FORMAT;
-        let mut flags: u64 = 1; // disabled
+        // A group member follows its leader: only the leader is disabled and
+        // switched on at exec
+        let mut flags: u64 = u64::from(!member); // disabled
         flags |= 1 << 6; // exclude_hv
         if scope == Scope::User {
             flags |= 1 << 5; // exclude_kernel
         }
         if for_run {
             flags |= 1 << 1; // inherit
-            flags |= 1 << 12; // enable_on_exec
+            if !member {
+                flags |= 1 << 12; // enable_on_exec
+            }
         }
         attr[5] = flags;
         attr
     }
 
-    fn open_fd(attr: &[u64; 16]) -> Result<OwnedFd, i32> {
+    fn open_fd(attr: &[u64; 16], group_fd: libc::c_int) -> Result<OwnedFd, i32> {
         // SAFETY: `attr` is a valid perf_event_attr of the size it declares;
-        // the other arguments are plain integers (this thread, any CPU, no group).
+        // the other arguments are plain integers (this thread, any CPU, and
+        // the leader's fd or -1).
         let fd = unsafe {
             libc::syscall(
                 libc::SYS_perf_event_open,
                 attr.as_ptr(),
                 0 as libc::pid_t,
                 -1 as libc::c_int,
-                -1 as libc::c_int,
+                group_fd,
                 PERF_FLAG_FD_CLOEXEC,
             )
         };
@@ -533,7 +638,7 @@ mod linux {
 
     /// Tries to open one event and closes it again.
     pub fn probe(kind: CounterKind, scope: Scope) -> Result<(), i32> {
-        open_fd(&attr(0, kind.hw_config(), scope, true)).map(drop)
+        open_fd(&attr(0, kind.hw_config(), scope, true, false), -1).map(drop)
     }
 
     pub struct Open {
@@ -545,9 +650,23 @@ mod linux {
         Open {
             fds: events
                 .iter()
-                .map(|&(t, c)| open_fd(&attr(t, c, scope, true)).ok())
+                .map(|&(t, c)| open_fd(&attr(t, c, scope, true, false), -1).ok())
                 .collect(),
         }
+    }
+
+    /// Opens `events` as one group, the first being the leader. Members only
+    /// open if the leader did, so a failure leaves every entry `None`.
+    pub fn open_group(events: &[(u32, u64)], scope: Scope) -> Result<Open, i32> {
+        let mut fds: Vec<Option<OwnedFd>> = Vec::with_capacity(events.len());
+        for (i, &(t, c)) in events.iter().enumerate() {
+            let leader = fds
+                .first()
+                .and_then(|f| f.as_ref())
+                .map_or(-1, |f| f.as_raw_fd());
+            fds.push(Some(open_fd(&attr(t, c, scope, true, i > 0), leader)?));
+        }
+        Ok(Open { fds })
     }
 
     impl Open {

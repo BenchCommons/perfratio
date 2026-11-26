@@ -1,7 +1,7 @@
 # Spec: Versioned JSON Output Schema Contract (`schemaVersion`) (#240)
 
 ## Status
-Partly shipped (schemaVersion 1.8; 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
+Partly shipped (schemaVersion 1.9; 1.9 adds `--topdown` fields from #221 (`topdown-tma.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
 `joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
@@ -100,7 +100,8 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
       "energy": "unavailable",
       "energy_unavailable_reason": "rapl_unreadable",
       "resources": "not_requested",
-      "counters": "measured"                                  // new in 1.8, #49
+      "counters": "measured",                                 // new in 1.8, #49
+      "topdown": "measured"                                   // new in 1.9, #221
     }
   },
   "interrupted": true,                                        // optional
@@ -126,7 +127,9 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
     `sysfs_powercap`, `perf_pmu`, `ioreport` or `windows_emi`);
   - `"not_requested"`: the flag was not given.
   Groups in 1.0: `time` (always `measured`), `memory`, `energy` (`-E/--energy`),
-  `resources` (`--resource-usage`), `counters` (`--counters`, new in 1.8). New groups are MINOR.
+  `resources` (`--resource-usage`), `counters` (`--counters`, new in 1.8), `topdown` (`--topdown`, new in 1.9; `measured`, `unavailable` or
+  `not_requested`, with `topdown_unavailable_reason` in `unsupported_platform`, `unsupported_cpu`,
+  `unsupported_kernel`, `perf_paranoid`, `no_pmu`, `hybrid_cpu_unpinned`, `other`). New groups are MINOR.
   `counters` also has the value `"partial"` (some events could not be opened, listed in
   `counters_unavailable_events`) and the reasons `unsupported_platform`, `perf_paranoid`,
   `no_pmu`, `other` in `counters_unavailable_reason`.
@@ -186,6 +189,8 @@ All times are **seconds** (`f64`, `crate::util::units::Second`), memory is **byt
 | `counters_summary` (**new in 1.8**) | { event: { `mean`, `stddev`?, `median`, `min`, `max` } } | with `counters` |
 | `counters_scope` (**new in 1.8**) | `"all"` (user + kernel) or `"user"` (kernel counting was denied); the meaning of an event name never changes | with `counters` |
 | `counters_multiplexed_runs` (**new in 1.8**) | count of runs with a scaled counter | optional (> 0) |
+| `topdown` (**new in 1.9**, #221) | { `level`: 1, `source`: `intel_perf_metrics` \| `amd_pipeline_util`, `retiring`, `bad_speculation`, `frontend_bound`, `backend_bound`, `smt_contention` (AMD only): (0..1 \| null)[] } per run, aligned with `times`; `null` = run not measured. Hypothesis about the stall class, not a diagnosis | with `--topdown` |
+| `topdown_summary` (**new in 1.9**) | { class: { `mean`, `stddev`?, `median`, `min`, `max` }, `bottleneck`: `backend_bound` \| `frontend_bound` \| `bad_speculation` \| `smt_contention` (open enum; retiring is never named) } | with `topdown` |
 | `efficiency` { `ipc`, `cpi`, `cache_miss_rate`, `branch_miss_rate` } (#213) | ratios | optional (with the needed counters) |
 | `diagnostics`, `precision`, `baseline`, `shell`, `timed_out`, `timeout`, `runs_planned` | see `BenchmarkResult` | optional |
 
