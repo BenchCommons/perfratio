@@ -448,7 +448,67 @@ fn windows_checks() -> Vec<Check> {
         checks.push(cpu_load_check_windows(busy_pct));
     }
 
+    // 4. Processor frequency limit (power policy or thermal throttling)
+    if let Some(limits) = processor_limits_windows() {
+        checks.push(cpu_throttle_check_windows(&limits));
+    }
+
     checks
+}
+
+/// (MaxMhz, MhzLimit) of every logical processor, via `CallNtPowerInformation`.
+#[cfg(target_os = "windows")]
+fn processor_limits_windows() -> Option<Vec<(u32, u32)>> {
+    use windows_sys::Win32::System::Power::{
+        CallNtPowerInformation, ProcessorInformation, PROCESSOR_POWER_INFORMATION,
+    };
+
+    // The call fills one entry per logical processor and leaves the rest of an
+    // oversized buffer zeroed, so unused entries are dropped by `MaxMhz == 0`.
+    // SAFETY: the structure is a plain C struct of integers.
+    let mut info: Vec<PROCESSOR_POWER_INFORMATION> = vec![unsafe { std::mem::zeroed() }; 1024];
+    let bytes = (info.len() * std::mem::size_of::<PROCESSOR_POWER_INFORMATION>()) as u32;
+    // SAFETY: no input buffer is needed for this level; `info` is a writable
+    // buffer of `bytes` bytes.
+    let status = unsafe {
+        CallNtPowerInformation(
+            ProcessorInformation,
+            std::ptr::null(),
+            0,
+            info.as_mut_ptr().cast(),
+            bytes,
+        )
+    };
+    if status != 0 {
+        return None;
+    }
+    let limits: Vec<(u32, u32)> = info
+        .iter()
+        .filter(|p| p.MaxMhz > 0)
+        .map(|p| (p.MaxMhz, p.MhzLimit))
+        .collect();
+    (!limits.is_empty()).then_some(limits)
+}
+
+/// Windows frequency limit check: warns if the OS caps any processor below its
+/// maximum frequency (a power plan with a reduced maximum processor state, or
+/// thermal/power throttling). `limits` holds (max MHz, current limit MHz) per CPU.
+#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+fn cpu_throttle_check_windows(limits: &[(u32, u32)]) -> Check {
+    let limited: Vec<&(u32, u32)> = limits.iter().filter(|(max, limit)| limit < max).collect();
+    match limited.first() {
+        None => Check::new("CPU frequency limit", Status::Ok, "none"),
+        Some((max, limit)) => Check::new(
+            "CPU frequency limit",
+            Status::Warn,
+            format!(
+                "{} of {} CPUs capped (e.g. {limit} of {max} MHz)",
+                limited.len(),
+                limits.len()
+            ),
+        )
+        .with_hint("set the maximum processor state to 100% in the power plan, and check cooling"),
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -837,6 +897,20 @@ mod tests {
             Some("Plan".to_string())
         );
         assert_eq!(decode_utf16le_name(&[0, 0]), None);
+    }
+
+    #[test]
+    fn windows_cpu_frequency_limit() {
+        let ok = cpu_throttle_check_windows(&[(3000, 3000), (3000, 3000)]);
+        assert_eq!(ok.status, Status::Ok);
+        let capped = cpu_throttle_check_windows(&[(3000, 3000), (3000, 1200)]);
+        assert_eq!(capped.status, Status::Warn);
+        assert!(capped.detail.contains("1 of 2 CPUs"), "{}", capped.detail);
+        assert!(
+            capped.detail.contains("1200 of 3000 MHz"),
+            "{}",
+            capped.detail
+        );
     }
 
     #[test]

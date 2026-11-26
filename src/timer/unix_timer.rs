@@ -39,7 +39,7 @@ impl From<&libc::rusage> for ChildUsage {
             max_rss.saturating_mul(1024)
         };
 
-        let count = |v: libc::c_long| u64::try_from(v).unwrap_or(0);
+        let count = |v: libc::c_long| Some(u64::try_from(v).unwrap_or(0));
         ChildUsage {
             user: seconds(ru.ru_utime),
             system: seconds(ru.ru_stime),
