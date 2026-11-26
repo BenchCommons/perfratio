@@ -26,6 +26,9 @@ pub enum Significance {
 pub struct Assessment {
     pub significance: Significance,
     pub p_value: f64,
+    /// The p-value after `--correction` (`None` without a correction); the
+    /// significance is decided on this value when present (#321)
+    pub p_adjusted: Option<f64>,
 }
 
 /// Classify a change of the mean (`rel_change` = other / reference − 1) with
@@ -54,12 +57,28 @@ pub fn assess(reference: &BenchmarkResult, other: &BenchmarkResult) -> Option<As
 }
 
 /// [`assess`] with explicit settings: the change is that of the estimator
-/// and the level is `significance_level`.
+/// and the level is `significance_level`. A single comparison is a family of
+/// one, so `--correction` does not change it; see [`assess_family`].
 pub fn assess_with(
     reference: &BenchmarkResult,
     other: &BenchmarkResult,
     settings: &crate::stats::settings::StatSettings,
 ) -> Option<Assessment> {
+    let (rel_change, p_value) = raw_comparison(reference, other, settings)?;
+    Some(Assessment {
+        significance: classify_with(rel_change, p_value, settings.significance_level),
+        p_value,
+        p_adjusted: None,
+    })
+}
+
+/// Relative change of the estimator (`other / reference - 1`) and the raw
+/// p-value of the test, if both are defined.
+fn raw_comparison(
+    reference: &BenchmarkResult,
+    other: &BenchmarkResult,
+    settings: &crate::stats::settings::StatSettings,
+) -> Option<(f64, f64)> {
     use crate::metric::Metric;
     if reference.timed_out || other.timed_out || reference.mean <= 0.0 {
         return None;
@@ -72,14 +91,96 @@ pub fn assess_with(
     if ref_center <= 0.0 {
         return None;
     }
-    Some(Assessment {
-        significance: classify_with(
-            other_center / ref_center - 1.0,
-            p_value,
-            settings.significance_level,
-        ),
-        p_value,
-    })
+    Some((other_center / ref_center - 1.0, p_value))
+}
+
+/// The assessments of all results against `reference` for one run, with
+/// `--correction` applied over the family (#321).
+#[derive(Debug, Clone, Default)]
+pub struct FamilyAssessment {
+    /// Address of the result and its assessment (results are matched by identity)
+    entries: Vec<(usize, Assessment)>,
+    /// Number of comparisons in the corrected family (0 without a correction)
+    pub family_size: usize,
+}
+
+fn address(result: &BenchmarkResult) -> usize {
+    result as *const BenchmarkResult as usize
+}
+
+impl FamilyAssessment {
+    /// The assessment of `result`; `None` for the reference and for results
+    /// that cannot be assessed.
+    pub fn get(&self, result: &BenchmarkResult) -> Option<Assessment> {
+        let key = address(result);
+        self.entries
+            .iter()
+            .find(|(a, _)| *a == key)
+            .map(|(_, v)| *v)
+    }
+}
+
+/// Assess every result against `reference` (which may be among `results`).
+/// Without a correction each comparison stands alone, exactly as [`assess_with`].
+/// With one, the p-values of the family (`settings.family`) are adjusted and the
+/// markers are decided on the adjusted values.
+pub fn assess_family(
+    reference: &BenchmarkResult,
+    results: &[&BenchmarkResult],
+    settings: &crate::stats::settings::StatSettings,
+) -> FamilyAssessment {
+    use crate::stats::correction::{adjust, Family};
+    let others: Vec<&BenchmarkResult> = results
+        .iter()
+        .copied()
+        .filter(|r| !std::ptr::eq(*r, reference))
+        .collect();
+    let raw: Vec<Option<(f64, f64)>> = others
+        .iter()
+        .map(|r| raw_comparison(reference, r, settings))
+        .collect();
+    let mut out = FamilyAssessment::default();
+    if settings.correction.is_none() {
+        for (r, comparison) in others.iter().zip(&raw) {
+            if let Some((change, p)) = *comparison {
+                out.entries.push((
+                    address(r),
+                    Assessment {
+                        significance: classify_with(change, p, settings.significance_level),
+                        p_value: p,
+                        p_adjusted: None,
+                    },
+                ));
+            }
+        }
+        return out;
+    }
+
+    // the p-values of the family; the first `others.len()` entries are the
+    // comparisons with the reference, in the order of `others`
+    let mut family: Vec<f64> = raw.iter().map(|c| c.map_or(f64::NAN, |(_, p)| p)).collect();
+    if settings.family == Family::AllPairs {
+        for (i, a) in others.iter().enumerate() {
+            for b in &others[i + 1..] {
+                family.push(crate::compare::p_value_with(a, b, settings).unwrap_or(f64::NAN));
+            }
+        }
+    }
+    out.family_size = family.iter().filter(|p| !p.is_nan()).count();
+    let adjusted = adjust(&family, settings.correction);
+    for (i, (r, comparison)) in others.iter().zip(&raw).enumerate() {
+        if let Some((change, p)) = *comparison {
+            out.entries.push((
+                address(r),
+                Assessment {
+                    significance: classify_with(change, adjusted[i], settings.significance_level),
+                    p_value: p,
+                    p_adjusted: Some(adjusted[i]),
+                },
+            ));
+        }
+    }
+    out
 }
 
 fn format_p(p: f64) -> String {
@@ -103,7 +204,14 @@ impl Assessment {
             (Significance::Noise, true) => ("~", "indistinguishable from noise"),
             (Significance::Noise, false) => ("[~]", "indistinguishable from noise"),
         };
-        format!("{marker} {text} ({})", format_p(self.p_value))
+        match self.p_adjusted {
+            Some(adjusted) => format!(
+                "{marker} {text} ({}, adjusted {})",
+                format_p(self.p_value),
+                format_p(adjusted)
+            ),
+            None => format!("{marker} {text} ({})", format_p(self.p_value)),
+        }
     }
 }
 
@@ -159,6 +267,7 @@ mod tests {
         let a = |significance, p_value| Assessment {
             significance,
             p_value,
+            p_adjusted: None,
         };
         assert_eq!(
             a(Significance::SignificantSpeedup, 0.0).label(false),

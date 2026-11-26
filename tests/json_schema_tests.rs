@@ -443,6 +443,19 @@ fn real_cases() -> Vec<(&'static str, Vec<String>)> {
             "ignored failing command",
             [args(&["--runs=3", "-N", "-i"]), vec![failing]].concat(),
         ),
+        (
+            "multiple-comparison correction",
+            args(&[
+                "--runs=3",
+                "-N",
+                "--correction=holm",
+                "--comparison-family=all-pairs",
+                "--bootstrap-resamples=200",
+                "true",
+                "echo",
+                "pwd",
+            ]),
+        ),
         #[cfg(unix)]
         (
             "leftover processes",

@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.31 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.32 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.31",
+      "const": "1.32",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -496,6 +496,17 @@
               "type": "integer",
               "minimum": 0,
               "description": "Unsigned 64-bit; may exceed 2^53, so read it as an integer, not a double."
+            },
+            "correction": {
+              "type": "object",
+              "description": "New in 1.32 (#321): the multiple-comparison correction behind p_value_adjusted and significance. Present only with --correction other than none.",
+              "properties": {
+                "method": { "type": "string", "enum": ["bonferroni", "holm", "bh"] },
+                "family": { "type": "string", "enum": ["reference", "all-pairs"] },
+                "family_size": { "type": "integer", "minimum": 0, "description": "Number of comparisons with a defined p-value in the family." },
+                "alpha": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 }
+              },
+              "required": ["method", "family", "family_size", "alpha"]
             }
           },
           "required": [
@@ -1222,6 +1233,12 @@
         "p_value": {
           "type": "number",
           "description": "p-value of the bootstrap Welch test against the reference."
+        },
+        "p_value_adjusted": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "New in 1.32 (#321): p_value after statistics.correction; significance is decided on this value. Omitted without a correction."
         },
         "percentiles": {
           "$ref": "#/$defs/percentiles"

@@ -25,7 +25,7 @@ pub struct PrimaryMetricStats {
 }
 
 /// Version of the JSON output contract (`docs/specs/output-schema-contract.md`).
-pub const SCHEMA_VERSION: &str = "1.31";
+pub const SCHEMA_VERSION: &str = "1.32";
 
 #[derive(Serialize, Debug)]
 struct PerfratioSummary<'a> {
@@ -72,6 +72,10 @@ struct ResultEntry<'a> {
     /// p-value of the bootstrap Welch test against the reference
     #[serde(skip_serializing_if = "Option::is_none")]
     p_value: Option<f64>,
+    /// `p_value` after `--correction` (new in 1.27, #321); `significance`
+    /// is decided on this value. Omitted without a correction.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    p_value_adjusted: Option<f64>,
 }
 
 /// The `perfratio` object: the run metadata plus the descriptor of every metric (#317).
@@ -95,6 +99,31 @@ fn with_metrics(
         object.insert("compare".into(), compare);
     }
     value
+}
+
+/// `perfratio.statistics.correction` (new in 1.27, #321), only with `--correction`.
+fn add_correction(
+    perfratio: &mut serde_json::Value,
+    settings: &crate::stats::settings::StatSettings,
+    assessments: &significance::FamilyAssessment,
+) {
+    if settings.correction.is_none() {
+        return;
+    }
+    if let Some(statistics) = perfratio
+        .get_mut("statistics")
+        .and_then(|s| s.as_object_mut())
+    {
+        statistics.insert(
+            "correction".into(),
+            serde_json::json!({
+                "method": settings.correction.name(),
+                "family": settings.family.name(),
+                "family_size": assessments.family_size,
+                "alpha": settings.significance_level,
+            }),
+        );
+    }
 }
 
 #[derive(Default)]
@@ -134,6 +163,11 @@ impl Exporter for JsonExporter {
         };
         let reference_result = reference
             .or_else(|| (!results.is_empty()).then(|| relative_speed::fastest_of(results)));
+        let settings = crate::stats::settings::current();
+        let assessments = reference_result.map(|reference| {
+            let all: Vec<&BenchmarkResult> = results.iter().collect();
+            significance::assess_family(reference, &all, &settings)
+        });
         let schedule = self
             .schedule
             .lock()
@@ -148,6 +182,9 @@ impl Exporter for JsonExporter {
             .metadata
             .as_ref()
             .map(|m| with_metrics(m, results, schedule, compare));
+        if let (Some(value), Some(assessments)) = (perfratio.as_mut(), assessments.as_ref()) {
+            add_correction(value, &settings, assessments);
+        }
         // Runner floor of `--calibrate` (new in 1.27, #313)
         if let (Some(serde_json::Value::Object(object)), Some(floor)) = (
             perfratio.as_mut(),
@@ -173,9 +210,7 @@ impl Exporter for JsonExporter {
                 } else {
                     None
                 };
-                let assessment = reference_result
-                    .filter(|r| !std::ptr::eq(*r, result))
-                    .and_then(|r| significance::assess(r, result));
+                let assessment = assessments.as_ref().and_then(|a| a.get(result));
                 ResultEntry {
                     result,
                     primary_metric,
@@ -190,6 +225,7 @@ impl Exporter for JsonExporter {
                         .map(|(lo, hi)| [lo, hi]),
                     significance: assessment.map(|a| a.significance),
                     p_value: assessment.map(|a| a.p_value),
+                    p_value_adjusted: assessment.and_then(|a| a.p_adjusted),
                 }
             })
             .collect();

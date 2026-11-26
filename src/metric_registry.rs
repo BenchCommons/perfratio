@@ -478,6 +478,7 @@ pub const NON_METRIC_FIELDS: &[&str] = &[
     "interference",
     "significance",
     "p_value",
+    "p_value_adjusted",
     "relative_speed",
     "relative_speed_stddev",
     "relative_speed_ci",

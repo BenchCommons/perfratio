@@ -840,6 +840,7 @@ impl<'a> Scheduler<'a> {
                     let Some(reference) = annotated_results.iter().find(|r| r.is_reference) else {
                         return;
                     };
+                    let assessments = family_assessments(reference.result, &annotated_results);
                     let others = annotated_results.iter().filter(|r| !r.is_reference);
 
                     let verb = metric.verb();
@@ -925,7 +926,7 @@ impl<'a> Scheduler<'a> {
                             comparator,
                             colors::magenta(&item.result.command_with_unused_parameters),
                             absolute.dimmed(),
-                            significance_suffix(reference.result, item.result)
+                            significance_suffix(&assessments, item.result)
                         );
 
                         if self.options.deep_stats {
@@ -1041,6 +1042,7 @@ impl<'a> Scheduler<'a> {
                     else {
                         return;
                     };
+                    let assessments = family_assessments(reference_result, &annotated_results);
 
                     let max_cmd_len = annotated_results
                         .iter()
@@ -1099,7 +1101,7 @@ impl<'a> Scheduler<'a> {
                             if item.is_reference {
                                 String::new()
                             } else {
-                                significance_suffix(reference_result, item.result)
+                                significance_suffix(&assessments, item.result)
                             },
                             width = max_cmd_len,
                         );
@@ -1484,15 +1486,44 @@ fn scheduler_round_robin() -> Result<()> {
     Ok(())
 }
 
+/// The significance of every result against the reference, with `--correction`
+/// applied over the family. A line names method, family and size when a
+/// correction is active.
+fn family_assessments(
+    reference: &BenchmarkResult,
+    annotated: &[relative_speed::BenchmarkResultWithRelativeSpeed],
+) -> crate::stats::significance::FamilyAssessment {
+    let settings = crate::stats::settings::current();
+    let results: Vec<&BenchmarkResult> = annotated.iter().map(|r| r.result).collect();
+    let assessments = crate::stats::significance::assess_family(reference, &results, &settings);
+    if !settings.correction.is_none() {
+        crate::outln!(
+            "  {}",
+            format!(
+                "Multiple-comparison correction: {} over {} comparisons ({} family), alpha = {}",
+                settings.correction.name(),
+                assessments.family_size,
+                settings.family.name(),
+                settings.significance_level
+            )
+            .dimmed()
+        );
+    }
+    assessments
+}
+
 /// "(12.3 ms, +4.5 ms)": the mean of `item` and its difference to the
 /// reference, plus energy when both results have it. Positive differences mean
 /// `item` is slower (or uses more energy) than the reference.
 /// Significance marker of `item` against `reference` for the summary
 /// (`  [+] significant speedup (p < 0.001)`), empty if it cannot be assessed.
 /// Symbols are used only where colors are (not for `NO_COLOR`, pipes or dumb terminals).
-fn significance_suffix(reference: &BenchmarkResult, item: &BenchmarkResult) -> String {
+fn significance_suffix(
+    assessments: &crate::stats::significance::FamilyAssessment,
+    item: &BenchmarkResult,
+) -> String {
     let fancy = colored::control::SHOULD_COLORIZE.should_colorize();
-    match crate::stats::significance::assess(reference, item) {
+    match assessments.get(item) {
         Some(assessment) => {
             let text = assessment.label(fancy);
             let text = match assessment.significance {

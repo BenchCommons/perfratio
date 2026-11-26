@@ -11,6 +11,7 @@ use std::str::FromStr;
 use std::sync::OnceLock;
 
 use crate::stats::basic;
+use crate::stats::correction::{Correction, Family};
 use crate::stats::summary::percentile;
 
 /// Seed of the resampling RNG (fixed by default, for reproducible output)
@@ -94,6 +95,10 @@ pub struct StatSettings {
     pub significance_level: f64,
     pub bootstrap_resamples: usize,
     pub seed: u64,
+    /// Multiple-comparison correction of the p-values (#321)
+    pub correction: Correction,
+    /// The comparisons the correction is applied to
+    pub family: Family,
 }
 
 impl Default for StatSettings {
@@ -104,6 +109,8 @@ impl Default for StatSettings {
             significance_level: DEFAULT_SIGNIFICANCE_LEVEL,
             bootstrap_resamples: DEFAULT_RESAMPLES,
             seed: DEFAULT_SEED,
+            correction: Correction::None,
+            family: Family::Reference,
         }
     }
 }
