@@ -223,7 +223,7 @@ warmup effects differ a lot between runtimes. Use:
 | `--warmup auto` | Warms up each command until timings are stable (at most 100 runs), so JIT-compiled and interpreted languages are not penalized by a fixed count. |
 | `--first-run=separate` | Reports the cold first run on its own line (`first_run` in the JSON) and keeps it out of the statistics. |
 | `--output-metric NAME=REGEX` | Reads a number from the command's stdout, or stderr with `--output-metric-stderr` (first capture group of the last match). Have the program time its algorithm and print it, so startup is separated from algorithm time. |
-| `--region[=NAME]` | Times only the code the program brackets with the region SDK (`sdk/`), so start-up, JIT warm-up and shutdown stay out. Rank on it with `--metric region:NAME`. See [docs/specs/region-protocol.md](docs/specs/region-protocol.md). |
+| `--region[=NAME]` | Times only the code the program brackets with the region SDK (clients in [`sdk/`](sdk/README.md), [guide](docs/region-sdk.md)), so start-up, JIT warm-up and shutdown stay out. Rank on it with `--metric region:NAME`. See [docs/specs/region-protocol.md](docs/specs/region-protocol.md). |
 | `--duration <DURATION>` | Samples each command until the summed run time reaches DURATION (at least 3 runs), for example `--duration 5s`. Conflicts with `--runs` and `--target-precision`. |
 | `--target-precision <PCT>` | Runs until the 95% confidence interval of the mean is within PCT of the mean, bounded by `--min-runs`, `--max-runs` and `--max-benchmarking-time`. Fast commands finish early. |
 

@@ -1503,6 +1503,13 @@ fn custom_difference(
         (Some(value), Some(base)) => {
             let diff = value - base;
             let sign = if diff >= 0.0 { '+' } else { '−' };
+            if metric.is_region() {
+                let (v, d) = (
+                    format_duration(value, None),
+                    format_duration(diff.abs(), None),
+                );
+                return format!("({v}, {sign}{d})");
+            }
             if matches!(metric, Metric::Instructions | Metric::Cycles) {
                 let (v, d) = (
                     crate::benchmark::format_count(value),
