@@ -127,6 +127,7 @@ impl ExportManager {
         metric: Metric,
         counters: Option<&crate::perf_counters::CounterConfig>,
         topdown: Option<&crate::topdown::TopdownConfig>,
+        execution: Option<metadata::Execution>,
     ) -> Result<Self> {
         let labels = parse_labels(
             matches
@@ -160,6 +161,7 @@ impl ExportManager {
                 .with_topdown(topdown),
         );
         metadata.energy_backend = energy.and_then(Result::ok).map(|b| b.as_str());
+        metadata.execution = execution;
         let mut export_manager = Self {
             exporters: vec![],
             time_unit,
