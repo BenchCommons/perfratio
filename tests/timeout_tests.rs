@@ -171,3 +171,34 @@ fn process_group_kills_descendants_on_unix() {
         start.elapsed()
     );
 }
+
+// TEMPORARY CI diagnostic (draft PR, not for merge)
+#[cfg(target_os = "linux")]
+#[test]
+fn zz_diag_timeout_timing() {
+    let mut report = String::new();
+    for (label, fake) in [("real", None), ("emptyroot", Some("/nonexistent-root"))] {
+        for args in [
+            vec!["--timeout", "150ms", "-N", "--runs=2", "--style=basic", "sleep 5", "sleep 0.01"],
+            vec!["-N", "--runs=2", "--style=basic", "sleep 0.01"],
+            vec!["-N", "--runs=2", "--style=basic", "--calibrate=off", "sleep 0.01"],
+        ] {
+            let mut cmd = std::process::Command::new(assert_cmd::cargo_bin!("perfratio"));
+            cmd.args(&args);
+            if let Some(f) = fake { cmd.env("PERFRATIO_SYSTEM_CHECK_ROOT", f); }
+            let t = std::time::Instant::now();
+            let out = cmd.output().unwrap();
+            report.push_str(&format!("{label} {:?} -> {:?} status={:?}\n", args, t.elapsed(), out.status.code()));
+        }
+    }
+    let t = std::time::Instant::now();
+    let w = perfratio::environment_watch::Watch::new(std::path::Path::new("/"));
+    let new_t = t.elapsed();
+    let t = std::time::Instant::now();
+    let r = w.finish();
+    report.push_str(&format!("Watch::new {new_t:?} finish {:?} -> {r:?}\n", t.elapsed()));
+    let t = std::time::Instant::now();
+    let c = perfratio::cgroup::locate(std::path::Path::new("/"));
+    report.push_str(&format!("cgroup::locate {:?} -> {c:?}\n", t.elapsed()));
+    panic!("DIAG\n{report}");
+}
