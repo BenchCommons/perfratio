@@ -37,6 +37,7 @@ const CASES: &[&[&str]] = &[
     &["--runs=2", "--concurrency", "3", "--energy", "sleep 0.1"],
     &["--runs=3", "--first-run=separate", "sleep 0.1"],
     &["--runs=4", "--warmup=2", "sleep 0.1", "sleep 0.2"],
+    &["--runs=4", "--jobs=2", "sleep 0.1", "sleep 0.2"],
 ];
 
 #[test]

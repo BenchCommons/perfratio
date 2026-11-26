@@ -823,6 +823,20 @@ pub fn build_command() -> Command {
                        --concurrency {c}', for one benchmark per value. Default: 1."),
         )
         .arg(
+            Arg::new("jobs")
+                .short('j')
+                .long("jobs")
+                .action(ArgAction::Set)
+                .value_name("N|auto")
+                .conflicts_with_all(["concurrency", "energy", "optimize", "subtract"])
+                .help("Run up to N independent invocations at the same time to collect \
+                       samples faster. Every run is still timed on its own, unlike with \
+                       '--concurrency'. Parallel runs compete for caches, memory bandwidth \
+                       and CPUs, so the results are marked 'contended' and are not \
+                       equivalent to sequential samples. 'auto' uses the number of logical \
+                       CPUs. See '--schedule'. Default: 1."),
+        )
+        .arg(
             Arg::new("artifact-dir")
                 .long("artifact-dir")
                 .action(ArgAction::Set)
@@ -1419,9 +1433,8 @@ pub fn build_command() -> Command {
             Arg::new("schedule")
                 .long("schedule")
                 .value_name("MODE")
-                .value_parser(["grouped", "round-robin", "interleaved"])
-                .default_value("grouped")
-                .help("Set benchmark execution schedule: 'grouped' (run all iterations per command) or 'round-robin' / 'interleaved' (interleave iterations across commands to mitigate temporal bias).")
+                .value_parser(["grouped", "round-robin", "interleaved", "saturate", "exclusive", "fair"])
+                .help("Set benchmark execution schedule: 'grouped' (run all iterations per command; default) or 'round-robin' / 'interleaved' (interleave iterations across commands to mitigate temporal bias). With '--jobs' > 1: 'saturate' (keep every worker busy; default), 'exclusive' (a command never runs concurrently with itself) or 'fair' (every command keeps the same number of runs).")
         )
         .arg(
             Arg::new("round-robin")
