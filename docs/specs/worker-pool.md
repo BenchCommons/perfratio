@@ -1,6 +1,6 @@
 # Spec: `--jobs <N|auto>` independent parallel worker pool (#306)
 
-**Status:** Shipped in 1.1 (schemaVersion 1.16). Parent tracker: #53. Follow-up: #307 (CPU partitioning).
+**Status:** Shipped in 1.1 (schemaVersion 1.16). Parent tracker: #53. CPU partitioning of the workers: #307 (`worker-cpu-partition.md`).
 
 ## Problem / Motivation
 References: #306, #53, #304 (trust tracker), `megafine` (`-j/--jobs`, `--schedule`), hyperfine#58.
@@ -87,6 +87,5 @@ should refuse to mix `contended` results with sequential ones (trust tracker #30
 - Schema: `tests/json_schema_tests.rs` has `--jobs` cases.
 
 ## Not done
-- The per-worker CPU partition (#307).
 - `--until-interrupted` / `--runs 0` (run until Ctrl-C), mentioned in the issue as an opt-in
   decision; it applies to sequential runs as well and is left to its own issue.
