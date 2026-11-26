@@ -24,3 +24,22 @@ Otherwise, install the dependencies via your system package manager or using `pi
 ```bash
 pip install numpy matplotlib scipy  # pip3, if you are using python3
 ```
+
+### `perf_parity.py`: check `--counters` against `perf stat`
+
+Linux, `perf` and a readable PMU (bare metal or a self-hosted runner). It runs a shell loop, a
+fork tree, a pipeline and `true` under both `perf stat -e instructions:u,cycles:u` and
+`perfratio --counters`, and checks the counts within a tolerance and that child processes are
+counted. No third-party packages are needed.
+
+```bash
+cargo build --release
+python3 scripts/perf_parity.py --perfratio target/release/perfratio
+# the same through cargo:
+cargo test --locked --test perf_parity_tests -- --ignored --nocapture
+```
+
+Exit status `0` means every check passed, `1` a check failed and `77` means skipped (no `perf`,
+no PMU, a hybrid CPU without `--pin <cpu>`). A skip is never reported as a pass.
+`python3 scripts/perf_parity.py --self-test` tests the harness logic without a PMU. Details:
+[docs/specs/perf-parity-harness.md](../docs/specs/perf-parity-harness.md).

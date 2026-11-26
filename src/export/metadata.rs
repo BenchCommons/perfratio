@@ -22,8 +22,22 @@ pub struct ExportMetadata {
     pub energy_backend: Option<&'static str>,
     /// Which measurement groups were measured, unavailable or not requested
     pub measurements: Measurements,
+    /// How the runs were executed; only with `--jobs` > 1 (new in 1.22)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution: Option<Execution>,
     /// Estimator, levels and bootstrap settings behind the statistics (new in 1.21, #320)
     pub statistics: StatisticsInfo,
+}
+
+/// Parallel execution of the runs (`--jobs`, #306).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct Execution {
+    /// Runs executing at the same time
+    pub jobs: usize,
+    /// `saturate`, `exclusive` or `fair` (open enum)
+    pub schedule_policy: &'static str,
+    /// The runs disturbed each other; always `true`
+    pub contended: bool,
 }
 
 /// The `perfratio.statistics` object: how the ranking, ratios, intervals and
@@ -227,6 +241,7 @@ impl ExportMetadata {
             energy_backend: None,
             measurements,
             statistics: StatisticsInfo::from_settings(&crate::stats::settings::current()),
+            execution: None,
         }
     }
 }

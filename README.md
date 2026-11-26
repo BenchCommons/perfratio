@@ -101,6 +101,7 @@ how to reduce noise. The manual page is [doc/perfratio.1](doc/perfratio.1).
 `--resource-usage` adds context switches, page faults and block I/O per run. Windows reports
 page faults and I/O operation counts only; the other counters show as `n/a` ([spec](docs/specs/windows-resource-usage.md)).
 `--counters` (Linux) adds hardware counters (instructions, cycles, cache and branch misses), IPC and the effective CPU frequency per run, and with `--counters=default,sw` CPU migrations and context switches (a warning points to `--affinity` when migrations slow runs down); see `docs/specs/hardware-counters.md`, `docs/specs/software-events-migrations.md` and `docs/specs/effective-frequency.md`. `--scope user|kernel|all|split` and per-event `:u` / `:k` modifiers (`--counters=instructions:u,instructions:k`) choose the privilege level; see `docs/specs/counter-scope-modifiers.md`.
+`scripts/perf_parity.py` checks the counters against `perf stat` on bare-metal Linux ([spec](docs/specs/perf-parity-harness.md)).
 `--topdown` (Linux x86_64; Intel Ice Lake or later, AMD Zen 4 or later) adds Top-down level 1: the share of pipeline slots that retire work or are lost to bad speculation, frontend stalls or backend stalls. The largest stall class is a hypothesis about the bottleneck, not a diagnosis; see `docs/specs/topdown-tma.md`.
 `--simd` (Linux, Intel and AMD Zen 4/5) adds a floating-point breakdown (scalar, 128-, 256- and 512-bit) and a vectorization ratio per run; see `docs/specs/simd-breakdown.md`.
 
@@ -242,7 +243,7 @@ Benchmark 1: sh -c 'echo algo_ms=12.5; sleep 0.05'
 On this busy laptop `--warmup auto` hit its 100-run limit without the timings settling, and
 perfratio also printed a warning saying so. Other useful flags: `--affinity <CPUS>`,
 `--priority <POLICY>`, `--discard-outliers`, `--timeout <DURATION>`,
-`--concurrency <N>` (N simultaneous instances per run, `{param}` allowed for a scaling curve, see [docs/specs/concurrency.md](docs/specs/concurrency.md)).
+`--concurrency <N>` (N simultaneous instances per run, `{param}` allowed for a scaling curve, see [docs/specs/concurrency.md](docs/specs/concurrency.md)), `--jobs <N|auto>` (N independent runs at the same time to collect samples faster, results marked as contended, see [docs/specs/worker-pool.md](docs/specs/worker-pool.md)).
 
 Every run has a unique `PERFRATIO_RUN_ID` (and `PERFRATIO_WORKER_ID` with `--concurrency`), also
 visible to `--prepare`/`--conclude`, so parallel runs can use `in.$PERFRATIO_RUN_ID.txt` without

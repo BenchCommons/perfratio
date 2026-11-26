@@ -137,6 +137,7 @@ impl RuleOutcome {
 }
 
 /// Run `replicates` streams of `dist` through both rules.
+#[allow(clippy::too_many_arguments)]
 pub fn study(
     dist: Dist,
     min_runs: usize,
