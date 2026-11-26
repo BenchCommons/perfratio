@@ -50,6 +50,7 @@ fn run() -> Result<()> {
     }
 
     let mut options = Options::from_cli_arguments(&cli_arguments)?;
+    perfratio::stats::settings::install(options.stat_settings.clone());
     if let Some(precision) = cli_arguments.get_one::<String>("precision") {
         util::units::set_precision(match precision.as_str() {
             "auto" => util::units::Precision::Auto,

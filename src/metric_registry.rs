@@ -479,6 +479,7 @@ pub const NON_METRIC_FIELDS: &[&str] = &[
     "p_value",
     "relative_speed",
     "relative_speed_stddev",
+    "relative_speed_ci",
     "primary_metric",
     "energy_samples",
     "energy_scope",

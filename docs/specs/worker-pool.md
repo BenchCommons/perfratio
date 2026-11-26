@@ -1,6 +1,6 @@
 # Spec: `--jobs <N|auto>` independent parallel worker pool (#306)
 
-**Status:** Shipped in 1.1 (schemaVersion 1.21). Parent tracker: #53. Follow-up: #307 (CPU partitioning).
+**Status:** Shipped in 1.1 (schemaVersion 1.22). Parent tracker: #53. Follow-up: #307 (CPU partitioning).
 
 ## Problem / Motivation
 References: #306, #53, #304 (trust tracker), `megafine` (`-j/--jobs`, `--schedule`), hyperfine#58.
@@ -70,7 +70,7 @@ worker is free. Commands are served least-started-first, so they interleave.
 - Hardware counters (`--counters` etc.) are opened per run on the worker thread and work as
   before. Energy is rejected (see above).
 
-### JSON (additive, MINOR bump to 1.21; see `output-schema-contract.md`)
+### JSON (additive, MINOR bump to 1.22; see `output-schema-contract.md`)
 Only with `--jobs` > 1:
 ```jsonc
 "perfratio": { "execution": { "jobs": 4, "schedule_policy": "saturate", "contended": true } }
@@ -86,7 +86,7 @@ should refuse to mix `contended` results with sequential ones (trust tracker #30
 - Integration (`tests/jobs_tests.rs`, `--debug-mode` and, on Unix, real commands): option
   errors, JSON fields, run counts, wall-clock speedup, `exclusive` with a lock directory
   command, `fair` run counts, `PERFRATIO_WORKER_ID` and `PERFRATIO_RUN_ID`, Ctrl-C.
-- Schema: `tests/json_schema_tests.rs` has `--jobs` cases; `docs/schema/1.21/` is the archived schema (#319).
+- Schema: `tests/json_schema_tests.rs` has `--jobs` cases; `docs/schema/1.22/` is the archived schema (#319).
 
 ## Not done
 - The per-worker CPU partition (#307).

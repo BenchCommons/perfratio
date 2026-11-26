@@ -641,6 +641,33 @@ impl BenchmarkResult {
         }
     }
 
+    /// The central value of the metric under the installed `--estimator`: the
+    /// mean by default (exactly `primary_mean`), the median or a percentile of
+    /// the per-run samples otherwise. `None` when there is no data for the
+    /// metric, or no per-run samples to take a median or percentile of
+    /// (e.g. imported results without `times`); never a made-up value.
+    pub fn primary_center(&self, metric: Metric) -> Option<f64> {
+        self.primary_center_with(metric, crate::stats::settings::current().estimator)
+    }
+
+    /// [`Self::primary_center`] with an explicit estimator.
+    pub fn primary_center_with(
+        &self,
+        metric: Metric,
+        estimator: crate::stats::settings::Estimator,
+    ) -> Option<f64> {
+        use crate::stats::settings::Estimator;
+        if estimator.is_mean() {
+            return self.primary_mean(metric);
+        }
+        self.primary_mean(metric)?;
+        match self.primary_samples(metric) {
+            Some(samples) if !samples.is_empty() => Some(estimator.estimate(&samples)),
+            _ if metric == Metric::Wall && estimator == Estimator::Median => Some(self.median),
+            _ => None,
+        }
+    }
+
     /// Computes the standard deviation for the specified metric.
     pub fn primary_stddev(&self, metric: Metric) -> Option<f64> {
         match metric {
