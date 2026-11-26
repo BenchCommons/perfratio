@@ -1,6 +1,6 @@
 # Spec: effective CPU frequency and throttling detection (#222)
 
-**Status:** Implemented on Linux (#222, schemaVersion 1.11). Not run on hardware: the
+**Status:** Implemented on Linux (#222, schemaVersion 1.12). Not run on hardware: the
 `PERFRATIO_TEST_PERF=1` checks against `perf stat` and fixed-frequency governors.
 
 ## Implementation notes (deviations from the proposal)
