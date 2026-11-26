@@ -5,3 +5,7 @@
 # insta: pending snapshot reviews are local artifacts, never commit them
 *.pending-snap
 *.snap.new
+fuzz/target/
+fuzz/corpus/
+fuzz/artifacts/
+fuzz/Cargo.lock

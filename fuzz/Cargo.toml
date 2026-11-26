@@ -1,0 +1,33 @@
+[package]
+name = "perfratio-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+tempfile = "3"
+
+[dependencies.perfratio]
+path = ".."
+
+# Not part of the perfratio package or any workspace: build with
+# `cargo +nightly fuzz build` from the repository root.
+[workspace]
+
+[[bin]]
+name = "import_json"
+path = "fuzz_targets/import_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "command_splitter"
+path = "fuzz_targets/command_splitter.rs"
+test = false
+doc = false
+bench = false
