@@ -21,17 +21,37 @@ pub enum Dimension {
     PeakMemory,
     Energy,
     Power,
+    /// Hardware counters (`--counters`, #49)
+    Instructions,
+    Cycles,
+    CacheMisses,
+    BranchMisses,
 }
 
 impl Dimension {
-    pub const ALL: [Dimension; 6] = [
+    pub const ALL: [Dimension; 10] = [
         Dimension::WallTime,
         Dimension::PeakMemory,
         Dimension::Energy,
         Dimension::Power,
         Dimension::CpuUser,
         Dimension::CpuSystem,
+        Dimension::Instructions,
+        Dimension::Cycles,
+        Dimension::CacheMisses,
+        Dimension::BranchMisses,
     ];
+
+    /// Name of the counter in `BenchmarkResult::counters`
+    fn counter_name(self) -> Option<&'static str> {
+        match self {
+            Dimension::Instructions => Some("instructions"),
+            Dimension::Cycles => Some("cycles"),
+            Dimension::CacheMisses => Some("cache-misses"),
+            Dimension::BranchMisses => Some("branch-misses"),
+            _ => None,
+        }
+    }
 
     pub fn label(self) -> &'static str {
         match self {
@@ -41,6 +61,10 @@ impl Dimension {
             Dimension::PeakMemory => "Peak RSS",
             Dimension::Energy => "Energy (RAPL)",
             Dimension::Power => "Average power",
+            Dimension::Instructions => "Instructions",
+            Dimension::Cycles => "CPU cycles",
+            Dimension::CacheMisses => "Cache misses",
+            Dimension::BranchMisses => "Branch misses",
         }
     }
 
@@ -52,6 +76,10 @@ impl Dimension {
             Dimension::PeakMemory => format_bytes(value.max(0.0).round() as u64),
             Dimension::Energy => format!("{value:.3} J"),
             Dimension::Power => format!("{value:.2} W"),
+            Dimension::Instructions
+            | Dimension::Cycles
+            | Dimension::CacheMisses
+            | Dimension::BranchMisses => crate::benchmark::format_count(value),
         }
     }
 
@@ -67,6 +95,14 @@ impl Dimension {
                 .map(|v| v.iter().map(|&b| b as f64).collect()),
             Dimension::Energy => r.energy_joules.clone(),
             Dimension::Power => None,
+            Dimension::Instructions
+            | Dimension::Cycles
+            | Dimension::CacheMisses
+            | Dimension::BranchMisses => {
+                // Only when every run has a value (`null` marks a failed read)
+                let values = r.counters.as_ref()?.get(self.counter_name()?)?;
+                values.iter().map(|v| v.map(|v| v as f64)).collect()
+            }
         }
         .filter(|v| !v.is_empty())
     }
@@ -83,6 +119,14 @@ impl Dimension {
             Dimension::Energy => r.mean_energy_joules,
             Dimension::Power => r.mean_watts,
             Dimension::PeakMemory => None,
+            Dimension::Instructions
+            | Dimension::Cycles
+            | Dimension::CacheMisses
+            | Dimension::BranchMisses => r
+                .counters_summary
+                .as_ref()
+                .and_then(|s| s.get(self.counter_name()?))
+                .map(|s| s.mean),
         }
         .filter(|m| m.is_finite())
     }
@@ -649,6 +693,36 @@ Benchmark comparison (Reference: 'cmd_a')
   CPU time (user)    53.8 ms             100.0 ms            +86.0%          -
   CPU time (system)  26.9 ms             50.0 ms             +86.0%          -
 "#);
+    }
+
+    #[test]
+    fn counter_rows_appear_only_when_both_have_counters() {
+        let counters = |scale: f64| {
+            let mut m = std::collections::BTreeMap::new();
+            let v: Vec<Option<u64>> = [1000u64, 1010, 990, 1005, 995, 1000]
+                .iter()
+                .map(|v| Some((*v as f64 * scale) as u64))
+                .collect();
+            m.insert("instructions".to_string(), v);
+            m
+        };
+        let mut a = full("a", 1.0);
+        let mut b = full("b", 1.0);
+        let none = compute_rows(&a, &b);
+        assert!(none.iter().all(|r| r.dimension != Dimension::Instructions));
+        a.counters = Some(counters(1.0));
+        assert!(compute_rows(&a, &b)
+            .iter()
+            .all(|r| r.dimension != Dimension::Instructions));
+        b.counters = Some(counters(2.0));
+        let rows = compute_rows(&a, &b);
+        let row = rows
+            .iter()
+            .find(|r| r.dimension == Dimension::Instructions)
+            .expect("instructions row");
+        assert!((row.relative.unwrap() - 1.0).abs() < 0.01);
+        assert_eq!(row.verdict, Verdict::Regression);
+        assert_eq!(Dimension::Instructions.label(), "Instructions");
     }
 
     #[test]

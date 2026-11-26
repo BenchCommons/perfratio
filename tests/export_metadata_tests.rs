@@ -167,7 +167,7 @@ fn json_starts_with_schema_version_and_has_no_joulex_key() {
     let text = std::fs::read_to_string(&path).unwrap();
     // `schemaVersion` must be the first key of the document
     assert!(
-        text.starts_with("{\n  \"schemaVersion\": \"1.2\","),
+        text.starts_with("{\n  \"schemaVersion\": \"1.3\","),
         "{text}"
     );
     let json: serde_json::Value = serde_json::from_str(&text).unwrap();
@@ -264,6 +264,7 @@ fn schema_1_1_layout_snapshot() {
     });
     insta::assert_yaml_snapshot!(serde_json::Value::Object(layout), @r#"
     measurements:
+      counters: not_requested
       energy: not_requested
       memory: measured
       resources: not_requested

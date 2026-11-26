@@ -86,9 +86,10 @@ impl<'a> Scheduler<'a> {
             }
             let mut executor: Box<dyn Executor> = match kind {
                 ExecutorKind::Raw => Box::new(RawExecutor::new(self.options)),
-                ExecutorKind::Mock(shell) => {
-                    Box::new(MockExecutor::new(shell.clone(), self.options.timeout))
-                }
+                ExecutorKind::Mock(shell) => Box::new(
+                    MockExecutor::new(shell.clone(), self.options.timeout)
+                        .with_counters(self.options.counters.clone()),
+                ),
                 ExecutorKind::Shell(shell) => Box::new(ShellExecutor::new(shell, self.options)),
             };
             executor.calibrate()?;
@@ -836,6 +837,7 @@ fn generate_results(args: &[&'static str]) -> Result<Vec<BenchmarkResult>> {
         options.time_unit,
         options.sort_order_exports,
         options.metric,
+        options.counters.as_ref(),
     )?;
 
     options.validate_against_command_list(&commands)?;

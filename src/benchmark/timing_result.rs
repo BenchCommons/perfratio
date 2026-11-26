@@ -69,6 +69,9 @@ pub struct TimingResult {
     /// OS resource counters (None on Windows and for mocked runs)
     pub counters: Option<ResourceCounters>,
 
+    /// Hardware counter totals (`--counters`, None when not collected)
+    pub hw_counters: Option<crate::perf_counters::HwReading>,
+
     /// Whether this run timed out
     pub timed_out: bool,
 

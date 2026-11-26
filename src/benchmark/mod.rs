@@ -63,6 +63,8 @@ pub struct BenchmarkRunner<'a> {
     pub exit_codes: Vec<Option<i32>>,
     /// OS resource counters per run (`None` where unavailable, e.g. Windows)
     pub resource_counters: Vec<Option<timing_result::ResourceCounters>>,
+    /// Hardware counter totals per run (`--counters`), aligned with the times
+    pub hw_counters: Vec<Option<crate::perf_counters::HwReading>>,
     /// Per-run parameter values of each run, as (name, value) pairs
     pub per_run_values: Vec<Vec<(String, String)>>,
     pub all_succeeded: bool,
@@ -162,6 +164,7 @@ impl<'a> BenchmarkRunner<'a> {
             energy_measurements: vec![],
             exit_codes: vec![],
             resource_counters: vec![],
+            hw_counters: vec![],
             per_run_values: vec![],
             all_succeeded: true,
             count: 0,
@@ -556,6 +559,7 @@ impl<'a> BenchmarkRunner<'a> {
             .push(self.subtract_baseline_energy(energy_initial));
         self.exit_codes.push(extract_exit_code(status));
         self.resource_counters.push(res.counters);
+        self.hw_counters.push(res.hw_counters);
         self.per_run_values.push(
             self.command
                 .per_run_values(&BenchmarkIteration::Benchmark(0)),
@@ -596,6 +600,7 @@ impl<'a> BenchmarkRunner<'a> {
             .push(self.subtract_baseline_energy(energy));
         self.exit_codes.push(extract_exit_code(status));
         self.resource_counters.push(res.counters);
+        self.hw_counters.push(res.hw_counters);
         self.per_run_values.push(
             self.command
                 .per_run_values(&BenchmarkIteration::Benchmark(iteration)),
@@ -661,6 +666,12 @@ impl<'a> BenchmarkRunner<'a> {
         }
         self.exit_codes = select(&self.exit_codes, keep);
         self.resource_counters = select(&self.resource_counters, keep);
+        if self.hw_counters.len() == run_count {
+            self.hw_counters = keep
+                .iter()
+                .map(|&index| self.hw_counters[index].clone())
+                .collect();
+        }
         if self.per_run_values.len() == run_count {
             self.per_run_values = keep
                 .iter()
@@ -785,6 +796,13 @@ impl<'a> BenchmarkRunner<'a> {
         }
 
         let num_omitted_failed_runs = omitted_failed_runs.len();
+
+        // Hardware counters of the runs that are kept (aligned with the times)
+        let hw_export = self
+            .options
+            .counters
+            .as_ref()
+            .and_then(|config| crate::perf_counters::export(config, &self.hw_counters));
 
         let t_num = self.times_real.len();
         let (t_mean, t_stddev, t_median, t_min, t_max, user_mean, system_mean) =
@@ -1182,6 +1200,10 @@ impl<'a> BenchmarkRunner<'a> {
                     );
                 }
 
+                if let Some(line) = hw_export.as_ref().and_then(|e| e.line.as_ref()) {
+                    crate::outln!("  Counters (mean):    {}", line.dimmed());
+                }
+
                 if self.options.show_resource_usage {
                     match self.resource_summary() {
                         Some(line) => crate::outln!("  Resources (mean):   {}", line.dimmed()),
@@ -1456,6 +1478,10 @@ impl<'a> BenchmarkRunner<'a> {
             Diagnostics::default()
         };
 
+        if let Some(warning) = hw_export.as_ref().and_then(|e| e.warning.as_ref()) {
+            eprintln!("  {}", colors::yellow(warning));
+        }
+
         if !warnings.is_empty() {
             eprintln!(" ");
 
@@ -1556,7 +1582,17 @@ impl<'a> BenchmarkRunner<'a> {
             diagnostics: (!diagnostics.is_empty()).then_some(diagnostics),
             per_run_parameters,
             baseline,
-            efficiency: None,
+            efficiency: hw_export.as_ref().and_then(|e| e.efficiency),
+            counters: hw_export.as_ref().map(|e| e.counters.clone()),
+            counters_summary: hw_export.as_ref().map(|e| e.summary.clone()),
+            counters_multiplexed_runs: hw_export
+                .as_ref()
+                .map(|e| e.multiplexed_runs)
+                .filter(|&n| n > 0),
+            counters_scope: hw_export
+                .as_ref()
+                .and(self.options.counters.as_ref())
+                .map(|c| c.scope.as_str().to_string()),
             shell: self
                 .options
                 .has_per_command_shells()
@@ -2013,7 +2049,7 @@ impl<'a> Benchmark<'a> {
 }
 
 /// Compact count for the resource line: 3, 12.5, 1.2k, 3.4M.
-fn format_count(value: f64) -> String {
+pub fn format_count(value: f64) -> String {
     if value >= 1e6 {
         format!("{:.1}M", value / 1e6)
     } else if value >= 1e3 {

@@ -30,6 +30,8 @@ pub struct ExportMetadata {
 pub enum MeasurementStatus {
     /// Requested and the backend works
     Measured,
+    /// Requested; only some of the events work (`counters`)
+    Partial,
     /// Requested, but the backend could not be used
     Unavailable,
     /// The flag was not given
@@ -46,6 +48,15 @@ pub struct Measurements {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub energy_unavailable_reason: Option<&'static str>,
     pub resources: MeasurementStatus,
+    /// Hardware counters (`--counters`)
+    pub counters: MeasurementStatus,
+    /// Why counters are `unavailable`: `unsupported_platform`, `perf_paranoid`,
+    /// `no_pmu` or `other` (open enum)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub counters_unavailable_reason: Option<&'static str>,
+    /// Requested events that could not be opened (status `partial`)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub counters_unavailable_events: Option<Vec<&'static str>>,
 }
 
 impl Measurements {
@@ -70,7 +81,30 @@ impl Measurements {
             } else {
                 NotRequested
             },
+            counters: NotRequested,
+            counters_unavailable_reason: None,
+            counters_unavailable_events: None,
         }
+    }
+
+    /// Records the outcome of `--counters` (`None`: not requested).
+    pub fn with_counters(mut self, config: Option<&crate::perf_counters::CounterConfig>) -> Self {
+        use crate::perf_counters::Availability;
+        let Some(config) = config else {
+            return self;
+        };
+        match &config.availability {
+            Availability::Measured => self.counters = MeasurementStatus::Measured,
+            Availability::Partial(events) => {
+                self.counters = MeasurementStatus::Partial;
+                self.counters_unavailable_events = Some(events.iter().map(|k| k.name()).collect());
+            }
+            Availability::Unavailable(reason) => {
+                self.counters = MeasurementStatus::Unavailable;
+                self.counters_unavailable_reason = Some(reason.as_str());
+            }
+        }
+        self
     }
 }
 

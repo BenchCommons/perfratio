@@ -127,6 +127,23 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resources: Option<super::timing_result::ResourceSeries>,
 
+    /// Per-run hardware counter totals (`--counters`), aligned with `times`;
+    /// `null` where a run could not be read. See `docs/specs/hardware-counters.md`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub counters: Option<BTreeMap<String, Vec<Option<u64>>>>,
+
+    /// Mean, deviation, median and range of every counter over the runs
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub counters_summary: Option<BTreeMap<String, MetricSummary>>,
+
+    /// Runs in which at least one counter was scaled for multiplexing
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub counters_multiplexed_runs: Option<usize>,
+
+    /// Privilege levels counted: `all` (user + kernel) or `user`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub counters_scope: Option<String>,
+
     /// Number of planned runs if the benchmark was interrupted
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runs_planned: Option<u64>,
