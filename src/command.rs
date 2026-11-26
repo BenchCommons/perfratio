@@ -294,6 +294,22 @@ impl<'a> Command<'a> {
         }
     }
 
+    /// A copy of this command with one more parameter (`--optimize`).
+    pub fn with_parameter(&self, name: &'a str, value: ParameterValue) -> Command<'a> {
+        let mut command = self.clone();
+        command.parameters.push((name, value));
+        command
+    }
+
+    /// Whether `{name}` occurs in the command line.
+    pub fn uses_parameter(&self, name: &str) -> bool {
+        let placeholder = format!("{{{name}}}");
+        match &self.argv {
+            Some(argv) => argv.iter().any(|arg| arg.contains(&placeholder)),
+            None => self.expression.contains(&placeholder),
+        }
+    }
+
     pub fn get_parameters(&self) -> &[(&'a str, ParameterValue)] {
         &self.parameters
     }

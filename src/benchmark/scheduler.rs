@@ -7,12 +7,14 @@ use std::cmp::Ordering;
 use crate::command::{Command, Commands};
 use crate::export::ExportManager;
 use crate::metric::Metric;
+use crate::optimize::{self, OptimizeReport, PointData};
 use crate::options::{ExecutorKind, Options, OutputStyleOption, ScheduleMode, SortOrder};
 use crate::output::colors;
 use crate::output::format::{format_duration, format_duration_unit};
 use crate::output::progress_bar::{
     format_progress_estimate, get_progress_bar, replace_message_template,
 };
+use crate::parameter::ParameterValue;
 use crate::stats::significance::Significance;
 
 use anyhow::Result;
@@ -27,6 +29,17 @@ pub struct Scheduler<'a> {
     /// necessarily 0.
     reference_index: Option<usize>,
     imported_count: usize,
+    /// One report per `--optimize` search
+    optimize_reports: Vec<OptimizeReport>,
+}
+
+/// The `optimize` JSON value: an object for one search, an array for several.
+fn optimize_json(reports: &[OptimizeReport]) -> Option<serde_json::Value> {
+    match reports {
+        [] => None,
+        [one] => serde_json::to_value(one).ok(),
+        many => serde_json::to_value(many).ok(),
+    }
 }
 
 impl<'a> Scheduler<'a> {
@@ -42,6 +55,7 @@ impl<'a> Scheduler<'a> {
             results: vec![],
             reference_index: None,
             imported_count: 0,
+            optimize_reports: Vec::new(),
         }
     }
 
@@ -415,6 +429,88 @@ impl<'a> Scheduler<'a> {
                 self.export_manager
                     .write_results(&intermediate_results, reference, true)?;
             }
+        } else if let Some(spec) = self.options.optimize.as_ref() {
+            // `--optimize`: for each command, search the parameter instead of
+            // benchmarking a fixed list of values
+            let options = self.options;
+            let metric = options.metric;
+            let results = &mut self.results;
+            for &(number, base) in &commands_to_run {
+                if crate::util::interrupt::interrupted() {
+                    break;
+                }
+                let mut points: Vec<PointData> = Vec::new();
+                let outcome = optimize::golden_section_min(spec.min, spec.max, spec.budget, |x| {
+                    if crate::util::interrupt::interrupted() {
+                        return Ok(None);
+                    }
+                    let cmd = base.with_parameter(&spec.var, ParameterValue::Text(x.to_string()));
+                    let Some(res) =
+                        Benchmark::new(number, results.len(), &cmd, options, executor_for(number))
+                            .with_baseline(baseline_for(number))
+                            .run()?
+                    else {
+                        return Ok(None);
+                    };
+                    let value = res
+                        .primary_mean(metric)
+                        .filter(|v| v.is_finite() && *v != 0.0);
+                    let Some(value) = value else {
+                        anyhow::bail!(
+                            "'--optimize': the {} of '{}' is {}, so the search cannot compare it. \
+                                 Is the metric available (e.g. readable energy counters)?",
+                            metric.name(),
+                            cmd.get_command_line(),
+                            res.primary_mean(metric)
+                                .map_or("missing".to_string(), |v| v.to_string())
+                        );
+                    };
+                    let samples = res.primary_samples(metric);
+                    let se = match (&samples, res.primary_stddev(metric)) {
+                        (Some(s), Some(sd)) if !s.is_empty() => sd / (s.len() as f64).sqrt(),
+                        _ => 0.0,
+                    };
+                    points.push(PointData {
+                        x,
+                        value,
+                        se,
+                        samples,
+                        wall_mean: res.mean,
+                        command: cmd.get_command_line(),
+                    });
+                    results.push(res);
+
+                    // Export after each evaluation, as for ordinary benchmarks
+                    let intermediate: Vec<_> = if options.filter_failed {
+                        results
+                            .iter()
+                            .filter(|r| !r.has_failure())
+                            .cloned()
+                            .collect()
+                    } else {
+                        results.clone()
+                    };
+                    self.export_manager
+                        .write_results(&intermediate, None, true)?;
+                    Ok(Some(value))
+                })?;
+                let fixed = base
+                    .get_parameters()
+                    .iter()
+                    .map(|(name, value)| (name.to_string(), value.to_string()))
+                    .collect();
+                if let Some(report) = optimize::analyze(spec, metric, &outcome, &points, fixed) {
+                    if options.output_style != OutputStyleOption::Disabled {
+                        crate::outln!("\n{}", optimize::summary(spec, metric, &report, &points));
+                    }
+                    if report.unimodal_warning {
+                        eprintln!("{}", optimize::unimodal_warning_text(&spec.var));
+                    }
+                    self.optimize_reports.push(report);
+                }
+            }
+            self.export_manager
+                .set_optimize(optimize_json(&self.optimize_reports));
         } else {
             for (number, cmd) in commands_to_run {
                 if crate::util::interrupt::interrupted() {
