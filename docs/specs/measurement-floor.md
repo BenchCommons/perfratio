@@ -19,7 +19,7 @@ Once per session and per distinct executor (shell), right after the shell calibr
 runs a trivial command 2 times (discarded) and then up to 20 times: `true` without a shell
 (`cmd /C exit 0` on Windows), `exit 0` through a shell (a builtin of sh, cmd and PowerShell). It uses
 the executor of the benchmark, so shell, affinity, priority and output policy are the same. Collection
-stops after about one second (at least 5 runs). A failure gives no floor and the check is `unavailable`.
+stops after 0.2 s (at least 5 runs after the 2 discarded ones), so slow spawns cost little startup time. A failure gives no floor and the check is `unavailable`.
 
 - `wall_floor`: median wall time minus the shell spawn time the runner subtracts from every run
   (never below 0).

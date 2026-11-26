@@ -22,7 +22,7 @@ const WARMUP_RUNS: usize = 2;
 /// Fewest runs for a floor estimate
 const MIN_RUNS: usize = 5;
 /// Calibration stops collecting after this long (but keeps at least [`MIN_RUNS`])
-pub const CALIBRATION_BUDGET: Duration = Duration::from_millis(1000);
+pub const CALIBRATION_BUDGET: Duration = Duration::from_millis(200);
 
 /// `--calibrate`
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

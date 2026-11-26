@@ -514,7 +514,7 @@ pub fn build_command() -> Command {
                     "Measure the runner floor before benchmarking: the wall time and peak memory \
                      of a trivial command ('true', or 'exit 0' through a shell) started the same \
                      way as the benchmarks (shell, affinity, priority, output policy). About 20 \
-                     runs, at most about a second, once per session and shell.\n\n  \
+                     runs, at most about 0.2 s, once per session and shell.\n\n  \
                      auto  Measure the floor (default)\n  \
                      off   Do not measure it\n\n\
                      A command is 'below resolution' when its mean is less than 3 floors, or the \
