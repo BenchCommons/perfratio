@@ -114,6 +114,8 @@ must rebase and take the next free version; this change adds no field that depen
 - Budget larger than the grid: exhaustive. A grid of one point: that point.
 - A metric that is missing, 0 or not finite aborts, as in #98.
 - Ctrl-C: the points so far are ranked and exported, `interrupted: true`, no validation.
+  The ranking uses the highest rung reached; if Ctrl-C hits mid-rung, that rung can hold a single
+  point, which then ranks first without having been compared at that fidelity.
 - `halving` on an exhaustive grid still runs its rungs, so `cost.benchmarks` can exceed `points`.
 - Grids over `u128` saturate when counting; points are decoded from a `u128` index.
 

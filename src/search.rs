@@ -465,7 +465,8 @@ fn candidates(
     }
     let mut out: Vec<Vec<i64>> = Vec::with_capacity(MAX_CANDIDATES);
     let mut tried = HashSet::new();
-    while out.len() < MAX_CANDIDATES {
+    // Stop once every point was drawn: fewer than MAX_CANDIDATES may remain unseen
+    while out.len() < MAX_CANDIDATES && (tried.len() as u128) < space {
         let index = rng.below(space);
         if !tried.insert(index) {
             continue;
@@ -981,6 +982,15 @@ mod tests {
             seed: 7,
             validate: false,
         }
+    }
+
+    #[test]
+    fn candidates_terminate_when_few_points_are_unseen() {
+        let s = spec(&[("A", 1, 5000)], Algorithm::Bayesian, 4000);
+        let seen: HashSet<Vec<i64>> = (1..=4000).map(|i| vec![i]).collect();
+        let c = candidates(&s, 5000, &seen, &mut Rng(1));
+        assert_eq!(c.len(), 1000);
+        assert!(c.iter().all(|p| !seen.contains(p)));
     }
 
     fn eval(value: f64, runs: u64) -> Eval {
