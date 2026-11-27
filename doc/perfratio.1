@@ -235,6 +235,7 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR TEXT ]
 .RB [ \-\-until\-stderr ]
 .RB [ \-\-region [ =\fINAME\fR ]]
+.RB [ \-\-region\-scope ]
 .RB [ \-\-output\-metric
 .IR NAME=REGEX ]
 .RB [ \-\-output\-metric\-stderr ]
@@ -626,6 +627,10 @@ Match the pattern specified by \fB\-\-until\fR against stderr instead of stdout.
 \fB\-\-region\fR[=\fINAME\fR]
 .IP
 Measure only the region(s) the program brackets with the perfratio region SDK (see \fBsdk/\fR and \fBdocs/specs/region-protocol.md\fR). Without NAME the region \fBdefault\fR is measured. Can be given several times. perfratio passes the path of an event file in \fBPERFRATIO_REGION_FILE\fR and the protocol version in \fBPERFRATIO_REGION_PROTOCOL\fR; the SDK appends start and stop events with monotonic timestamps. The JSON export lists \fBregions\fR next to the whole-process times and \fB\-\-metric region:\fINAME\fR\fR ranks on one. CPU time, memory, counters and energy still cover the whole process. A command that reports no region fails. Conflicts with \fB\-\-concurrency\fR and \fB\-\-subtract\fR.
+.HP
+\fB\-\-region\-scope\fR
+.IP
+With \fB\-\-region\fR: also report the CPU time, the energy (with \fB\-\-energy\fR) and the hardware counters (with \fB\-\-counters\fR, Linux) spent inside each region, as \fBregions[].metrics[]\fR with scope \fBregion\fR. perfratio reads them when the SDK reports the start and the stop (the SDK writes every marker at once when \fBPERFRATIO_REGION_LIVE\fR is 1), so a thread of perfratio polls while the program runs; the error is bounded by the marker latency (see \fBdocs/specs/region-scope.md\fR). Whole-process values are unchanged. Needs \fB\-\-region\fR or \fB\-\-metric region:\fINAME\fR. Conflicts with \fB\-\-concurrency\fR and \fB\-\-subtract\fR.
 .HP
 \fB\-\-output\-metric\fR \fINAME=REGEX\fP
 .IP
