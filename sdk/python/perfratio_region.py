@@ -47,6 +47,8 @@ class Recorder:
         self._flushed = 0
         self._hello = False
         self._warned = False
+        # PERFRATIO_REGION_LIVE=1 (--region-scope): write every marker at once
+        self._live = os.environ.get("PERFRATIO_REGION_LIVE") == "1"
         self._lock = threading.Lock()
 
     @property
@@ -77,6 +79,8 @@ class Recorder:
             if kind == "start":
                 t = _clock()
             self._events.append("%s %s %d\n" % (kind, name, t))
+        if self._live:
+            self.flush()
 
     def flush(self):
         if self.path is None:

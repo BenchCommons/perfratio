@@ -54,6 +54,8 @@ pub struct Recorder {
     events: String,
     hello_written: bool,
     warned: bool,
+    /// `PERFRATIO_REGION_LIVE=1` (`--region-scope`): write every marker at once
+    live: bool,
 }
 
 impl Recorder {
@@ -65,6 +67,7 @@ impl Recorder {
             events: String::new(),
             hello_written: false,
             warned: false,
+            live: std::env::var("PERFRATIO_REGION_LIVE").is_ok_and(|v| v == "1"),
         }
     }
 
@@ -102,6 +105,9 @@ impl Recorder {
         }
         let t = stop_time.unwrap_or_else(|| self.epoch.elapsed());
         let _ = writeln!(self.events, "{kind} {name} {}", t.as_nanos());
+        if self.live {
+            self.flush();
+        }
     }
 
     /// Append the buffered events (and the `hello` line, once) to the file.

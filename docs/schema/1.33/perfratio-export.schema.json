@@ -497,17 +497,6 @@
               "minimum": 0,
               "description": "Unsigned 64-bit; may exceed 2^53, so read it as an integer, not a double."
             },
-            "noise_threshold": {
-              "type": "number",
-              "minimum": 0,
-              "description": "New in 1.33 (#323): --noise-threshold as a fraction (0.05 = 5%). Present only when set."
-            },
-            "equivalence_margin": {
-              "type": "number",
-              "exclusiveMinimum": 0,
-              "exclusiveMaximum": 1,
-              "description": "New in 1.33 (#323): --equivalence-margin as a fraction. Present only when set."
-            },
             "correction": {
               "type": "object",
               "description": "New in 1.32 (#321): the multiple-comparison correction behind p_value_adjusted and significance. Present only with --correction other than none.",
@@ -1245,37 +1234,6 @@
           "type": "number",
           "description": "p-value of the bootstrap Welch test against the reference."
         },
-        "effect": {
-          "type": "object",
-          "description": "New in 1.33 (#323): the change relative to the reference with its interval at statistics.confidence_level. Present only with --noise-threshold or --equivalence-margin, and when the comparison has per-run times.",
-          "properties": {
-            "relative_change": { "type": "number", "description": "other / reference - 1 of the estimator (0.05 = 5% slower)." },
-            "ci_low": { "type": "number" },
-            "ci_high": { "type": "number" },
-            "standardized": {
-              "type": "object",
-              "properties": {
-                "cohens_d": { "type": "number", "description": "Difference of the means over the pooled standard deviation; positive: slower than the reference." },
-                "common_language": { "type": "number", "minimum": 0, "maximum": 1, "description": "Probability that a run is slower than a run of the reference, ties counting half (Mann-Whitney U / (n m))." }
-              },
-              "required": ["cohens_d", "common_language"]
-            },
-            "minimum_detectable_effect": { "type": "number", "minimum": 0, "description": "Smallest relative change detected with 80% power at the current runs and variance." },
-            "runs_needed": { "type": "integer", "minimum": 2, "description": "Runs per command for the equivalence test to succeed with 80% power; only for an inconclusive result." }
-          },
-          "required": ["relative_change", "ci_low", "ci_high"]
-        },
-        "classification": {
-          "type": "string",
-          "enum": ["faster", "slower", "equivalent", "inconclusive", "within_noise"],
-          "description": "New in 1.33 (#323): closed enum; present together with effect."
-        },
-        "equivalence_p_value": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1,
-          "description": "New in 1.33 (#323): p-value of the equivalence test (TOST); only with --equivalence-margin and the mean estimator."
-        },
         "p_value_adjusted": {
           "type": "number",
           "minimum": 0,
@@ -1840,6 +1798,13 @@
         "sdk": {
           "type": "string",
           "description": "Identifier the SDK announced in its hello line."
+        },
+        "metrics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/region_metric"
+          },
+          "description": "New in 1.33 (#371): `--region-scope` only. CPU time, energy and counters inside the region, read when the SDK reported the markers (docs/specs/region-scope.md). Omitted without the flag."
         }
       },
       "required": [
@@ -1852,6 +1817,43 @@
         "times"
       ],
       "description": "Time inside one instrumented region, in seconds (see docs/specs/region-protocol.md)."
+    },
+    "region_metric": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "`cpu_user`, `cpu_system`, `energy` or a counter name such as `instructions`."
+        },
+        "unit": {
+          "enum": ["s", "J", "count"]
+        },
+        "scope": {
+          "const": "region",
+          "description": "Always `region`. The whole-process values under `results[]` stay unchanged."
+        },
+        "mean": {
+          "type": "number"
+        },
+        "stddev": {
+          "type": ["number", "null"]
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": ["number", "null"]
+          },
+          "description": "Per run, aligned with `results[].times`; null = could not be read, never 0."
+        }
+      },
+      "required": ["name", "unit", "scope", "mean", "min", "max", "values"],
+      "description": "One value measured inside a region (new in 1.33, #371), summed over the region's start/stop pairs of a run."
     },
     "optimize": {
       "type": "object",

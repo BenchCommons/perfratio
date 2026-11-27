@@ -85,8 +85,10 @@ stop <name> <t_ns>
 
 ### Scope of the other metrics
 User and system CPU time, peak RSS, hardware counters, resource usage and energy stay **whole
-process**. Only the metrics under `regions` and `--metric region:<name>` are region scoped. A
-later issue may add region-scoped collection.
+process**. Only the metrics under `regions` and `--metric region:<name>` are region scoped.
+`--region-scope` (#371, `region-scope.md`) adds region-scoped CPU time, energy and counters
+under `regions[].metrics`; clients then write every marker at once when
+`PERFRATIO_REGION_LIVE=1`.
 
 ### JSON (schemaVersion 1.23, additive)
 ```jsonc
@@ -131,5 +133,5 @@ metric.
 - Real SDKs: `tests/sdk_tests.rs` (#311).
 
 ## Out of scope
-Region-scoped CPU time, counters and energy; several threads per name; nested same-name
+Several threads per name; nested same-name
 regions; streaming events while the program runs.
