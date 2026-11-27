@@ -518,6 +518,8 @@ Exit with code 5 if the quality grade of any benchmark is worse than GRADE (comp
 \fB\-\-thermal\fR
 .IP
 Sample the hottest CPU temperature sensor (Linux thermal zones and hwmon) on a background thread while the benchmark runs, and report it as interference.thermal and in the environment_stability quality check. Off by default: on some hosts (cloud VMs) reading the sensors takes about a second. \fB\-\-cooldown\fR until\-temp reads the sensors either way.
+.IP
+macOS has no CPU temperature without root: perfratio records the coarse thermal pressure level (nominal, moderate, heavy, trapping, sleeping) as interference.thermal_pressure instead. Windows: not supported yet.
 .HP
 \fB\-\-cooldown\fR \fIDURATION|until\-temp=C\fP
 .IP
@@ -759,7 +761,7 @@ Pin every benchmarked command (and \fB\-\-prepare\fR/\fB\-\-conclude\fR/\fB\-\-s
 .HP
 \fB\-\-check\-system\fR\fI[=MODE]\fP
 .IP
-Before benchmarking, report system conditions that make results noisy or irreproducible, with a hint for each problem. Linux: CPU frequency governor, turbo boost, load average, power source, temperature. macOS: load average, power source, Low Power Mode, thermal throttling. \fB\-\-check\-system\fR (or =warn) only reports. \fB\-\-check\-system\fR=strict aborts with exit code 4 if any check does not pass, which is useful on dedicated benchmark machines and CI runners.
+Before benchmarking, report system conditions that make results noisy or irreproducible, with a hint for each problem. Linux: CPU frequency governor, turbo boost, load average, power source, temperature. macOS: load average, power source, Low Power Mode, thermal throttling, thermal pressure. \fB\-\-check\-system\fR (or =warn) only reports. \fB\-\-check\-system\fR=strict aborts with exit code 4 if any check does not pass, which is useful on dedicated benchmark machines and CI runners.
 .HP
 \fB\-\-priority\fR \fIPOLICY\fP
 .IP

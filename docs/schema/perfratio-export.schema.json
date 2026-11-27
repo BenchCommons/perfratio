@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.36 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.37 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.36",
+      "const": "1.37",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -1801,6 +1801,47 @@
                 "max_c"
               ],
               "description": "Hottest CPU temperature sensor in degrees Celsius."
+            },
+            "thermal_pressure": {
+              "type": "object",
+              "properties": {
+                "start": {
+                  "type": "string",
+                  "enum": [
+                    "nominal",
+                    "moderate",
+                    "heavy",
+                    "trapping",
+                    "sleeping"
+                  ]
+                },
+                "end": {
+                  "type": "string",
+                  "enum": [
+                    "nominal",
+                    "moderate",
+                    "heavy",
+                    "trapping",
+                    "sleeping"
+                  ]
+                },
+                "max": {
+                  "type": "string",
+                  "enum": [
+                    "nominal",
+                    "moderate",
+                    "heavy",
+                    "trapping",
+                    "sleeping"
+                  ]
+                }
+              },
+              "required": [
+                "start",
+                "end",
+                "max"
+              ],
+              "description": "New in 1.37 (#412): coarse OS thermal pressure level (macOS, with --thermal), not a temperature. Closed enum: a new level is MAJOR."
             }
           },
           "description": "Environment observed while the runs executed (new in 1.31, #315). A source that cannot be read is omitted, never 0."
