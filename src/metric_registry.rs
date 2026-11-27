@@ -728,6 +728,8 @@ pub fn descriptors(
             .filter_map(|r| r.custom_metrics.as_ref()?.get(&name))
             .any(|runs| runs.iter().any(Option::is_none));
         let meta = crate::metric::custom_meta(&name);
+        // `--work` and the energy-delay products (#373), computed from the measured series
+        let derived = crate::efficiency::is_derived(&name);
         out.push(MetricDescriptor {
             id: format!("custom.{name}"),
             unit: meta
@@ -740,8 +742,12 @@ pub fn descriptors(
                 LowerIsBetter
             },
             scope: Scope::Process,
-            source: "command_output".into(),
-            kind: Measured,
+            source: if derived {
+                "perfratio.derived".into()
+            } else {
+                "command_output".into()
+            },
+            kind: if derived { Derived } else { Measured },
             status: if missing {
                 Status::Partial
             } else {

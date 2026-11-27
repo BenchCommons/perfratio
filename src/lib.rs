@@ -70,6 +70,8 @@ pub mod cpu_id;
 #[doc(hidden)]
 pub mod delta_table;
 #[doc(hidden)]
+pub mod efficiency;
+#[doc(hidden)]
 pub mod energy;
 pub mod environment;
 #[doc(hidden)]

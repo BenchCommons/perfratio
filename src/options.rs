@@ -424,6 +424,8 @@ pub struct Options {
     /// `--optimize`: search a parameter for the best value of the primary metric
     pub optimize: Option<crate::optimize::OptimizeSpec>,
 
+    /// `--work N[unit]`: amount of work of one run, for the per-operation metrics
+    pub work: Option<crate::efficiency::Work>,
     /// `--complexity VAR`: fit growth models over the values of the parameter VAR
     pub complexity: Option<String>,
 
@@ -577,6 +579,7 @@ impl Default for Options {
             command_input_policy: CommandInputPolicy::Null,
             metric: crate::metric::Metric::Wall,
             optimize: None,
+            work: None,
             complexity: None,
             raw_ratios: false,
             pareto: None,
@@ -962,6 +965,12 @@ impl Options {
                         parsed.name
                     )));
                 }
+                if crate::efficiency::is_derived(&parsed.name) {
+                    return Err(OptionsError::InvalidOutputMetric(format!(
+                        "'{}' is the name of a derived efficiency metric (see '--work')",
+                        parsed.name
+                    )));
+                }
                 parsed.declare();
                 options.output_metrics.push(parsed);
             }
@@ -980,6 +989,12 @@ impl Options {
             }
         }
 
+        if let Some(work) = matches.get_one::<String>("work") {
+            options.work = Some(
+                work.parse::<crate::efficiency::Work>()
+                    .map_err(OptionsError::InvalidWork)?,
+            );
+        }
         options.output_metrics_stderr = matches.get_flag("output-metric-stderr");
         if !options.output_metrics.is_empty()
             && options.command_output_policies.iter().any(|p| {
@@ -1027,7 +1042,24 @@ impl Options {
         let importing = matches.get_one::<String>("import-json").is_some();
         let metric_counter = options.metric.counter_kind();
         // An imported file carries its own values, so nothing is extracted then.
-        if let Some(name) = options.metric.custom_name() {
+        if let Some(name) = options
+            .metric
+            .custom_name()
+            .filter(|n| crate::efficiency::is_derived(n))
+        {
+            if crate::efficiency::PER_WORK.contains(&name) && options.work.is_none() && !importing {
+                return Err(OptionsError::InvalidWork(format!(
+                    "'--metric custom:{name}' needs '--work N[unit]'"
+                )));
+            }
+            // everything but the per-work time and counters needs the energy
+            if !matches!(
+                name,
+                "time_per_op" | "ops_per_second" | "instructions_per_op" | "cycles_per_op"
+            ) {
+                options.measure_energy = true;
+            }
+        } else if let Some(name) = options.metric.custom_name() {
             if matches.get_one::<String>("import-json").is_none()
                 && !options.output_metrics.iter().any(|m| m.name == name)
             {
