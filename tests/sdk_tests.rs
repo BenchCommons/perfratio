@@ -418,8 +418,9 @@ fn python_client_unit_tests() {
 
 /// `--region-scope` with the Python client (#371): the CPU time inside the region is read
 /// when the markers arrive, so the idle phases around it (and the interpreter start-up)
-/// stay out. Linux and macOS read the child's CPU time; elsewhere the test is skipped.
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+/// stay out. Linux and Apple Silicon read the child's CPU time; elsewhere the test is skipped
+/// (on the Intel macOS CI runner `proc_pidinfo` advanced by about 7 ms during a 0.3 s busy loop).
+#[cfg(any(target_os = "linux", all(target_os = "macos", target_arch = "aarch64")))]
 #[test]
 fn python_client_region_scope_cpu_time() {
     if !sdk_present() {

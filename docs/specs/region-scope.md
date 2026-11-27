@@ -39,7 +39,7 @@ the timer granularity of the OS: about 60 µs on Linux, 1 ms or more on Windows)
 
 | Value | Linux | macOS | Windows |
 |---|---|---|---|
-| CPU user/system | `/proc/<pid>/stat` (`utime`, `stime`; pid reuse is detected with `starttime`) | `proc_pidinfo(PROC_PIDTASKINFO)` | `GetProcessTimes` on the child handle |
+| CPU user/system | `/proc/<pid>/stat` (`utime`, `stime`; pid reuse is detected with `starttime`) | `proc_pidinfo(PROC_PIDTASKINFO)` (validated on Apple Silicon only: on the Intel CI runner it advanced by 7 ms during a 0.3 s busy loop, so treat Intel Mac values as unverified) | `GetProcessTimes` on the child handle |
 | Energy | the `EnergySampler` of `--energy-backend`: the window is closed and reopened at each marker and the windows are summed | IOReport | EMI |
 | Counters | `perf_event_open` on the child pid, opened after the spawn, counting from then on | none | none |
 
@@ -112,7 +112,7 @@ and `counters` keep their whole-process meaning.
   file written in pieces.
 - `tests/region_tests.rs`: `--debug-mode` export and flag validation.
 - `tests/sdk_tests.rs`: the Python client against `--region-scope` (busy loop of 0.3 s between
-  idle phases; Linux and macOS).
+  idle phases; Linux and Apple Silicon).
 - `tests/json_schema_tests.rs` validates the export against the 1.33 schema.
 
 ## Out of scope
