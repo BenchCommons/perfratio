@@ -70,7 +70,7 @@ fn markdown_export_gets_the_table_only_with_the_flag() {
 /// A failing command. Run with `-N` (no shell) so that no shell spawning time,
 /// which is noisy under load, is subtracted from the short sleeps.
 #[cfg(unix)]
-const FAILING: &str = "sh -c 'sleep 0.1; exit 1'";
+const FAILING: &str = "sh -c 'sleep 0.01; exit 1'";
 
 /// `--filter-failed` applies to the terminal table and the Markdown export alike
 #[cfg(unix)]
@@ -86,14 +86,14 @@ fn filter_failed_applies_to_terminal_and_markdown() {
         .arg("--delta-table")
         .arg("--export-markdown")
         .arg(&md)
-        .args(["sleep 0.05", FAILING, "sleep 0.15"])
+        .args(["sleep 0.05", FAILING, "sleep 0.5"])
         .assert()
         .success()
         .stdout(predicate::str::contains(
             "Benchmark comparison (Reference: 'sleep 0.05')",
         ))
-        .stdout(predicate::str::contains("'sh -c 'sleep 0.1; exit 1'' (mean").not());
+        .stdout(predicate::str::contains("'sh -c 'sleep 0.01; exit 1'' (mean").not());
     let content = std::fs::read_to_string(&md).unwrap();
-    assert!(content.contains("### Delta: `sleep 0.15` vs reference `sleep 0.05`"));
+    assert!(content.contains("### Delta: `sleep 0.5` vs reference `sleep 0.05`"));
     assert!(!content.contains("exit 1"), "{content}");
 }
