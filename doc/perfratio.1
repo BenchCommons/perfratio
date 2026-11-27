@@ -177,6 +177,8 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR VAR
 .IR MIN
 .IR MAX ]
+.RB [ \-\-work
+.IR N[UNIT] ]
 .RB [ \-\-optimize
 .IR VAR
 .IR MIN
@@ -424,6 +426,10 @@ Execute CMD after the completion of all benchmarking runs for each individual co
 \fB\-P\fR, \fB\-\-parameter\-scan\fR \fIVAR\fP \fIMIN\fP \fIMAX\fP
 .IP
 Perform benchmark runs for each value in the range MIN..MAX. Replaces the string '{VAR}' in each command by the current parameter value. The option can be specified multiple times and combined with \fB\-\-parameter\-list\fR or \fB\-\-parameter\-file\fR to run benchmarks for all possible parameter combinations.
+.HP
+\fB\-\-work\fR \fIN[UNIT]\fP
+.IP
+The amount of work one run does, e.g. 1000000 or 4096ops (unit defaults to op). Adds metrics per unit of work, marked kind derived in the metric descriptors: time_per_op, energy_per_op, ops_per_second, ops_per_joule, instructions_per_op, cycles_per_op, edp_per_op and ed2p_per_op (the energy ones need \fB\-\-energy\fR, the counter ones \fB\-\-counters\fR). With \fB\-\-energy\fR the energy-delay products edp (E*t) and ed2p (E*t^2) are always added. Select them with \fB\-\-metric\fR custom:NAME, \fB\-\-pareto\fR or \fB\-\-budget\fR.
 .HP
 \fB\-\-optimize\fR \fIVAR\fP \fIMIN\fP \fIMAX\fP
 .IP

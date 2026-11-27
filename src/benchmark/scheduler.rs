@@ -80,7 +80,11 @@ impl<'a> Scheduler<'a> {
 
     pub fn add_imported_results(&mut self, imported: Vec<BenchmarkResult>) {
         self.imported_count += imported.len();
-        for res in imported {
+        for mut res in imported {
+            // `--work` also normalizes the results of an imported file
+            if let Some(work) = &self.options.work {
+                crate::efficiency::augment(&mut res, Some(work));
+            }
             if self.options.output_style != OutputStyleOption::Disabled {
                 crate::outln!(
                     "{}{}: {} (imported)",

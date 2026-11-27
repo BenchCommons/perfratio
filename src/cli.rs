@@ -871,6 +871,24 @@ pub fn build_command() -> Command {
                 ),
         )
         .arg(
+            Arg::new("work")
+                .long("work")
+                .action(ArgAction::Set)
+                .value_name("N[UNIT]")
+                .help(
+                    "The amount of work one run of the command does, e.g. '1000000' or '4096ops' \
+                     (unit defaults to 'op'). Adds metrics per unit of work, marked 'derived': \
+                     'time_per_op', 'energy_per_op', 'ops_per_second', 'ops_per_joule', \
+                     'instructions_per_op', 'cycles_per_op', 'edp_per_op' and 'ed2p_per_op' (the \
+                     energy ones need '--energy', the counter ones '--counters').\n\n  \
+                     Example:  perfratio --energy --work 1e6ops --metric custom:energy_per_op \
+                     './encode input'\n\n\
+                     With '--energy', the energy-delay products 'edp' (E·t, in J·s) and 'ed2p' \
+                     (E·t², in J·s²) are always added. All of them work with '--metric custom:NAME', \
+                     '--pareto' and '--budget' (e.g. 'custom:edp<=2').",
+                ),
+        )
+        .arg(
             Arg::new("sort")
             .long("sort")
             .short('t')

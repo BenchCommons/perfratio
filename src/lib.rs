@@ -68,6 +68,8 @@ pub mod cpu_id;
 #[doc(hidden)]
 pub mod delta_table;
 #[doc(hidden)]
+pub mod efficiency;
+#[doc(hidden)]
 pub mod energy;
 pub mod environment;
 #[doc(hidden)]
@@ -84,7 +86,6 @@ pub mod import;
 pub mod metric;
 #[doc(hidden)]
 pub mod metric_registry;
-#[doc(hidden)]
 pub mod optimize;
 #[doc(hidden)]
 pub mod options;

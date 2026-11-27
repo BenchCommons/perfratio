@@ -109,6 +109,8 @@ pub enum OptionsError<'a> {
     InvalidOutputMetric(String),
     #[error("{0}")]
     InvalidOptimize(String),
+    #[error("{0}")]
+    InvalidWork(String),
     #[error("Invalid '--raw-ratios': {0}")]
     InvalidRawRatios(&'static str),
     #[error("Invalid Pareto option: {0}")]
