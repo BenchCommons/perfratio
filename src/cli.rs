@@ -1369,6 +1369,29 @@ pub fn build_command() -> Command {
                 ),
         )
         .arg(
+            Arg::new("pareto-significance")
+                .long("pareto-significance")
+                .action(ArgAction::SetTrue)
+                .help(
+                    "With '--pareto': a command is dominated only when the commands that are \
+                     better in the estimates are significantly better on every such metric \
+                     (per-run samples, '--estimator', '--significance-level', '--correction', \
+                     '--bootstrap-resamples', '--noise-threshold'). Otherwise it stays on the \
+                     frontier as 'not dominated (difference not significant)'. Metrics without \
+                     3 runs of samples never show a difference.",
+                ),
+        )
+        .arg(
+            Arg::new("pareto-probability")
+                .long("pareto-probability")
+                .action(ArgAction::SetTrue)
+                .help(
+                    "With '--pareto': report, per command, the bootstrap probability of not \
+                     being dominated (share of '--bootstrap-resamples' resamples of the runs in \
+                     which no other command dominates it).",
+                ),
+        )
+        .arg(
             Arg::new("equivalence-margin")
                 .long("equivalence-margin")
                 .value_name("PERCENT")

@@ -901,7 +901,7 @@ impl Options {
             );
         }
         options.energy_domains = matches.get_flag("energy-domains");
-        options.pareto = crate::pareto::ParetoConfig::parse(
+        options.pareto = crate::pareto::ParetoConfig::parse_with(
             matches.get_one::<String>("pareto").map(String::as_str),
             matches
                 .get_many::<String>("constraint")
@@ -912,6 +912,8 @@ impl Options {
             matches
                 .get_one::<String>("noise-threshold")
                 .map(String::as_str),
+            matches.get_flag("pareto-significance"),
+            matches.get_flag("pareto-probability"),
         )
         .map_err(OptionsError::InvalidPareto)?;
         if let Some(val) = matches.get_one::<String>("concurrency") {

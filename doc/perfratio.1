@@ -266,6 +266,8 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR DIRECTION:METRIC ]
 .RB [ \-\-noise\-threshold
 .IR PERCENT ]
+.RB [ \-\-pareto\-significance ]
+.RB [ \-\-pareto\-probability ]
 .RB [ \-\-show\-output\-on\-failure ]
 .RB [ \-\-generate\-completions
 .IR SHELL ]
@@ -732,6 +734,14 @@ Pick the single best candidate under the constraints, e.g. \fIminimize:energy\fR
 \fB\-\-noise\-threshold\fR \fIPERCENT\fR
 .IP
 Differences smaller than PERCENT of the reference are classified as \fBwithin noise\fR whatever the p\-value, and replace the default 1% floor of the significance markers. \fB\-\-fail\-if\-regressed\fR ignores them. With \fB\-\-pareto\fR: a command counts as dominated only if another is better by more than PERCENT of the value on some metric and not worse beyond it on any. Default: off (strict comparison for \fB\-\-pareto\fR).
+.HP
+\fB\-\-pareto\-significance\fR
+.IP
+With \fB\-\-pareto\fR: a command is dominated only when the commands that are better in the estimates are significantly better on every such metric (per\-run samples, \fB\-\-estimator\fR, \fB\-\-significance\-level\fR, \fB\-\-correction\fR, \fB\-\-bootstrap\-resamples\fR, \fB\-\-noise\-threshold\fR). Otherwise it stays on the frontier as \fBnot dominated (difference not significant)\fR. Metrics without 3 runs of samples never show a difference.
+.HP
+\fB\-\-pareto\-probability\fR
+.IP
+With \fB\-\-pareto\fR: report, per command, the bootstrap probability of not being dominated (share of \fB\-\-bootstrap\-resamples\fR resamples of the runs in which no other command dominates it).
 .HP
 \fB\-\-show\-output\-on\-failure\fR
 .IP

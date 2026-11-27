@@ -210,7 +210,7 @@ impl ExportManager {
             metric,
             metadata,
             delta_table: matches.try_get_one::<bool>("delta-table").ok().flatten() == Some(&true),
-            pareto: ParetoConfig::parse(
+            pareto: ParetoConfig::parse_with(
                 matches
                     .try_get_one::<String>("pareto")
                     .ok()
@@ -233,6 +233,16 @@ impl ExportManager {
                     .ok()
                     .flatten()
                     .map(String::as_str),
+                matches
+                    .try_get_one::<bool>("pareto-significance")
+                    .ok()
+                    .flatten()
+                    == Some(&true),
+                matches
+                    .try_get_one::<bool>("pareto-probability")
+                    .ok()
+                    .flatten()
+                    == Some(&true),
             )
             .map_err(|e| anyhow::anyhow!("Invalid Pareto option: {e}"))?,
         };
@@ -356,10 +366,17 @@ impl ExportManager {
         reference: Option<&BenchmarkResult>,
         intermediate: bool,
     ) -> Result<()> {
-        let analysis = self
+        // The tests and the bootstrap of '--pareto-significance' and '--pareto-probability'
+        // run once, for the final export
+        let intermediate_config = self
             .pareto
             .as_ref()
-            .map(|config| (config, pareto::analyze(config, results)));
+            .filter(|_| intermediate)
+            .map(ParetoConfig::without_uncertainty);
+        let analysis = self.pareto.as_ref().map(|config| {
+            let used = intermediate_config.as_ref().unwrap_or(config);
+            (config, pareto::analyze(used, results))
+        });
         for e in &self.exporters {
             e.exporter
                 .set_pareto(analysis.as_ref().map(|(config, a)| (*config, a)));
