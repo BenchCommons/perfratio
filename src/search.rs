@@ -986,7 +986,7 @@ mod tests {
 
     #[test]
     fn candidates_terminate_when_few_points_are_unseen() {
-        let s = spec(&[("A", 1, 5000)], Algorithm::Bayesian, 4000);
+        let s = spec(&[("A", 1, 5000)], Algorithm::Bayes, 4000);
         let seen: HashSet<Vec<i64>> = (1..=4000).map(|i| vec![i]).collect();
         let c = candidates(&s, 5000, &seen, &mut Rng(1));
         assert_eq!(c.len(), 1000);
