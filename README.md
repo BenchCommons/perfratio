@@ -28,8 +28,16 @@ files (`--import-json`).
 
 ## Install
 
-perfratio is not yet on crates.io or Homebrew. Both are planned (see
-[#93](https://github.com/BenchCommons/perfratio/issues/93)).
+perfratio is not yet published to crates.io, and there is no Homebrew tap yet (see
+[#93](https://github.com/BenchCommons/perfratio/issues/93)). Until the first public release,
+use one of the two methods below. The commands in the next block start working once the
+maintainers publish the crate and the tap, and are listed here so the target is clear:
+
+```sh
+cargo install perfratio                     # not available yet
+cargo binstall perfratio                    # not available yet
+brew install <tap-owner>/tap/perfratio      # not available yet, tap name undecided
+```
 
 **From source** (Rust 1.88 or newer):
 
