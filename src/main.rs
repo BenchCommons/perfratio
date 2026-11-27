@@ -287,6 +287,20 @@ fn run() -> Result<()> {
                 .with_context(|| format!("Could not write '{path}'"))?;
         }
     }
+    if let Some(path) = cli_arguments.get_one::<String>("verdict-json") {
+        if let (Some((baseline_path, _)), Some(comparison)) = (&baseline, &comparison) {
+            let document = perfratio::verdict::build(
+                comparison,
+                budget_report.as_ref(),
+                baseline_path,
+                &perfratio::stats::settings::current(),
+            );
+            let mut json = serde_json::to_string_pretty(&document)?;
+            json.push('\n');
+            perfratio::export::write_to_file(path, json.as_bytes())
+                .with_context(|| format!("Could not write '{path}'"))?;
+        }
+    }
     if let Some(report) = &budget_report {
         let failures = report.failures();
         if failures > 0 && !perfratio::util::interrupt::interrupted() {

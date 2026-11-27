@@ -189,6 +189,20 @@ pub fn build_command() -> Command {
                        e.g. for a pull request comment or a CI job summary."),
         )
         .arg(
+            Arg::new("verdict-json")
+                .long("verdict-json")
+                .action(ArgAction::Set)
+                .value_name("FILE")
+                .value_hint(ValueHint::FilePath)
+                .requires("compare")
+                .help("With '--compare': write a compact JSON verdict to FILE: per command and \
+                       metric whether it improved, regressed or is unchanged or inconclusive, \
+                       with the change, its confidence interval and the p-value, one overall \
+                       verdict (improved, regressed, trade_off, unchanged, inconclusive), and \
+                       the result of '--budget'. Meant for scripts and agents. The file is \
+                       written even when a budget fails."),
+        )
+        .arg(
             Arg::new("warmup")
                 .long("warmup")
                 .short('w')
