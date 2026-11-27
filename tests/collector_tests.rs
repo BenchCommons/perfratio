@@ -175,6 +175,21 @@ printf '{PROFILE}' > "$(echo "$out" | sed "s/%p/$$/")"
     }
 
     #[test]
+    fn a_shell_run_warns_that_the_counts_include_the_shell() {
+        let dir = tempfile::tempdir().unwrap();
+        let valgrind = fake(dir.path());
+        for (shell, warns) in [("--shell=default", true), ("--shell=none", false)] {
+            let out = perfratio()
+                .env("PERFRATIO_VALGRIND", &valgrind)
+                .args(["--runs=1", shell, "--collector", "cachegrind", "true"])
+                .output()
+                .unwrap();
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            assert_eq!(stderr.contains("runs under a shell"), warns, "{stderr}");
+        }
+    }
+
+    #[test]
     fn cachegrind_metrics_are_simulated_and_not_timed() {
         let dir = tempfile::tempdir().unwrap();
         let valgrind = fake(dir.path());

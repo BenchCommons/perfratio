@@ -11,7 +11,7 @@ the descriptor registry (#317) and the JSON export without touching perfratio.
 ## Contract
 
 ### CLI
-`--collector-plugin PATH`, repeatable. `PATH` is an executable. perfratio runs it directly: no
+`--collector-plugin PATH`, repeatable. `PATH` is an executable and must contain a directory part (`./plugin`, not `plugin`); a bare name is an error. perfratio runs it directly: no
 shell, no arguments, working directory of perfratio. Configure a plugin through its environment
 (it inherits perfratio's) or through its own config file. Not combinable with `--concurrency N`
 (N > 1) or `--jobs N` (N > 1): a plugin observes one run at a time (options error).

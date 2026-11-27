@@ -226,6 +226,18 @@ fn run() -> Result<()> {
     // `--collector` and `--collector-plugin`: fail before the first run if one cannot start
     if let Some(tool) = options.valgrind {
         perfratio::valgrind::check_available()?;
+        if options
+            .executor_kinds
+            .iter()
+            .any(|k| !matches!(k, options::ExecutorKind::Raw))
+        {
+            eprintln!(
+                "{} '--collector {}' runs under a shell: the counts include the shell as well as \
+                 the program. Use '--shell=none' to count only the program.",
+                output::colors::yellow("Warning:"),
+                tool.name()
+            );
+        }
         perfratio::valgrind::declare_metrics(tool);
     }
     struct CollectorGuard;

@@ -287,6 +287,13 @@ pub struct Session {
 impl Session {
     /// Starts the plugin at `path` (no shell, no arguments) and performs the handshake.
     pub fn start(path: &Path) -> Result<Session> {
+        // A bare name would be searched on PATH: the contract is an explicit path
+        if path.parent().is_none_or(|p| p.as_os_str().is_empty()) {
+            bail!(
+                "the collector plugin {path:?} is not a path: give an explicit path such as ./{}",
+                path.display()
+            );
+        }
         let mut child = Command::new(path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -502,6 +509,12 @@ mod tests {
     const HELLO: &str = r#"{"type":"hello","protocol":1,"name":"gpu","metrics":[
         {"id":"energy","unit":"J"},
         {"id":"util","unit":"percent","direction":"neutral","kind":"estimated","scope":"package"}]}"#;
+
+    #[test]
+    fn plugin_without_a_directory_part_is_rejected() {
+        let err = Session::start(Path::new("gpu-plugin")).err().unwrap();
+        assert!(err.to_string().contains("explicit path"), "{err}");
+    }
 
     #[test]
     fn hello_declares_metrics_with_defaults() {

@@ -31,7 +31,7 @@ no stdin and discarded output. `DIR` is a new directory with mode 0700 that is r
 afterwards. The command is run through `std::process::Command`, never through a shell of
 perfratio's own. Under the default `--shell` this means Valgrind follows `sh -c` and counts the
 shell and the program (children are followed and their files summed); `--shell=none` counts only
-the program.
+the program. perfratio warns on stderr when `--collector` runs under a shell.
 
 The counts are deterministic for a given binary, input and environment, so one run is enough. It
 is not timed, is not part of `times`, and is slower than a normal run (typically 20 to 50 times).
