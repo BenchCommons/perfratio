@@ -109,6 +109,8 @@ pub mod pmu_scaling;
 pub mod quality;
 #[doc(hidden)]
 pub mod region;
+/// Region-scoped CPU time, energy and counters.
+pub mod region_scope;
 #[doc(hidden)]
 pub mod run_id;
 #[doc(hidden)]

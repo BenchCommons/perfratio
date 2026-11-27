@@ -425,6 +425,32 @@ pub unsafe fn pre_exec_write_timestamp(raw_write: libc::c_int) -> std::io::Resul
     Ok(())
 }
 
+/// The child that was just spawned, as handed to an observer set with [`observe_spawn`].
+#[derive(Debug, Clone, Copy)]
+pub struct SpawnedChild {
+    pub pid: u32,
+    /// Process handle on Windows (valid until the child is reaped), 0 elsewhere.
+    pub handle: usize,
+}
+
+type SpawnObserver = Box<dyn FnOnce(SpawnedChild)>;
+
+thread_local! {
+    static SPAWN_OBSERVER: std::cell::RefCell<Option<SpawnObserver>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Run `observer` once, on this thread, right after the next
+/// [`execute_and_measure`] spawned its child (region-scoped metrics start their
+/// watcher there). [`clear_spawn_observer`] drops one that was not used.
+pub fn observe_spawn(observer: impl FnOnce(SpawnedChild) + 'static) {
+    SPAWN_OBSERVER.with(|o| *o.borrow_mut() = Some(Box::new(observer)));
+}
+
+pub fn clear_spawn_observer() {
+    SPAWN_OBSERVER.with(|o| *o.borrow_mut() = None);
+}
+
 /// Execute the given command and return a timing summary
 #[allow(clippy::too_many_arguments)]
 pub fn execute_and_measure(
@@ -542,6 +568,20 @@ pub fn execute_and_measure(
 
     #[cfg(windows)]
     let tracked = spawning.spawned(cpu_timer.raw_job_handle() as usize);
+
+    if let Some(observer) = SPAWN_OBSERVER.with(|o| o.borrow_mut().take()) {
+        #[cfg(windows)]
+        let handle = {
+            use std::os::windows::io::AsRawHandle;
+            child.as_raw_handle() as usize
+        };
+        #[cfg(not(windows))]
+        let handle = 0;
+        observer(SpawnedChild {
+            pid: child.id(),
+            handle,
+        });
+    }
 
     let watchdog = timeout.map(|t| {
         #[cfg(not(windows))]

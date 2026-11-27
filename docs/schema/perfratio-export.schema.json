@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.32 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.33 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.33",
+      "const": "1.34",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -1831,6 +1831,13 @@
         "sdk": {
           "type": "string",
           "description": "Identifier the SDK announced in its hello line."
+        },
+        "metrics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/region_metric"
+          },
+          "description": "New in 1.33 (#371): `--region-scope` only. CPU time, energy and counters inside the region, read when the SDK reported the markers (docs/specs/region-scope.md). Omitted without the flag."
         }
       },
       "required": [
@@ -1843,6 +1850,43 @@
         "times"
       ],
       "description": "Time inside one instrumented region, in seconds (see docs/specs/region-protocol.md)."
+    },
+    "region_metric": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "`cpu_user`, `cpu_system`, `energy` or a counter name such as `instructions`."
+        },
+        "unit": {
+          "enum": ["s", "J", "count"]
+        },
+        "scope": {
+          "const": "region",
+          "description": "Always `region`. The whole-process values under `results[]` stay unchanged."
+        },
+        "mean": {
+          "type": "number"
+        },
+        "stddev": {
+          "type": ["number", "null"]
+        },
+        "min": {
+          "type": "number"
+        },
+        "max": {
+          "type": "number"
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": ["number", "null"]
+          },
+          "description": "Per run, aligned with `results[].times`; null = could not be read, never 0."
+        }
+      },
+      "required": ["name", "unit", "scope", "mean", "min", "max", "values"],
+      "description": "One value measured inside a region (new in 1.33, #371), summed over the region's start/stop pairs of a run."
     },
     "optimize": {
       "type": "object",

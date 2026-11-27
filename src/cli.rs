@@ -1004,8 +1004,21 @@ pub fn build_command() -> Command {
                        Without NAME the region 'default' is measured. Can be given several \
                        times. The JSON export lists the region times next to the whole-process \
                        time; use '--metric region:NAME' to rank on a region. CPU time, memory, \
-                       counters and energy still cover the whole process. A command that \
+                       counters and energy still cover the whole process unless '--region-scope' is given. A command that \
                        reports no region fails."),
+        )
+        .arg(
+            Arg::new("region-scope")
+                .long("region-scope")
+                .action(ArgAction::SetTrue)
+                .conflicts_with_all(["concurrency", "subtract"])
+                .help("With '--region': also report the CPU time, the energy (with '--energy') \
+                       and the hardware counters (with '--counters', Linux) spent inside each \
+                       region, with scope 'region'. perfratio reads them when the SDK reports \
+                       the start and the stop, so a thread of perfratio polls while the program \
+                       runs. The error is bounded by the marker latency, see \
+                       docs/specs/region-scope.md. Whole-process values stay unchanged. Needs \
+                       an SDK that supports PERFRATIO_REGION_LIVE."),
         )
         .arg(
             Arg::new("jobs")

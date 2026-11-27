@@ -537,6 +537,9 @@ pub struct Options {
     /// `--region`: names of the instrumented regions to measure
     pub regions: Vec<String>,
 
+    /// `--region-scope`: CPU time, energy and counters inside the regions
+    pub region_scope: bool,
+
     /// `--output-metric`: custom metrics to extract from command output
     pub output_metrics: Vec<crate::output_metric::OutputMetric>,
 
@@ -613,6 +616,7 @@ impl Default for Options {
             cpu_partition: None,
             until: None,
             regions: Vec::new(),
+            region_scope: false,
             output_metrics: Vec::new(),
             output_metrics_stderr: false,
         }
@@ -1039,6 +1043,13 @@ impl Options {
             {
                 options.regions.push(name.to_string());
             }
+        }
+        options.region_scope = matches.get_flag("region-scope");
+        if options.region_scope && options.regions.is_empty() {
+            return Err(OptionsError::InvalidRegion(
+                "'--region-scope' needs a region: add '--region[=NAME]' or '--metric region:NAME'"
+                    .into(),
+            ));
         }
         // Only look at the backend choice (and its environment variable) when
         // energy is requested, so a bad value cannot break runs without --energy.

@@ -119,6 +119,14 @@ impl<'a> Scheduler<'a> {
                         .with_counters(self.options.counters.clone())
                         .with_topdown(self.options.topdown.clone())
                         .with_regions(&self.options.regions)
+                        .with_region_scope(if self.options.region_scope {
+                            crate::region_scope::metric_names(
+                                self.options.measure_energy,
+                                self.options.counters.as_ref(),
+                            )
+                        } else {
+                            Vec::new()
+                        })
                         .with_concurrency(self.options.concurrency)
                         .with_validation(self.options.validation.clone()),
                 ),
