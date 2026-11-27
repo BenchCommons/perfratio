@@ -424,6 +424,9 @@ pub struct Options {
     /// `--optimize`: search a parameter for the best value of the primary metric
     pub optimize: Option<crate::optimize::OptimizeSpec>,
 
+    /// `--complexity VAR`: fit growth models over the values of the parameter VAR
+    pub complexity: Option<String>,
+
     /// `--raw-ratios`: print only the relative values of the primary metric
     pub raw_ratios: bool,
     /// `--pareto`, `--constraint`, `--objective`
@@ -574,6 +577,7 @@ impl Default for Options {
             command_input_policy: CommandInputPolicy::Null,
             metric: crate::metric::Metric::Wall,
             optimize: None,
+            complexity: None,
             raw_ratios: false,
             pareto: None,
             measure_energy: false,
@@ -1009,6 +1013,7 @@ impl Options {
 
         options.optimize = crate::optimize::OptimizeSpec::from_cli_arguments(matches)
             .map_err(|e| OptionsError::InvalidOptimize(format!("{e:#}")))?;
+        options.complexity = matches.get_one::<String>("complexity").cloned();
         options.measure_energy = matches.get_flag("energy");
         if let Some(metric_str) = matches.get_one::<String>("metric") {
             options.metric = metric_str
@@ -1390,6 +1395,15 @@ impl Options {
                 bail!(
                     "'--concurrency {template}' cannot be combined with '--reference': the \
                      reference command has no parameters to substitute"
+                );
+            }
+        }
+
+        if let Some(var) = &self.complexity {
+            if let Some(command) = commands.iter().find(|c| !c.uses_parameter(var)) {
+                bail!(
+                    "'--complexity {var}': the command '{command}' does not contain '{{{var}}}'",
+                    command = command.get_command_line()
                 );
             }
         }
