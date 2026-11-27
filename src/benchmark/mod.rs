@@ -127,6 +127,8 @@ pub struct BenchmarkRunner<'a> {
     pub workers_seen: std::collections::BTreeSet<usize>,
     /// Extracted custom metrics per run
     pub custom_metrics: std::collections::BTreeMap<String, Vec<Option<f64>>>,
+    /// Collector metrics (`<collector>.<id>`) per run
+    pub collector_metrics: std::collections::BTreeMap<String, Vec<Option<f64>>>,
     /// `--region`: SDK identifier the program reported
     pub region_sdk: Option<String>,
     /// Output validation of each run (`--expect-output-sha256`, `--validate`):
@@ -295,6 +297,7 @@ impl<'a> BenchmarkRunner<'a> {
             timed_out: false,
             workers_seen: std::collections::BTreeSet::new(),
             custom_metrics: std::collections::BTreeMap::new(),
+            collector_metrics: std::collections::BTreeMap::new(),
             region_sdk: None,
         }
     }
@@ -736,6 +739,7 @@ impl<'a> BenchmarkRunner<'a> {
                 .per_run_values(&BenchmarkIteration::Benchmark(0)),
         );
         self.push_custom_metrics(&res.custom_metrics);
+        self.push_collector_metrics(&res.collector_metrics);
         if res.region_sdk.is_some() {
             self.region_sdk.clone_from(&res.region_sdk);
         }
@@ -807,6 +811,7 @@ impl<'a> BenchmarkRunner<'a> {
                 .per_run_values(&BenchmarkIteration::Benchmark(iteration)),
         );
         self.push_custom_metrics(&res.custom_metrics);
+        self.push_collector_metrics(&res.collector_metrics);
         if res.region_sdk.is_some() {
             self.region_sdk.clone_from(&res.region_sdk);
         }
@@ -925,6 +930,28 @@ impl<'a> BenchmarkRunner<'a> {
             }
         }
         self.push_derived_metrics();
+    }
+
+    /// Records the collector metrics of the run that was just recorded. A series is aligned
+    /// with `times` (gaps are `null`); the Valgrind run happens once, so its series has one
+    /// entry.
+    fn push_collector_metrics(&mut self, extracted: &std::collections::BTreeMap<String, f64>) {
+        let runs = self.times_real.len();
+        for (key, value) in extracted {
+            let series = self.collector_metrics.entry(key.clone()).or_default();
+            if crate::valgrind::is_key(key) {
+                series.push(Some(*value));
+            } else {
+                series.resize(runs - 1, None);
+                series.push(Some(*value));
+            }
+        }
+        // A plugin that had no value this run leaves a gap
+        for key in crate::collector::plugin_keys() {
+            if let Some(series) = self.collector_metrics.get_mut(&key) {
+                series.resize(runs, None);
+            }
+        }
     }
 
     /// Efficiency metrics (#373) of the run that was just recorded
@@ -1472,6 +1499,23 @@ impl<'a> BenchmarkRunner<'a> {
             (Some(output_metric_series.clone()), Some(summary_map))
         } else {
             (None, None)
+        };
+
+        let (collector_metrics, collector_metrics_summary) = if self.collector_metrics.is_empty() {
+            (None, None)
+        } else {
+            let summary = self
+                .collector_metrics
+                .iter()
+                .filter_map(|(name, values)| {
+                    let present: Vec<f64> = values.iter().flatten().copied().collect();
+                    Some((
+                        name.clone(),
+                        benchmark_result::MetricSummary::from_values(&present)?,
+                    ))
+                })
+                .collect();
+            (Some(self.collector_metrics.clone()), Some(summary))
         };
 
         // --concurrency: per-instance statistics (the primary series is the makespan)
@@ -2337,6 +2381,8 @@ impl<'a> BenchmarkRunner<'a> {
             },
             custom_metrics,
             custom_metrics_summary,
+            collector_metrics,
+            collector_metrics_summary,
             regions,
         };
         let quality = crate::quality::QualityReport::assess(

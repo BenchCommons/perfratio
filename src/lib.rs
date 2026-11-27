@@ -56,6 +56,8 @@ pub mod cgroup;
 #[doc(hidden)]
 pub mod cli;
 #[doc(hidden)]
+pub mod collector;
+#[doc(hidden)]
 pub mod command;
 #[doc(hidden)]
 pub mod compare;
@@ -129,5 +131,7 @@ pub mod timer;
 pub mod topdown;
 #[doc(hidden)]
 pub mod util;
+#[doc(hidden)]
+pub mod valgrind;
 #[doc(hidden)]
 pub mod validation;

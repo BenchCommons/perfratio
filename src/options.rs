@@ -547,6 +547,12 @@ pub struct Options {
 
     /// Extract `--output-metric` values from stderr instead of stdout
     pub output_metrics_stderr: bool,
+
+    /// `--collector`: built-in Valgrind adapter (`cachegrind`, `callgrind`)
+    pub valgrind: Option<crate::valgrind::Tool>,
+
+    /// `--collector-plugin`: executables that speak the collector protocol
+    pub collector_plugins: Vec<PathBuf>,
 }
 
 impl Default for Options {
@@ -622,6 +628,8 @@ impl Default for Options {
             region_scope: false,
             output_metrics: Vec::new(),
             output_metrics_stderr: false,
+            valgrind: None,
+            collector_plugins: Vec::new(),
         }
     }
 }
@@ -996,6 +1004,30 @@ impl Options {
             );
         }
         options.output_metrics_stderr = matches.get_flag("output-metric-stderr");
+        options.valgrind = matches
+            .get_one::<String>("collector")
+            .and_then(|name| crate::valgrind::Tool::from_name(name));
+        options.collector_plugins = matches
+            .get_many::<String>("collector-plugin")
+            .into_iter()
+            .flatten()
+            .map(PathBuf::from)
+            .collect();
+        if options.valgrind.is_some() || !options.collector_plugins.is_empty() {
+            if options.concurrency > 1 || options.concurrency_template.is_some() {
+                return Err(OptionsError::InvalidCollector(
+                    "collectors measure one process per run and cannot be combined with \
+                     '--concurrency'"
+                        .into(),
+                ));
+            }
+            if options.jobs > 1 {
+                return Err(OptionsError::InvalidCollector(
+                    "collectors measure one run at a time and cannot be combined with '--jobs'"
+                        .into(),
+                ));
+            }
+        }
         if !options.output_metrics.is_empty()
             && options.command_output_policies.iter().any(|p| {
                 matches!(

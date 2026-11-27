@@ -101,6 +101,8 @@ struct ProcessSettings<'a> {
     artifact_dir: Option<&'a std::path::Path>,
     /// --expect-output-sha256, --validate
     validation: Option<&'a crate::validation::ValidationConfig>,
+    /// --collector
+    valgrind: Option<crate::valgrind::Tool>,
 }
 
 impl<'a> ProcessSettings<'a> {
@@ -124,6 +126,7 @@ impl<'a> ProcessSettings<'a> {
             topdown: options.topdown.as_ref(),
             artifact_dir: options.artifact_dir.as_deref(),
             validation: options.validation.as_ref(),
+            valgrind: options.valgrind,
         }
     }
 }
@@ -151,6 +154,7 @@ fn run_command_and_measure_common(
         topdown,
         artifact_dir,
         validation,
+        valgrind,
     } = process;
     let validate_stdout = validation.is_some_and(|v| v.applies_to(iteration));
     let (until, capture_metrics) = match iteration {
@@ -263,6 +267,19 @@ fn run_command_and_measure_common(
     } else {
         None
     };
+    // `--collector`: the command as it will run, to run once more under Valgrind after the
+    // first timed run (the deterministic counts need no repetition)
+    let valgrind_command = valgrind
+        .filter(|_| matches!(iteration, BenchmarkIteration::Benchmark(0)))
+        .map(|tool| (tool, crate::valgrind::replica(&command)));
+    // `--collector-plugin`: the plugins bracket every timed run
+    let collector_run = match iteration {
+        BenchmarkIteration::Benchmark(i) if crate::collector::active() => Some(i),
+        _ => None,
+    };
+    if let Some(run) = collector_run {
+        crate::collector::start_run(run)?;
+    }
     // Open the counters on this thread, right before the child is spawned
     // here (the children inherit them). Warmup runs are not counted.
     let counting = !matches!(iteration, BenchmarkIteration::Warmup(_));
@@ -280,6 +297,8 @@ fn run_command_and_measure_common(
         stderr_capture_limit,
     );
     crate::timer::clear_spawn_observer();
+    // The plugins are stopped even if the run failed, to keep the protocol in step
+    let collected = collector_run.map(crate::collector::finish_run);
     let scope_outcome = scope_watcher
         .and_then(|slot| slot.borrow_mut().take())
         .map(|watcher| watcher.finish());
@@ -299,6 +318,9 @@ fn run_command_and_measure_common(
             }
         })
         .with_context(|| format!("Failed to run command '{command_name}'"))?;
+    if let Some(collected) = collected {
+        result.collector_metrics = collected?;
+    }
     // A timed-out run keeps no counters (its time is the timeout, not a run)
     result.hw_counters = open_counters
         .map(|open| open.read())
@@ -418,6 +440,30 @@ fn run_command_and_measure_common(
                 }
             }
         }
+    }
+
+    if let Some((tool, replica)) = valgrind_command {
+        let outcome = crate::valgrind::measure(tool, &replica).with_context(|| {
+            format!("'--collector {}' failed for '{command_name}'", tool.name())
+        })?;
+        let failed = !outcome.status.success()
+            && match command_failure_action {
+                CmdFailureAction::RaiseError => true,
+                CmdFailureAction::IgnoreAllFailures => false,
+                CmdFailureAction::IgnoreSpecificFailures(ref codes) => {
+                    crate::util::exit_code::extract_exit_code(outcome.status)
+                        .is_none_or(|code| !codes.contains(&code))
+                }
+            };
+        if failed {
+            bail!(
+                "'{command_name}' exited with {} under valgrind --tool={}. Use '-i' to ignore \
+                 this.",
+                outcome.status,
+                tool.name()
+            );
+        }
+        result.collector_metrics.extend(outcome.metrics);
     }
 
     if let Some(file) = &region_file {
@@ -705,6 +751,7 @@ pub fn aggregate_batch(instances: Vec<BatchInstance>) -> (TimerResult, Vec<Insta
         timed_out: instances.iter().any(|i| i.result.timed_out),
         until_matched: None,
         custom_metrics: std::collections::BTreeMap::new(),
+        collector_metrics: std::collections::BTreeMap::new(),
         region_sdk: None,
         leftover_processes: instances.iter().any(|i| i.result.leftover_processes),
         validation_stdout: None,
@@ -808,6 +855,7 @@ impl Executor for RawExecutor<'_> {
                 hw_counters: result.hw_counters,
                 timed_out: result.timed_out,
                 custom_metrics: result.custom_metrics,
+                collector_metrics: result.collector_metrics,
                 region_sdk: result.region_sdk,
                 stdout: result.validation_stdout,
                 instances,
@@ -975,6 +1023,7 @@ impl Executor for ShellExecutor<'_> {
                 hw_counters: result.hw_counters,
                 timed_out: result.timed_out,
                 custom_metrics: result.custom_metrics,
+                collector_metrics: result.collector_metrics,
                 region_sdk: result.region_sdk,
                 stdout: result.validation_stdout,
                 instances,
@@ -1064,6 +1113,7 @@ impl Executor for ShellExecutor<'_> {
             hw_counters: None,
             timed_out: false,
             custom_metrics: std::collections::BTreeMap::new(),
+            collector_metrics: std::collections::BTreeMap::new(),
             region_sdk: None,
             instances: Vec::new(),
             leftover_processes: false,
@@ -1305,6 +1355,7 @@ impl Executor for MockExecutor {
                     })
                     .filter(|_| !timed_out),
                 timed_out,
+                collector_metrics: std::collections::BTreeMap::new(),
                 custom_metrics: self
                     .regions
                     .iter()
@@ -1442,6 +1493,7 @@ mod batch_tests {
                 timed_out: false,
                 until_matched: None,
                 custom_metrics: Default::default(),
+                collector_metrics: Default::default(),
                 region_sdk: None,
                 leftover_processes: false,
                 validation_stdout: None,

@@ -890,6 +890,49 @@ pub fn build_command() -> Command {
                 ),
         )
         .arg(
+            Arg::new("collector")
+                .long("collector")
+                .action(ArgAction::Set)
+                .value_name("TOOL")
+                .value_parser(["cachegrind", "callgrind"])
+                .help(
+                    "Run the command once more under Valgrind and export its simulated, \
+                     deterministic event counts (instructions, cache misses), marked \
+                     'simulated'. The extra run is not timed.",
+                )
+                .long_help(
+                    "Run the command once more under Valgrind (after the first timed run, \
+                     before '--conclude') and export instructions, cache misses and an \
+                     estimated cycle count as 'results[].collector_metrics' with the keys \
+                     '<TOOL>.instructions', '<TOOL>.l1_data_misses', ... marked 'simulated'. \
+                     The counts do not depend on machine noise, so they suit noisy CI runners \
+                     and machines without PMU access. The extra run is not timed, is about \
+                     20 to 50 times slower than a normal run, and sees no stdin. Children of \
+                     the command are counted too: use '--shell=none' to leave the shell out.\n\n\
+                     Needs Valgrind (set PERFRATIO_VALGRIND to use another binary).\n\n  \
+                     Example:  perfratio --shell=none --collector cachegrind './prog input'",
+                ),
+        )
+        .arg(
+            Arg::new("collector-plugin")
+                .long("collector-plugin")
+                .action(ArgAction::Append)
+                .value_name("PATH")
+                .help(
+                    "Measure extra metrics with an external collector plugin (repeatable). \
+                     The plugin runs with your privileges: only use programs you trust.",
+                )
+                .long_help(
+                    "Measure extra metrics with an external collector plugin: an executable \
+                     that speaks the JSON-lines collector protocol (docs/specs/collector-plugins.md). \
+                     perfratio starts it once, without a shell and without arguments, and \
+                     brackets every timed run with 'start', 'stop' and 'read'. Its metrics are \
+                     exported in 'results[].collector_metrics'. Repeatable.\n\n\
+                     The plugin runs with your privileges and sees your environment: only use \
+                     programs you trust. What it sends is validated, never trusted.",
+                ),
+        )
+        .arg(
             Arg::new("work")
                 .long("work")
                 .action(ArgAction::Set)

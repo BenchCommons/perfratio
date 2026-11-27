@@ -223,6 +223,20 @@ fn run() -> Result<()> {
         }
     }
 
+    // `--collector` and `--collector-plugin`: fail before the first run if one cannot start
+    if let Some(tool) = options.valgrind {
+        perfratio::valgrind::check_available()?;
+        perfratio::valgrind::declare_metrics(tool);
+    }
+    struct CollectorGuard;
+    impl Drop for CollectorGuard {
+        fn drop(&mut self) {
+            perfratio::collector::shutdown();
+        }
+    }
+    let _collectors = CollectorGuard;
+    perfratio::collector::init(&options.collector_plugins)?;
+
     let mut scheduler = Scheduler::new(&commands, &options, &export_manager);
     scheduler.add_imported_results(imported_results);
     scheduler.run_benchmarks()?;
