@@ -60,7 +60,11 @@ none).
   `std::time::Instant`, Python `time.monotonic_ns`. Never use a wall clock.
 - **Nothing is written inside a region.** Events are buffered in memory and written when the
   program exits, or on `flush()`. A stop reads the clock before the bookkeeping and a start
-  after it, so the bookkeeping is not charged to the region.
+  after it, so the bookkeeping is not charged to the region. The exception is
+  `PERFRATIO_REGION_LIVE=1`, which perfratio sets for `--region-scope`
+  (`docs/specs/region-scope.md`): every `start` and `stop` is then flushed at once, so perfratio
+  can read the CPU time, energy and counters of the child at the marker. A client for another
+  language supports it by calling its `flush()` after recording an event when the variable is `1`.
 - **Flush on exit and on error.** Exit handlers write the buffer after `exit()`, `return` from
   `main`, `sys.exit`, an uncaught Python exception and a Rust panic that unwinds. The scoped forms
   stop the region while an exception or panic unwinds. `abort()`, fatal signals, `os._exit` and

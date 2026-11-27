@@ -415,3 +415,77 @@ fn python_client_unit_tests() {
         "the Python client unit tests",
     );
 }
+
+/// `--region-scope` with the Python client (#371): the CPU time inside the region is read
+/// when the markers arrive, so the idle phases around it (and the interpreter start-up)
+/// stay out. Linux and macOS read the child's CPU time; elsewhere the test is skipped.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn python_client_region_scope_cpu_time() {
+    if !sdk_present() {
+        return;
+    }
+    let Some(client) = python_example() else {
+        return;
+    };
+    let script = scratch().join("scope_burn.py");
+    std::fs::write(
+        &script,
+        r#"import time
+import perfratio_region as pr
+time.sleep(0.2)
+with pr.region("burn"):
+    end = time.process_time() + 0.3
+    while time.process_time() < end:
+        pass
+time.sleep(0.3)
+"#,
+    )
+    .unwrap();
+    let out = scratch().join("scope_burn.json");
+    let python_path = sdk_dir().join("python");
+    let line = format!(
+        "\"{}\" \"{}\"",
+        client.program.replace('\\', "/"),
+        script.to_string_lossy().replace('\\', "/")
+    );
+    perfratio()
+        .env("PYTHONPATH", &python_path)
+        .args([
+            "-N",
+            "--runs=3",
+            "--warmup=1",
+            "--region=burn",
+            "--region-scope",
+        ])
+        .args(["--export-json", out.to_str().unwrap(), &line])
+        .assert()
+        .success();
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
+    let result = &json["results"][0];
+    let region = &result["regions"][0];
+    let metrics = region["metrics"].as_array().expect("region metrics");
+    let cpu = |name: &str| {
+        metrics
+            .iter()
+            .find(|m| m["name"] == name)
+            .unwrap_or_else(|| panic!("no {name} in {metrics:?}"))
+    };
+    for name in ["cpu_user", "cpu_system"] {
+        assert_eq!(cpu(name)["scope"], "region");
+        assert_eq!(cpu(name)["unit"], "s");
+        assert_eq!(cpu(name)["values"].as_array().unwrap().len(), 3);
+    }
+    let in_region =
+        cpu("cpu_user")["mean"].as_f64().unwrap() + cpu("cpu_system")["mean"].as_f64().unwrap();
+    // 0.3 s of busy work; the marker latency is far below the tolerance
+    assert!(
+        (0.25..0.45).contains(&in_region),
+        "region CPU time {in_region}"
+    );
+    // the whole-process values keep covering everything (interpreter start-up included)
+    let whole = result["user"].as_f64().unwrap() + result["system"].as_f64().unwrap();
+    assert!(whole > in_region, "whole {whole} <= region {in_region}");
+    assert!(region["times"][0].as_f64().unwrap() > 0.25);
+}

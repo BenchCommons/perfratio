@@ -917,7 +917,24 @@ impl<'a> BenchmarkRunner<'a> {
                 let value = extracted.get(&key).copied();
                 self.custom_metrics.entry(key).or_default().push(value);
             }
+            // `--region-scope`: CPU time, energy and counters inside the region
+            for metric in self.scoped_metric_names() {
+                let key = crate::region_scope::key(name, &metric);
+                let value = extracted.get(&key).copied();
+                self.custom_metrics.entry(key).or_default().push(value);
+            }
         }
+    }
+
+    /// Names of the region-scoped metrics collected under `--region-scope`.
+    fn scoped_metric_names(&self) -> Vec<String> {
+        if !self.options.region_scope {
+            return Vec::new();
+        }
+        crate::region_scope::metric_names(
+            self.options.measure_energy,
+            self.options.counters.as_ref(),
+        )
     }
 
     /// Keep only the runs at `keep` (ascending indices) in every per-run vector.
@@ -1379,12 +1396,24 @@ impl<'a> BenchmarkRunner<'a> {
             .regions
             .iter()
             .filter_map(|name| {
-                benchmark_result::RegionResult::from_runs(
+                let mut region = benchmark_result::RegionResult::from_runs(
                     name,
                     self.custom_metrics.get(&crate::region::time_key(name))?,
                     self.custom_metrics.get(&crate::region::count_key(name)),
                     self.region_sdk.clone(),
-                )
+                )?;
+                region.metrics = self
+                    .scoped_metric_names()
+                    .iter()
+                    .filter_map(|metric| {
+                        benchmark_result::RegionMetric::from_runs(
+                            metric,
+                            self.custom_metrics
+                                .get(&crate::region_scope::key(name, metric))?,
+                        )
+                    })
+                    .collect();
+                Some(region)
             })
             .collect();
         let regions = (!regions.is_empty()).then_some(regions);
@@ -1394,6 +1423,7 @@ impl<'a> BenchmarkRunner<'a> {
             .filter(|(key, _)| {
                 !key.starts_with(crate::region::METRIC_PREFIX)
                     && !key.starts_with(crate::region::COUNT_PREFIX)
+                    && !key.starts_with(crate::region_scope::KEY_PREFIX)
             })
             .map(|(key, values)| (key.clone(), values.clone()))
             .collect();
