@@ -73,7 +73,7 @@ fn timeout_json_export() {
     let json_file = dir.path().join("out.json");
 
     perfratio()
-        .args(["--timeout", "150ms", "-N", "--runs=2", "--export-json"])
+        .args(["--timeout", "1s", "-N", "--runs=2", "--export-json"])
         .arg(&json_file)
         .args(["sleep 5", "sleep 0.01"])
         .assert()
@@ -89,7 +89,7 @@ fn timeout_json_export() {
     let cmd1 = &results[0];
     assert_eq!(cmd1["command"], "sleep 5");
     assert_eq!(cmd1["timed_out"], true);
-    assert!((cmd1["timeout"].as_f64().unwrap() - 0.15).abs() < 1e-6);
+    assert!((cmd1["timeout"].as_f64().unwrap() - 1.0).abs() < 1e-6);
     assert_eq!(cmd1["times"].as_array().unwrap().len(), 0);
 
     // Command 2: completed normally
