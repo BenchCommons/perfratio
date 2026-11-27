@@ -58,7 +58,7 @@ pub fn build_command() -> Command {
                        '--shell=none'. If multiple commands are given, perfratio will show a \
                        comparison of the respective runtimes. A single '-' reads one command per line from \
                        stdin (blank lines and lines starting with '#' are ignored).")
-                .required_unless_present_any(["generate-completions", "import-json", "argv"])
+                .required_unless_present_any(["generate-completions", "verify-evidence", "import-json", "argv"])
                 .action(ArgAction::Append)
                 .value_hint(ValueHint::CommandString)
                 .value_parser(NonEmptyStringValueParser::new()),
@@ -1254,6 +1254,26 @@ pub fn build_command() -> Command {
                        histogram with kernel density estimate and run-order plot per command, \
                        and a box plot comparing all commands. No JavaScript, no external \
                        assets; light and dark themes. Also chosen by '--export FILE.html'."),
+        )
+        .arg(
+            Arg::new("evidence")
+                .long("evidence")
+                .action(ArgAction::Set)
+                .value_name("DIR")
+                .value_hint(ValueHint::DirPath)
+                .help("Write an evidence bundle to the new or empty directory DIR: the JSON results, \
+                       the samples of every run, environment, calibration, validation, quality and the \
+                       command line, with SHA-256 hashes in manifest.json. No host name or \
+                       environment variables. The commands are recorded as typed: keep secrets out of them. Check it with '--verify-evidence'"),
+        )
+        .arg(
+            Arg::new("verify-evidence")
+                .long("verify-evidence")
+                .action(ArgAction::Set)
+                .value_name("DIR")
+                .value_hint(ValueHint::DirPath)
+                .conflicts_with_all(["evidence", "command"])
+                .help("Check the hashes of the evidence bundle in DIR and exit (0: intact, 1: not)"),
         )
         .arg(
             Arg::new("export-json")

@@ -79,6 +79,8 @@ pub mod environment_watch;
 #[doc(hidden)]
 pub mod error;
 #[doc(hidden)]
+pub mod evidence;
+#[doc(hidden)]
 pub mod export;
 #[doc(hidden)]
 pub mod frequency;

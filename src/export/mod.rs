@@ -98,6 +98,8 @@ trait Exporter {
 
 pub enum ExportTarget {
     File(String),
+    /// `--evidence DIR`: a bundle directory, written once by the final call
+    Evidence(PathBuf),
     Stdout,
 }
 
@@ -237,6 +239,10 @@ impl ExportManager {
             .map_err(|e| anyhow::anyhow!("Invalid Pareto option: {e}"))?,
         };
 
+        if let Some(dir) = matches.try_get_one::<String>("evidence").ok().flatten() {
+            export_manager.add_evidence(Path::new(dir))?;
+        }
+
         if let Some(args) = matches.get_many::<String>("export") {
             for filename in args {
                 let export_type = get_export_type_from_filename(filename);
@@ -267,6 +273,22 @@ impl ExportManager {
     /// The environment of this run (`perfratio.environment`)
     pub fn environment(&self) -> &crate::environment::Environment {
         &self.metadata.environment
+    }
+
+    /// `--evidence DIR`: a JSON export that is written as an evidence bundle (#375). The
+    /// directory is created now, so that a bad one fails before the benchmarks run.
+    pub fn add_evidence(&mut self, dir: &Path) -> Result<()> {
+        crate::evidence::prepare(dir)?;
+        self.exporters.push(ExporterWithTarget {
+            exporter: Box::new(JsonExporter {
+                metadata: Some(self.metadata.clone()),
+                ..Default::default()
+            }),
+            target: ExportTarget::Evidence(dir.to_path_buf()),
+            append_delta_table: false,
+            append_pareto: false,
+        });
+        Ok(())
     }
 
     /// Add an additional exporter to the ExportManager
@@ -384,6 +406,11 @@ impl ExportManager {
                 ExportTarget::File(ref filename) => {
                     if !(intermediate && is_special_file(Path::new(filename))) {
                         write_to_file(filename, &content()?)?;
+                    }
+                }
+                ExportTarget::Evidence(ref dir) => {
+                    if !intermediate {
+                        crate::evidence::write(dir, &content()?)?;
                     }
                 }
                 ExportTarget::Stdout => {
