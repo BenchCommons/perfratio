@@ -150,6 +150,16 @@ const CASES: &[(&str, &[&str])] = &[
     ),
     ("region", &["--runs=3", "--region=work", "sleep 0.1"]),
     (
+        "region scope",
+        &[
+            "--runs=3",
+            "--region=work",
+            "--region-scope",
+            "--energy",
+            "sleep 0.1",
+        ],
+    ),
+    (
         "region metric and first run separate",
         &[
             "--runs=3",
