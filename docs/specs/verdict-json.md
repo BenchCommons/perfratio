@@ -1,7 +1,6 @@
 # Spec: Machine-readable verdicts (`--verdict-json`) and an MCP server for agents (#386)
 
-**Issue:** #386. **Status:** `--verdict-json` implemented; the MCP server is **not** implemented and
-waits for maintainer decisions (see "Questions"). Parent: #365. Related: #325 (budgets), #318,
+**Issue:** #386. **Status:** `--verdict-json` and the MCP server (`mcp-server.md`) are implemented. Parent: #365. Related: #325 (budgets), #318,
 #323 (effect size and noise threshold). Extends `compare-baseline.md` and `budgets.md`.
 
 ## Problem / Motivation
@@ -107,34 +106,8 @@ command, too few runs, a metric missing in the baseline (`--energy` only in the 
 `--noise-threshold`, `--equivalence-margin`, `--verdict-json` without `--compare`, first key, and
 validation against `docs/schema/verdict.schema.json` (strict copy).
 
-## MCP server: not implemented, needs a maintainer decision
-The issue proposes "an optional MCP server binary exposing run/compare/capabilities". The verdict
-document is the part an MCP tool would return; the server itself raises questions that this
-repository has not decided, so nothing was built:
-
-1. **Scope.** Which tools? `run` and `compare` would execute arbitrary commands on behalf of the
-   caller. Is that acceptable at all, or should the server only read exports (`compare`,
-   `capabilities`) and let the agent run perfratio itself? If it runs commands: an allow-list,
-   a working-directory root, a timeout and a cap on concurrent runs are needed. The repository's
-   security policy (`SECURITY.md`) has no rule for tool servers.
-2. **Dependencies.** An MCP server speaks JSON-RPC 2.0 over stdio. It can be written with
-   `serde_json` (already a dependency) in about 300 lines: `initialize`, `tools/list`,
-   `tools/call`. The alternative is the official Rust SDK (`rmcp`), which brings `tokio` and a
-   large tree through `cargo-deny`. Recommendation: no new dependency, protocol subset by hand.
-3. **Packaging.** A second `[[bin]]` (`perfratio-mcp`) in this crate, a separate crate in a
-   workspace, or a subcommand? The library crate (`library-crate.md`) exposes `api::Benchmark`;
-   a separate crate depending on the library avoids pulling the CLI into the server and the server
-   into the `cli` feature. Recommendation: separate crate in the same repository, not published
-   until the protocol version is settled.
-4. **Capabilities.** What does `capabilities` return: the metrics available on this host
-   (energy backend, counters, `perf_event_paranoid`), the environment fingerprint (#314) and the
-   measurement-quality floor (#313)? This overlaps `--check-system`; a shared structure would avoid
-   two descriptions of the host.
-5. **Protocol version and stability.** Which MCP revision to target (the protocol is still
-   changing), and whether tool schemas are versioned together with `verdictVersion`.
-6. **Where it belongs.** The issue's parent (#365) is about agents; if `tools-benchmark`
-   (the consumer of the export) is meant to host agent integration, the server may belong there
-   and call `perfratio --verdict-json`, which this change makes enough.
-
-Until these are answered, an agent integration can call `perfratio ... --compare base.json
---verdict-json out.json` and read `out.json`.
+## MCP server
+The server is specified in `mcp-server.md` (binary `perfratio-mcp`, tools `capabilities`,
+`run_benchmark` and `compare`, which returns this document). It answers the open questions of the
+previous version of this section: scope and trust model, no new dependency, second binary of this
+crate, protocol revision 2026-07-28 with the 2025-11-25 handshake.
