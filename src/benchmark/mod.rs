@@ -3135,6 +3135,31 @@ mod tests {
         assert_eq!(result.mean_energy_joules, Some(2.0));
     }
 
+    fn effect_runner_answer(times: Vec<f64>) -> bool {
+        let cmd = Command::new(None, "true");
+        let options = Options {
+            command_output_policies: vec![CommandOutputPolicy::Null],
+            target_effect: Some(0.5),
+            target_effect_stops: true,
+            ..Default::default()
+        };
+        let executor = MockExecutor::new(None, None);
+        let mut runner = BenchmarkRunner::new(0, 0, &cmd, &options, &executor);
+        runner.times_real = times;
+        runner.effect_runs_enough()
+    }
+
+    #[test]
+    fn test_effect_runs_enough_with_a_nonzero_standard_deviation() {
+        // mean 1.0, sd 1.27: a 50% effect is 0.39 sd, far from detectable with 2 runs
+        assert!(!effect_runner_answer(vec![0.1, 1.9]));
+        // mean 1.0, sd ~0.01: a 50% effect is ~47 sd, detectable with 10 runs
+        let quiet: Vec<f64> = (0..10)
+            .map(|i| if i % 2 == 0 { 0.99 } else { 1.01 })
+            .collect();
+        assert!(effect_runner_answer(quiet));
+    }
+
     #[test]
     fn test_baseline_net_mean_stderr() {
         let cmd = Command::new(None, "true");
