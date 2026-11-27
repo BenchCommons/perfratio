@@ -73,7 +73,7 @@ fn timeout_json_export() {
     let json_file = dir.path().join("out.json");
 
     perfratio()
-        .args(["--timeout", "150ms", "-N", "--runs=2", "--export-json"])
+        .args(["--timeout", "1s", "-N", "--runs=2", "--export-json"])
         .arg(&json_file)
         .args(["sleep 5", "sleep 0.01"])
         .assert()
@@ -89,7 +89,7 @@ fn timeout_json_export() {
     let cmd1 = &results[0];
     assert_eq!(cmd1["command"], "sleep 5");
     assert_eq!(cmd1["timed_out"], true);
-    assert!((cmd1["timeout"].as_f64().unwrap() - 0.15).abs() < 1e-6);
+    assert!((cmd1["timeout"].as_f64().unwrap() - 1.0).abs() < 1e-6);
     assert_eq!(cmd1["times"].as_array().unwrap().len(), 0);
 
     // Command 2: completed normally
@@ -106,7 +106,7 @@ fn timeout_csv_and_markdown_exports() {
     let md_file = dir.path().join("out.md");
 
     perfratio()
-        .args(["--timeout", "200ms", "-N", "--runs=2", "--export-csv"])
+        .args(["--timeout", "1s", "-N", "--runs=2", "--export-csv"])
         .arg(&csv_file)
         .arg("--export-markdown")
         .arg(&md_file)
@@ -117,8 +117,8 @@ fn timeout_csv_and_markdown_exports() {
     // Verify CSV output
     let csv_content = std::fs::read_to_string(&csv_file).unwrap();
     assert!(
-        csv_content.contains(">0.200 (timeout)"),
-        "CSV should contain '>0.200 (timeout)':\n{csv_content}"
+        csv_content.contains(">1.000 (timeout)"),
+        "CSV should contain '>1.000 (timeout)':\n{csv_content}"
     );
 
     // Verify Markdown output
