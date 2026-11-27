@@ -189,6 +189,20 @@ pub fn build_command() -> Command {
                        e.g. for a pull request comment or a CI job summary."),
         )
         .arg(
+            Arg::new("verdict-json")
+                .long("verdict-json")
+                .action(ArgAction::Set)
+                .value_name("FILE")
+                .value_hint(ValueHint::FilePath)
+                .requires("compare")
+                .help("With '--compare': write a compact JSON verdict to FILE: per command and \
+                       metric whether it improved, regressed or is unchanged or inconclusive, \
+                       with the change, its confidence interval and the p-value, one overall \
+                       verdict (improved, regressed, trade_off, unchanged, inconclusive), and \
+                       the result of '--budget'. Meant for scripts and agents. The file is \
+                       written even when a budget fails."),
+        )
+        .arg(
             Arg::new("warmup")
                 .long("warmup")
                 .short('w')
@@ -590,7 +604,8 @@ pub fn build_command() -> Command {
             Arg::new("thermal")
                 .long("thermal")
                 .action(ArgAction::SetTrue)
-                .help("Sample the CPU temperature while the benchmark runs (Linux).")
+                .help("Sample the CPU temperature while the benchmark runs (Linux only; elsewhere \
+                       it warns and does nothing).")
                 .long_help(
                     "Sample the hottest CPU temperature sensor (thermal zones and hwmon) on a \
                      background thread while the benchmark runs, and report it as \
@@ -1531,7 +1546,8 @@ pub fn build_command() -> Command {
                        noisy or irreproducible, with a hint for each problem:\n\
                        Linux: CPU frequency governor, turbo boost, load average, power source, \
                        temperature.\n\
-                       macOS: load average, power source, Low Power Mode, thermal throttling.\n\n\
+                       macOS: load average, power source, Low Power Mode, thermal throttling.\n\
+                       Windows: power source, power plan, CPU load, CPU frequency limit.\n\n\
                        '--check-system' (or '=warn') only reports. '--check-system=strict' \
                        aborts with exit code 4 if any check does not pass, which is useful on \
                        dedicated benchmark machines and CI runners.\n\n\
@@ -1554,7 +1570,8 @@ pub fn build_command() -> Command {
                        'high': nice -20 (Linux, macOS), HIGH_PRIORITY_CLASS (Windows).\n\
                        'idle': SCHED_IDLE (Linux), nice 19 (macOS), IDLE_PRIORITY_CLASS (Windows).\n\
                        'realtime': SCHED_FIFO at the maximum priority (Linux), \
-                       REALTIME_PRIORITY_CLASS (Windows). Not available on macOS.\n\n\
+                       REALTIME_PRIORITY_CLASS (Windows). On macOS: nice -20 plus the \
+                       foreground task role, not a real-time policy.\n\n\
                        'high' and 'realtime' need privileges: root or \
                        'sudo setcap cap_sys_nice+ep \"$(command -v perfratio)\"' on Linux, root on \
                        macOS, administrator rights on Windows (otherwise 'realtime' silently \
