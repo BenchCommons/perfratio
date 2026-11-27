@@ -547,6 +547,17 @@ impl<'a> BenchmarkRunner<'a> {
         Some((clamped, total))
     }
 
+    /// Real times of the runs that succeeded. In persistent mode with `-i`, a failed
+    /// iteration is recorded as 0 s and must not enter the warm-up analysis.
+    fn successful_times_real(&self) -> Vec<Second> {
+        self.times_real
+            .iter()
+            .zip(&self.exit_codes)
+            .filter(|(_, code)| **code == Some(0))
+            .map(|(&t, _)| t)
+            .collect()
+    }
+
     /// The run times that count for `--target-precision`: without a first run
     /// that `--first-run` excludes.
     fn measured_times(&self) -> &[Second] {
@@ -1792,7 +1803,7 @@ impl<'a> BenchmarkRunner<'a> {
 
                 if self.options.persistent {
                     let report = crate::persistent::IterationsReport::from_times(
-                        &self.times_real,
+                        &self.successful_times_real(),
                         self.region_sdk.clone(),
                     );
                     let line = match (&report.steady_state, report.status) {
@@ -2193,6 +2204,12 @@ impl<'a> BenchmarkRunner<'a> {
             None
         };
 
+        let iterations = self.options.persistent.then(|| {
+            crate::persistent::IterationsReport::from_times(
+                &self.successful_times_real(),
+                self.region_sdk.clone(),
+            )
+        });
         let total_runs = self.times_real.len();
         let mean_net_energy = self.net_energy_mean();
         let energy_domains = domains_series(&self.domain_measurements, total_runs);
@@ -2233,12 +2250,6 @@ impl<'a> BenchmarkRunner<'a> {
             b
         });
 
-        let iterations = self.options.persistent.then(|| {
-            crate::persistent::IterationsReport::from_times(
-                &self.times_real,
-                self.region_sdk.clone(),
-            )
-        });
         let mut result = BenchmarkResult {
             command: self.command.get_name(),
             command_with_unused_parameters: self.command.get_name_with_unused_parameters(),
@@ -2999,6 +3010,20 @@ mod tests {
         let result = runner.finish(false).unwrap();
         assert_eq!(result.energy_joules, Some(vec![1.5, 2.5]));
         assert_eq!(result.mean_energy_joules, Some(2.0));
+    }
+
+    #[test]
+    fn test_successful_times_real_skips_failed_iterations() {
+        let cmd = Command::new(None, "true");
+        let options = Options {
+            command_output_policies: vec![CommandOutputPolicy::Null],
+            ..Default::default()
+        };
+        let executor = MockExecutor::new(None, None);
+        let mut runner = BenchmarkRunner::new(0, 0, &cmd, &options, &executor);
+        runner.times_real = vec![0.1, 0.0, 0.2];
+        runner.exit_codes = vec![Some(0), Some(1), Some(0)];
+        assert_eq!(runner.successful_times_real(), vec![0.1, 0.2]);
     }
 
     #[test]

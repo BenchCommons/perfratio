@@ -258,6 +258,12 @@ impl Process {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(stderr);
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            // own process group, so a kill also reaches the children of the program
+            command.process_group(0);
+        }
         let mut child = command
             .spawn()
             .context("Could not start the persistent process")?;
@@ -297,7 +303,7 @@ impl Process {
                 Ok(line) => return Ok(line),
                 Err(RecvTimeoutError::Timeout) => {
                     if deadline.is_some_and(|d| Instant::now() >= d) {
-                        let _ = self.child.kill();
+                        self.kill();
                         bail!("the persistent process did not answer in time");
                     }
                 }
@@ -331,6 +337,15 @@ impl Process {
         }
     }
 
+    fn kill(&mut self) {
+        #[cfg(unix)]
+        // SAFETY: signals the group created by process_group(0); no memory is touched.
+        unsafe {
+            libc::kill(-(self.child.id() as libc::pid_t), libc::SIGKILL);
+        }
+        let _ = self.child.kill();
+    }
+
     fn shutdown(&mut self) {
         if let Some(mut stdin) = self.stdin.take() {
             let _ = writeln!(stdin, "quit");
@@ -342,7 +357,7 @@ impl Process {
             }
             std::thread::sleep(Duration::from_millis(10));
         }
-        let _ = self.child.kill();
+        self.kill();
         let _ = self.child.wait();
     }
 }
