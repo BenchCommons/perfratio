@@ -441,6 +441,8 @@ pub struct Options {
     pub energy_baseline: Option<std::time::Duration>,
     /// Report energy per RAPL domain (`--energy-domains`)
     pub energy_domains: bool,
+    /// `--gpu`: also record GPU energy (`gpu:<index>` domains) and utilization
+    pub energy_gpu: bool,
     /// Which energy backend to use (`--energy-backend`)
     pub energy_backend: crate::energy::BackendPreference,
 
@@ -586,6 +588,7 @@ impl Default for Options {
             measure_energy: false,
             energy_baseline: None,
             energy_domains: false,
+            energy_gpu: false,
             energy_backend: crate::energy::BackendPreference::Auto,
             deep_stats: false,
             filter_failed: false,
@@ -901,6 +904,7 @@ impl Options {
             );
         }
         options.energy_domains = matches.get_flag("energy-domains");
+        options.energy_gpu = matches.get_flag("gpu");
         options.pareto = crate::pareto::ParetoConfig::parse(
             matches.get_one::<String>("pareto").map(String::as_str),
             matches

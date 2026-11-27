@@ -1,3 +1,4 @@
+pub mod gpu;
 pub mod ioreport;
 pub mod perf_rapl;
 pub mod rapl;
@@ -21,6 +22,12 @@ pub trait EnergySampler: Send + Sync {
     /// by the last `stop()`. The domains overlap, so they must not be added to each other
     /// or to the total (`rapl-domains.md`). `None` if unsupported or the read failed.
     fn domain_energy(&self) -> Option<Vec<(String, f64)>> {
+        None
+    }
+
+    /// Utilization in percent per GPU (`gpu:<index>`) read at the last `stop()`; only the
+    /// GPU wrapper of `--gpu` provides it (`gpu-energy.md`).
+    fn gpu_utilization(&self) -> Option<Vec<(String, f64)>> {
         None
     }
 }

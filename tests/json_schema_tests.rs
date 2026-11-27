@@ -187,6 +187,10 @@ const CASES: &[(&str, &[&str])] = &[
         &["--runs=3", "--energy", "--energy-domains", "sleep 0.1"],
     ),
     (
+        "gpu",
+        &["--runs=3", "--energy", "--gpu", "sleep 0.1", "sleep 0.2"],
+    ),
+    (
         "energy baseline",
         &["--runs=3", "--energy", "--energy-baseline=1s", "sleep 0.1"],
     ),
@@ -678,4 +682,36 @@ fn interference_matches_the_schema() {
     assert_eq!(interference["thermal"]["throttle_events"], 0);
     assert_eq!(interference["cgroup_oom_kills"], 0);
     assert_valid("interference", &document);
+}
+
+/// `--gpu` with the simulated backend of `--debug-mode`: `gpu:<index>` joules next to the host
+/// domains, utilization per run, and the strict schema accepts the new fields (#380).
+#[test]
+fn gpu_fields_match_the_schema() {
+    let document = export(&["--runs=3", "--energy", "--gpu", "sleep 0.1"]);
+    let result = &document["results"][0];
+    for key in ["gpu:0", "gpu:1"] {
+        assert_eq!(result["energy_domains_joules"][key], json!([2.0, 2.0, 2.0]));
+        assert_eq!(
+            result["gpu_utilization_percent"][key],
+            json!([60.0, 60.0, 60.0])
+        );
+    }
+    // the export metadata probes the real libraries: absent here, present on a GPU host
+    let gpu = &document["perfratio"]["gpu"];
+    assert!(
+        gpu["devices"].is_u64() && gpu["backends"].is_array(),
+        "{gpu}"
+    );
+    assert_valid("gpu", &document);
+}
+
+/// Without `--gpu` the new fields are absent: the 1.37 change is additive.
+#[test]
+fn gpu_fields_are_absent_without_the_flag() {
+    let document = export(&["--runs=2", "--energy", "sleep 0.1"]);
+    assert!(document["perfratio"].get("gpu").is_none());
+    assert!(document["results"][0]
+        .get("gpu_utilization_percent")
+        .is_none());
 }

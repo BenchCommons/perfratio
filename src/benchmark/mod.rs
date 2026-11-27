@@ -91,6 +91,9 @@ pub struct BenchmarkRunner<'a> {
     pub domain_measurements: Vec<Option<Vec<(String, f64)>>>,
     /// Breakdown of the run being recorded, moved to `domain_measurements` with its time
     pending_domains: Option<Vec<(String, f64)>>,
+    /// GPU utilization of each run (`--gpu`), aligned with `energy_measurements`
+    pub gpu_util_measurements: Vec<Option<Vec<(String, f64)>>>,
+    pending_gpu_util: Option<Vec<(String, f64)>>,
     pub exit_codes: Vec<Option<i32>>,
     /// `--concurrency N` (N > 1): instance wall times of every run, in spawn order
     pub instance_times: Vec<Vec<Second>>,
@@ -233,6 +236,23 @@ impl<'a> BenchmarkRunner<'a> {
             None
         };
 
+        let energy_sampler = match energy_sampler {
+            Some(inner) if options.energy_gpu => {
+                Some(if matches!(options.executor_kind, ExecutorKind::Mock(_)) {
+                    // deterministic stand-in for the vendor libraries
+                    Box::new(crate::energy::gpu::GpuSampler::new(
+                        inner,
+                        vec![Box::new(crate::energy::gpu::SimulatedGpu::new(
+                            "nvml", 2, 2.0, 60.0,
+                        ))],
+                    )) as Box<dyn EnergySampler>
+                } else {
+                    crate::energy::gpu::with_gpu(inner)
+                })
+            }
+            other => other,
+        };
+
         let mut energy_sampler = energy_sampler;
         if options.energy_domains {
             if let Some(s) = energy_sampler.as_mut() {
@@ -263,6 +283,8 @@ impl<'a> BenchmarkRunner<'a> {
             energy_measurements: vec![],
             domain_measurements: vec![],
             pending_domains: None,
+            gpu_util_measurements: vec![],
+            pending_gpu_util: None,
             exit_codes: vec![],
             instance_times: vec![],
             instance_exit_codes: vec![],
@@ -503,8 +525,11 @@ impl<'a> BenchmarkRunner<'a> {
                 .map(|(n, j)| (n, align_to_child(j, time_real, window)))
                 .collect::<Vec<_>>()
         });
-        if self.options.energy_domains {
+        if self.options.energy_domains || self.options.energy_gpu {
             self.pending_domains = domains;
+        }
+        if self.options.energy_gpu {
+            self.pending_gpu_util = sampler.gpu_utilization();
         }
         energy.map(|e| align_to_child(e, time_real, window))
     }
@@ -727,6 +752,8 @@ impl<'a> BenchmarkRunner<'a> {
         self.energy_measurements
             .push(self.subtract_baseline_energy(energy_initial));
         self.domain_measurements.push(self.pending_domains.take());
+        self.gpu_util_measurements
+            .push(self.pending_gpu_util.take());
         self.exit_codes.push(extract_exit_code(status));
         self.push_instances(&res, run.ids());
         self.resource_counters.push(res.counters);
@@ -798,6 +825,8 @@ impl<'a> BenchmarkRunner<'a> {
         self.energy_measurements
             .push(self.subtract_baseline_energy(energy));
         self.domain_measurements.push(self.pending_domains.take());
+        self.gpu_util_measurements
+            .push(self.pending_gpu_util.take());
         self.exit_codes.push(extract_exit_code(status));
         self.push_instances(&res, ids);
         self.resource_counters.push(res.counters);
@@ -976,6 +1005,12 @@ impl<'a> BenchmarkRunner<'a> {
         self.memory_usage_byte = select(&self.memory_usage_byte, keep);
         if self.energy_measurements.len() == run_count {
             self.energy_measurements = select(&self.energy_measurements, keep);
+        }
+        if self.gpu_util_measurements.len() == run_count {
+            self.gpu_util_measurements = keep
+                .iter()
+                .map(|&index| self.gpu_util_measurements[index].clone())
+                .collect();
         }
         if self.domain_measurements.len() == run_count {
             self.domain_measurements = keep
@@ -1872,11 +1907,22 @@ impl<'a> BenchmarkRunner<'a> {
                         if let Some(domains) =
                             domains_series(&self.domain_measurements, self.times_real.len())
                         {
-                            let parts: Vec<String> = ["core", "uncore", "dram", "package", "psys"]
-                                .iter()
-                                .filter_map(|n| domains.get(*n).map(|v| (n, v)))
-                                .map(|(n, v)| format!("{n} {:.3} J", mean(v)))
-                                .collect();
+                            let mut parts: Vec<String> =
+                                ["core", "uncore", "dram", "package", "psys"]
+                                    .iter()
+                                    .filter_map(|n| domains.get(*n).map(|v| (n, v)))
+                                    .map(|(n, v)| format!("{n} {:.3} J", mean(v)))
+                                    .collect();
+                            let util =
+                                domains_series(&self.gpu_util_measurements, self.times_real.len());
+                            for (n, v) in domains.iter().filter(|(n, _)| n.starts_with("gpu:")) {
+                                let u = util
+                                    .as_ref()
+                                    .and_then(|u| u.get(n))
+                                    .map(|u| format!(", util {:.0}%", mean(u)))
+                                    .unwrap_or_default();
+                                parts.push(format!("{n} {:.3} J{u}", mean(v)));
+                            }
                             crate::outln!("  Domains (mean):      {}", parts.join(" · "));
                         }
                     } else {
@@ -2168,6 +2214,7 @@ impl<'a> BenchmarkRunner<'a> {
         let total_runs = self.times_real.len();
         let mean_net_energy = self.net_energy_mean();
         let energy_domains = domains_series(&self.domain_measurements, total_runs);
+        let gpu_utilization = domains_series(&self.gpu_util_measurements, total_runs);
         let valid_energy: Vec<f64> = self.energy_measurements.into_iter().flatten().collect();
         let energy_samples = self.energy_sampler.is_some().then_some(valid_energy.len());
         let (mean_energy, mean_watts, energy_all) = if !valid_energy.is_empty() {
@@ -2234,6 +2281,7 @@ impl<'a> BenchmarkRunner<'a> {
             idle_watts: self.idle_watts,
             mean_net_energy_joules: mean_net_energy,
             energy_domains_joules: energy_domains,
+            gpu_utilization_percent: gpu_utilization,
             exit_codes: if concurrency.is_some() {
                 // N exit codes per run, row-major (docs/specs/concurrency.md)
                 self.instance_exit_codes.into_iter().flatten().collect()

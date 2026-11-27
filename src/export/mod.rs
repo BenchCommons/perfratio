@@ -172,6 +172,14 @@ impl ExportManager {
         );
         metadata.region_protocol = region.then_some(crate::region::PROTOCOL_VERSION);
         metadata.energy_backend = energy.and_then(Result::ok).map(|b| b.as_str());
+        if matches.get_flag("gpu") {
+            let info = crate::energy::gpu::probe();
+            metadata.gpu = Some(metadata::GpuMetadata {
+                backends: info.backends,
+                devices: info.devices,
+                unavailable_reason: info.unavailable_reason,
+            });
+        }
         let environment = &mut metadata.environment;
         environment.backends.energy = metadata.energy_backend.map(str::to_string);
         if matches!(

@@ -116,6 +116,12 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub energy_domains_joules: Option<std::collections::BTreeMap<String, Vec<f64>>>,
 
+    /// GPU utilization in percent per device (`gpu:<index>`) and run, from `--gpu`. Sampled
+    /// when the run ends, so it describes the driver's last sample window (NVML: 1/6 s to
+    /// 1 s), not exactly the run. Only present when every run has it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gpu_utilization_percent: Option<std::collections::BTreeMap<String, Vec<f64>>>,
+
     /// Exit codes of all command invocations
     #[serde(default)]
     pub exit_codes: Vec<Option<i32>>,

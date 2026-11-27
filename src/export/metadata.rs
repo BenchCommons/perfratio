@@ -27,6 +27,9 @@ pub struct ExportMetadata {
     /// Omitted unless `--energy` is given and a backend is usable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub energy_backend: Option<&'static str>,
+    /// GPU backends and devices seen by `--gpu` (new in 1.37). Omitted without `--gpu`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpu: Option<GpuMetadata>,
     /// Region protocol version perfratio speaks (new in 1.23). Omitted unless
     /// `--region` or `--metric region:<name>` is given.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -254,6 +257,18 @@ pub struct SystemInfo {
     pub kernel: Option<String>,
 }
 
+/// `perfratio.gpu`: what `--gpu` found (`gpu-energy.md`)
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct GpuMetadata {
+    /// `nvml`, `amd_smi` (open enum)
+    pub backends: Vec<&'static str>,
+    /// Devices across all backends, numbered `gpu:0..`
+    pub devices: usize,
+    /// `gpu_library_not_found`, `gpu_init_failed`, `gpu_no_devices`, `unsupported_platform`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<&'static str>,
+}
+
 impl ExportMetadata {
     pub fn new(labels: BTreeMap<String, String>, measurements: Measurements) -> Self {
         let now = SystemTime::now()
@@ -279,6 +294,7 @@ impl ExportMetadata {
             environment,
             meta: BTreeMap::new(),
             energy_backend: None,
+            gpu: None,
             region_protocol: None,
             measurements,
             statistics: StatisticsInfo::from_settings(&crate::stats::settings::current()),
