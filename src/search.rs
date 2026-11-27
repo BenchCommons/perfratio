@@ -15,7 +15,9 @@ use clap::ArgMatches;
 use serde::Serialize;
 
 use crate::metric::Metric;
-use crate::optimize::{Num, ALPHA, DEFAULT_BUDGET, MIN_BUDGET};
+use crate::optimize::{Num, ALPHA};
+#[cfg(feature = "cli")]
+use crate::optimize::{DEFAULT_BUDGET, MIN_BUDGET};
 use crate::output::format::format_duration;
 
 /// Successive halving keeps `1/ETA` of the points and multiplies the runs by `ETA` per rung.
@@ -47,6 +49,7 @@ impl Algorithm {
         }
     }
 
+    #[cfg(feature = "cli")]
     fn parse(text: &str) -> Option<Self> {
         Some(match text {
             "golden" => Algorithm::Golden,
