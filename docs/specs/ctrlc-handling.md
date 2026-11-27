@@ -1,7 +1,7 @@
 # Spec: Ctrl-C Timing Recovery & Graceful Interruption (Issue #89)
 
 ## 1. Problem Statement
-In existing versions of hyperfine / joulex, pressing Ctrl-C during a benchmark terminates the process abruptly with exit code 130 / -2 (SIGINT):
+In existing versions of hyperfine, pressing Ctrl-C during a benchmark terminates the process abruptly with exit code 130 / -2 (SIGINT):
 - Any runs gathered so far for the benchmark currently in progress are discarded.
 - Incomplete benchmarks produce no output, no relative-speed summary, and are omitted from export files.
 - For long-running benchmarks (e.g. commands taking seconds/minutes or multi-repetition energy measurements), user interruption loses all accumulated timing data.
@@ -53,7 +53,7 @@ In existing versions of hyperfine / joulex, pressing Ctrl-C during a benchmark t
     - When unbenchmarked commands remain: `Summary (interrupted — N commands not benchmarked)`.
     - When all commands benchmarked partially/fully: `Summary (interrupted)`.
 - **JSON Export (`src/export/json.rs`):**
-  - Add `interrupted: bool` to `JoulexSummary` (`#[serde(default, skip_serializing_if = "std::ops::Not::not")]`).
+  - Add `interrupted: bool` to `PerfratioSummary` (`#[serde(default, skip_serializing_if = "std::ops::Not::not")]`).
   - Add `runs_planned: Option<u64>` to `BenchmarkResult` (`#[serde(default, skip_serializing_if = "Option::is_none")]`).
 - **Exit Code:**
   - If `crate::util::interrupt::interrupted()` is true, exit with code 130 upon completion of summary and export.
@@ -63,7 +63,7 @@ In existing versions of hyperfine / joulex, pressing Ctrl-C during a benchmark t
   - `interrupt::install()`, `interrupted()`, `reset()`.
   - JSON serialization of `interrupted: true` and `runs_planned`.
 - Integration tests:
-  - Unix process signaling: spawn joulex with `std::process::Command`, benchmark `sleep 0.1` for 50 runs, send `SIGINT` via `libc::kill`, and verify:
+  - Unix process signaling: spawn perfratio with `std::process::Command`, benchmark `sleep 0.1` for 50 runs, send `SIGINT` via `libc::kill`, and verify:
     - Exit code is 130.
     - Output contains `interrupted after` and `Summary (interrupted)`.
     - JSON export has `"interrupted": true`, `"runs_planned": 50`, and `1 <= times.len() < 50`.

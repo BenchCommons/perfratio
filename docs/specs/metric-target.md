@@ -1,7 +1,7 @@
 # Spec: `--metric` Primary Optimization Target (#48)
 
 ## Problem / Motivation
-References: `sharkdp/hyperfine#736`, `perfratio#48` (`joulex#48`).
+References: `sharkdp/hyperfine#736`, `perfratio#48`.
 
 By default, benchmarking tools compute all comparisons, relative speed ratios, rankings, summaries, and outlier detection solely from **wall-clock time**. However, modern performance engineering frequently targets other critical dimensions:
 1. **Energy consumption (Joules):** Finding the greenest or most energy-efficient implementation (perfratio's core value proposition).

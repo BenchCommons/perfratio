@@ -2,7 +2,7 @@
 
 **Author:** Matheus Breguêz <matbrgz@gmail.com>  
 **Status:** Approved  
-**Issue:** [UnitedOpen-Source/joulex#6](https://github.com/UnitedOpen-Source/joulex/issues/6)  
+**Issue:** [BenchCommons/perfratio#6](https://github.com/BenchCommons/perfratio/issues/6)  
 **Upstream References:** `sharkdp/hyperfine#607`, PR `sharkdp/hyperfine#873`, `sharkdp/hyperfine#830`
 
 ---
@@ -11,7 +11,7 @@
 
 Users frequently benchmark before and after applying changes (system tuning, hardware upgrades, compiler flags, or pull requests) across different sessions or CI runs.
 
-Currently, comparing benchmarks requires running all commands simultaneously in the same process. `--import-json <FILE>` allows loading previously exported JSON benchmarks into `joulex` to:
+Currently, comparing benchmarks requires running all commands simultaneously in the same process. `--import-json <FILE>` allows loading previously exported JSON benchmarks into `perfratio` to:
 1. Participate in relative speed comparisons against live benchmarks without re-executing the baseline.
 2. Directly convert previous benchmark runs into other formats (Markdown, CSV, AsciiDoc, Org-mode) without requiring dummy commands.
 

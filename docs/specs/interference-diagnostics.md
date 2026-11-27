@@ -1,7 +1,7 @@
 # Spec: interference diagnostics — trend, multimodality, inflated variance (#54)
 
 ## Problem
-joulex flags individual outliers (modified Z-score) and a slow first run. It
+perfratio flags individual outliers (modified Z-score) and a slow first run. It
 misses three common kinds of interference:
 1. **Trends:** run times rising or falling over the runs (thermal throttling, a filling cache, a background job).
 2. **Multimodality:** two clusters of run times (P-/E-cores, caching, a job starting mid-benchmark), where mean ± σ is misleading.

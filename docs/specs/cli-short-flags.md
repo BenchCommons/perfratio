@@ -1,6 +1,6 @@
 # Specification: Short Flags for Style, Sort, Show-Output, Output, and Input
 
-**Issue:** [#78](https://github.com/UnitedOpen-Source/joulex/issues/78)  
+**Issue:** [#78](https://github.com/BenchCommons/perfratio/issues/78)  
 **Author:** Matheus Breguêz <matbrgz@gmail.com>  
 **Status:** Completed  
 **Upstream Reference:** `sharkdp/hyperfine#689`, `sharkdp/hyperfine#690`
@@ -25,7 +25,7 @@ This feature adds ergonomic short flag counterparts:
 - `-O, --output <WHERE>`
 - `-I, --input <WHERE>`
 
-All existing short flags in `joulex` (`w`, `m`, `M`, `r`, `s`, `p`, `C`, `c`, `P`, `D`, `L`, `F`, `S`, `N`, `i`, `E`, `u`, `e`, `n`, `h`, `V`) are preserved with zero conflicts.
+All existing short flags in `perfratio` (`w`, `m`, `M`, `r`, `s`, `p`, `C`, `c`, `P`, `D`, `L`, `F`, `S`, `N`, `i`, `E`, `u`, `e`, `n`, `h`, `V`) are preserved with zero conflicts.
 
 ---
 
@@ -40,7 +40,7 @@ Add `.short(...)` to the arguments:
 - `input`: `.short('I')`
 
 ### 2.2 Documentation & Manpages
-- Update `doc/joulex.1` and `doc/hyperfine.1`:
+- Update `doc/perfratio.1` and `doc/hyperfine.1`:
   - `\fB\-l\fR, \fB\-\-style\fR \fITYPE\fP`
   - `\fB\-t\fR, \fB\-\-sort\fR \fIMETHOD\fP`
   - `\fB\-d\fR, \fB\-\-show\-output\fR`

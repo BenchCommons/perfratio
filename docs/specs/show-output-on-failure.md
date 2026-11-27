@@ -15,7 +15,7 @@ Flaky failures (1 in 50 runs) are therefore hard to debug.
   stderr, then stdout (`──── stderr (last N lines) ────`), or
   `(the command produced no output)`.
 - With `-i`/`--ignore-failure`: each failed run's output is printed as a warning,
-  at most 3 times per joulex invocation, then
+  at most 3 times per perfratio invocation, then
   `the output of further failed runs is not shown`.
 - Without the option, the failure message suggests it (next to `--show-output`).
 - Conflicts with `--show-output` and `--output`; works with `--style`.

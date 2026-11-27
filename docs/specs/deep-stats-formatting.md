@@ -25,10 +25,10 @@
    );
    ```
 
-2. **Help Text & Man Page Correction (`src/cli.rs`, `doc/joulex.1`):**
+2. **Help Text & Man Page Correction (`src/cli.rs`, `doc/perfratio.1`):**
    - In `src/cli.rs`: update `--help` for `deep-stats` to:
      `"Perform deep statistical analysis (bootstrapped confidence intervals for mean, median, and stddev, plus hypothesis testing)."`
-   - In `doc/joulex.1`: document confidence intervals for mean, median, and standard deviation.
+   - In `doc/perfratio.1`: document confidence intervals for mean, median, and standard deviation.
 
 ## 3. Verification Plan
 - Unit & integration tests in `tests/integration_tests.rs`:

@@ -42,7 +42,7 @@ However:
   - Verify `omitted_failed_runs` serialization and deserialization.
   - Verify `has_failure()` on filtered results.
 - Integration tests in `tests/integration_tests.rs`:
-  - Run `--omit-failed-runs --filter-failed` with a flaky command (`$JOULEX_ITERATION = 2` failing) and another command. Assert both benchmarks are exported and retained.
+  - Run `--omit-failed-runs --filter-failed` with a flaky command (`$PERFRATIO_ITERATION = 2` failing) and another command. Assert both benchmarks are exported and retained.
   - Assert that in exported JSON:
     - `times.len() == exit_codes.len()`
     - `omitted_failed_runs` contains `[{ "index": 2, "exit_code": 1 }]`

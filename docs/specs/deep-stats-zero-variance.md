@@ -1,15 +1,15 @@
 # Specification: Correct Significance in `--deep-stats` for Zero Variance & Identical Samples
 
-**Issue:** [#101](https://github.com/UnitedOpen-Source/joulex/issues/101)  
+**Issue:** [#101](https://github.com/BenchCommons/perfratio/issues/101)  
 **Author:** Matheus Breguêz <matbrgz@gmail.com>  
 **Status:** Completed  
-**Upstream Reference:** N/A (joulex feature)
+**Upstream Reference:** N/A (perfratio feature)
 
 ---
 
 ## 1. Overview & Context
 
-When using `--deep-stats` with `--reference`, `joulex` performs two-sample Welch's t-test bootstrapping between the reference benchmark times and each comparison command to compute a $p$-value and determine if differences are statistically significant ($p < 0.05$ or $p < 0.01$).
+When using `--deep-stats` with `--reference`, `perfratio` performs two-sample Welch's t-test bootstrapping between the reference benchmark times and each comparison command to compute a $p$-value and determine if differences are statistically significant ($p < 0.05$ or $p < 0.01$).
 
 However, when both samples have zero variance (such as identical constant vectors, e.g. `[1.0, 1.0, 1.0, 1.0]`, coarse system timers on Windows, mock commands, or clamped `--subtract` timings):
 1. `Sample::t(&self, &other)` divides by pooled standard error `0.0 / 0.0 = NaN`.

@@ -30,7 +30,7 @@ job object perfratio already uses for CPU time (`JobObjectBasicAndIoAccountingIn
 ## `--check-system` on Windows
 Checks: power source, power plan, CPU load (#206) and the new **CPU frequency limit**
 (`CallNtPowerInformation(ProcessorInformation)`: warn if any CPU's `MhzLimit` < `MaxMhz`, i.e. a
-reduced maximum processor state or throttling). `joulex.system.cpu_model` now comes from the
+reduced maximum processor state or throttling). `perfratio.system.cpu_model` now comes from the
 registry `ProcessorNameString` (falls back to `PROCESSOR_IDENTIFIER`). Turbo boost status has no
 cheap Windows API and is not checked.
 

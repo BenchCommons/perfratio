@@ -1,24 +1,18 @@
 # Migrating to perfratio
 
-This guide covers moving from [hyperfine](https://github.com/sharkdp/hyperfine) or joulex to perfratio 1.0. See [CHANGELOG.md](../CHANGELOG.md) for the full list of changes.
+This guide covers moving from [hyperfine](https://github.com/sharkdp/hyperfine) to perfratio 1.0. See [CHANGELOG.md](../CHANGELOG.md) for the full list of changes.
 
 ## Binary and package names
 
 | From | To |
 |---|---|
-| `hyperfine`, `joulex` binary | `perfratio` |
-| `joulex` crate, `joulex.1` man page | `perfratio` crate, `perfratio.1` ([#224](https://github.com/BenchCommons/perfratio/pull/224)) |
-| `joulex` shell completions | removed; generate with `perfratio --generate-completions SHELL` ([#263](https://github.com/BenchCommons/perfratio/pull/263)) |
-| `doc/joulex.1` (second man page copy) | removed, use `perfratio.1` ([#263](https://github.com/BenchCommons/perfratio/pull/263)) |
-| `joulex_eta` progress template key (internal) | removed; only matters if you patched the progress template ([#263](https://github.com/BenchCommons/perfratio/pull/263)) |
+| `hyperfine` binary | `perfratio` |
 
 ## Environment variables
 
 | Old | New | Status |
 |---|---|---|
 | `$HYPERFINE_ITERATION` | `$PERFRATIO_ITERATION` | removed in 1.0: no longer exported, no warning. Hyperfine compatibility is promised for flags and JSON import only, not for environment variables |
-| `$JOULEX_ITERATION` | `$PERFRATIO_ITERATION` | removed in 1.0, same as above |
-| `$JOULEX_SYSTEM_CHECK_ROOT` (test hook for `--check-system`) | `$PERFRATIO_SYSTEM_CHECK_ROOT` | removed in 1.0: the old name is ignored |
 | `$HYPERFINE_RANDOMIZED_ENVIRONMENT_OFFSET` | `$PERFRATIO_RANDOMIZED_ENVIRONMENT_OFFSET` | renamed, no fallback |
 
 The `{iteration}` placeholder ([#149](https://github.com/BenchCommons/perfratio/pull/149)) also works without a shell, so prefer it over the variable with `-N`.
@@ -60,15 +54,13 @@ New:
 
 ## JSON export
 
-> **BREAKING CHANGE for consumers ([#262](https://github.com/BenchCommons/perfratio/pull/262), [#240](https://github.com/BenchCommons/perfratio/issues/240)).** perfratio no longer writes the top-level `"joulex"` key. It was removed in one step, with no deprecation period, together with the introduction of `"schemaVersion"` (currently `"1.34"`). Any tool that reads `json["joulex"]` must read `json["perfratio"]` instead. The content is identical. `--import-json` still reads old files that contain only `"joulex"`.
 
-perfratio writes run metadata under a top-level `perfratio` key, with `version`, `command_line`, `started_at`, `labels` and `system`. Files from hyperfine have no such key. `--import-json` reads hyperfine, joulex and perfratio files.
+The current `schemaVersion` is `"1.33"`. perfratio writes run metadata under a top-level `perfratio` key, with `version`, `command_line`, `started_at`, `labels` and `system`. Files from hyperfine have no such key. `--import-json` reads hyperfine and perfratio files.
 
 | Change | Since |
 |---|---|
 | `perfratio` metadata key | merged |
 | Per-result `user_times`, `system_times`, `median`, `percentiles`, `geometric_mean`, `relative_speed`, `first_run`, `custom_metrics`, per-run parameters | merged |
-| `"joulex"` key (an identical copy of `perfratio`) | removed in `schemaVersion` 1.0. Read `perfratio` instead. |
 | `"schemaVersion"` as the first key | 1.0 |
 | `perfratio.measurements` with `time`, `memory`, `energy`, `resources` set to `measured`, `unavailable` or `not_requested`, plus `energy_unavailable_reason` | 1.0 |
 | Top-level `metric` and per-result `primary_metric` (`--metric`) | 1.1 |

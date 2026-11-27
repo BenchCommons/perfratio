@@ -1,6 +1,6 @@
 # Specification: Prevent `inf`/`NaN` in Markup Exports When Benchmark Mean Is Zero
 
-**Issue:** [#95](https://github.com/UnitedOpen-Source/joulex/issues/95)  
+**Issue:** [#95](https://github.com/BenchCommons/perfratio/issues/95)  
 **Author:** Matheus Breguêz <matbrgz@gmail.com>  
 **Status:** Completed  
 **Upstream Reference:** `sharkdp/hyperfine#319`, `sharkdp/hyperfine#642`
@@ -9,7 +9,7 @@
 
 ## 1. Overview & Context
 
-When exporting benchmark results to table-based markup formats (Markdown, AsciiDoc, Emacs Org-mode), `joulex` computes relative speeds across commands using the fastest run (or reference command) as the baseline.
+When exporting benchmark results to table-based markup formats (Markdown, AsciiDoc, Emacs Org-mode), `perfratio` computes relative speeds across commands using the fastest run (or reference command) as the baseline.
 
 However, when a benchmark has a mean of 0.0 (which occurs with fast mock commands, low-resolution timer environments, or `--subtract` results clamped to zero), dividing by zero causes relative speed calculations to yield `f64::INFINITY` or `NaN`.
 While the terminal output detects zero-time benchmarks and gracefully prints a warning without computing relative comparisons, `MarkupExporter` previously called `relative_speed::compute(results, sort_order)` directly, printing:
