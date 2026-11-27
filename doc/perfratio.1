@@ -161,6 +161,8 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR METHOD ]
 .RB [ \-\-comparison\-family
 .IR FAMILY ]
+.RB [ \-\-equivalence\-margin
+.IR PERCENT ]
 .RB [ \-\-compare
 .IR FILE ]
 .RB [ \-\-fail\-if\-regressed
@@ -356,6 +358,10 @@ Multiple-comparison correction of the p\-values behind the significance markers:
 \fB\-\-comparison\-family\fR \fIFAMILY\fP
 .IP
 With \fB\-\-correction\fR: the comparisons that form the family, \fBreference\fR (default; every command against the reference) or \fBall\-pairs\fR.
+.HP
+\fB\-\-equivalence\-margin\fR \fIPERCENT\fP
+.IP
+Equivalence test (TOST, two one\-sided tests) at \fB\-\-significance\-level\fR: a command is \fBequivalent\fR to the reference when its change is shown to lie within \(+-PERCENT of the reference. A result that is neither different nor equivalent is \fBinconclusive\fR, with the number of runs that would settle it. \fB\-\-fail\-if\-regressed\fR ignores equivalent results.
 .HP
 \fB\-\-compare\fR \fIFILE\fP
 .IP
@@ -709,7 +715,7 @@ Pick the single best candidate under the constraints, e.g. \fIminimize:energy\fR
 .HP
 \fB\-\-noise\-threshold\fR \fIPERCENT\fR
 .IP
-With \fB\-\-pareto\fR: a command counts as dominated only if another is better by more than PERCENT of the value on some metric and not worse beyond it on any. Default: strict comparison.
+Differences smaller than PERCENT of the reference are classified as \fBwithin noise\fR whatever the p\-value, and replace the default 1% floor of the significance markers. \fB\-\-fail\-if\-regressed\fR ignores them. With \fB\-\-pareto\fR: a command counts as dominated only if another is better by more than PERCENT of the value on some metric and not worse beyond it on any. Default: off (strict comparison for \fB\-\-pareto\fR).
 .HP
 \fB\-\-show\-output\-on\-failure\fR
 .IP

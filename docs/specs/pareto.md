@@ -14,7 +14,7 @@ to find the commands that no other command beats everywhere. `--pareto` reports 
 --pareto <METRICS>            Comma-separated metrics, e.g. wall,energy,memory.
 --constraint '<METRIC> <op> <VALUE>'   Repeatable. <op> is <=, <, >= or >.
 --objective <minimize|maximize>:<METRIC>
---noise-threshold <PERCENT>   With --pareto. Default: strict comparison.
+--noise-threshold <PERCENT>   Default: strict comparison. Also the noise threshold of the significance markers (effect-size-equivalence.md, #323).
 ```
 - **Metric:** any `--metric` name (`wall`, `cpu`, `user`, `system`, `energy`, `memory`,
   `instructions`, `cycles`, `custom:<name>`), optionally followed by a statistic of the

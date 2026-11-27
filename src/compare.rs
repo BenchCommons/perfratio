@@ -29,9 +29,28 @@ impl Delta<'_> {
         self.p_value.is_some_and(|p| p < alpha)
     }
 
-    /// Slower by more than `threshold` (0.05 = 5%) and significant.
+    /// Classification of the change (#323), with `--noise-threshold` or
+    /// `--equivalence-margin`; the baseline is the reference.
+    pub fn classification(&self) -> Option<crate::stats::effect::Classification> {
+        crate::stats::effect::evaluate(
+            self.baseline,
+            self.current,
+            self.p_value?,
+            &crate::stats::settings::current(),
+        )
+        .map(|v| v.classification)
+    }
+
+    /// Slower by more than `threshold` (0.05 = 5%) and significant, and not
+    /// classified as within noise or equivalent.
     pub fn is_regression(&self, threshold: f64) -> bool {
-        self.rel_change > threshold && self.is_significant()
+        use crate::stats::effect::Classification;
+        self.rel_change > threshold
+            && self.is_significant()
+            && !matches!(
+                self.classification(),
+                Some(Classification::WithinNoise | Classification::Equivalent)
+            )
     }
 }
 
@@ -190,8 +209,20 @@ fn format_p(p: Option<f64>) -> String {
 
 /// "REGRESSION", "slower", "faster" or "~" (no significant difference).
 fn verdict(delta: &Delta<'_>, threshold: Option<f64>) -> &'static str {
+    use crate::stats::effect::Classification;
     if threshold.is_some_and(|t| delta.is_regression(t)) {
         "REGRESSION"
+    } else if let Some(class) = delta.classification().filter(|c| {
+        matches!(
+            c,
+            Classification::Equivalent | Classification::Inconclusive | Classification::WithinNoise
+        )
+    }) {
+        match class {
+            Classification::Equivalent => "equivalent",
+            Classification::Inconclusive => "inconclusive",
+            _ => "within noise",
+        }
     } else if !delta.is_significant() {
         "~"
     } else if delta.rel_change > 0.0 {

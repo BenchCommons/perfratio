@@ -306,9 +306,6 @@ impl ParetoConfig {
                     .ok_or_else(|| {
                         format!("invalid --noise-threshold '{s}': expected a percentage >= 0")
                     })?;
-                if pareto.is_none() {
-                    return Err("--noise-threshold needs --pareto".into());
-                }
                 value / 100.0
             }
             None => 0.0,
@@ -883,7 +880,12 @@ mod tests {
         assert_eq!(ParetoConfig::parse(None, [], None, None).unwrap(), None);
         assert!(ParetoConfig::parse(None, ["wall<=1s"], None, None).is_err());
         assert!(ParetoConfig::parse(Some("wall,wall"), [], None, None).is_err());
-        assert!(ParetoConfig::parse(None, [], None, Some("5")).is_err());
+        // the threshold also serves the statistics (#323): not an error without --pareto
+        assert_eq!(
+            ParetoConfig::parse(None, [], None, Some("5")).unwrap(),
+            None
+        );
+        assert!(ParetoConfig::parse(None, [], None, Some("-5")).is_err());
         let c = ParetoConfig::parse(None, [], Some("maximize:custom:ops"), None)
             .unwrap()
             .unwrap();

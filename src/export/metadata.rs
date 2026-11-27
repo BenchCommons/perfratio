@@ -66,6 +66,12 @@ pub struct StatisticsInfo {
     pub significance_level: f64,
     pub bootstrap_resamples: usize,
     pub bootstrap_seed: u64,
+    /// `--noise-threshold` as a fraction (0.05 = 5%) (new in 1.24, #323)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub noise_threshold: Option<f64>,
+    /// `--equivalence-margin` as a fraction (new in 1.24, #323)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub equivalence_margin: Option<f64>,
 }
 
 impl StatisticsInfo {
@@ -76,6 +82,8 @@ impl StatisticsInfo {
             significance_level: settings.significance_level,
             bootstrap_resamples: settings.bootstrap_resamples,
             bootstrap_seed: settings.seed,
+            noise_threshold: settings.noise_threshold,
+            equivalence_margin: settings.equivalence_margin,
         }
     }
 }

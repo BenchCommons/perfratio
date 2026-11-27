@@ -1526,10 +1526,15 @@ fn significance_suffix(
     match assessments.get(item) {
         Some(assessment) => {
             let text = assessment.label(fancy);
-            let text = match assessment.significance {
-                Significance::SignificantSpeedup => colors::green(text),
-                Significance::SignificantRegression => colors::red(text),
-                Significance::Noise => text.dimmed(),
+            use crate::stats::effect::Classification;
+            let class = assessment.verdict.map(|v| v.classification);
+            let text = match (class, assessment.significance) {
+                (Some(Classification::Equivalent), _) => colors::cyan(text),
+                (Some(Classification::Inconclusive), _) => colors::yellow(text),
+                (Some(Classification::WithinNoise), _) => text.dimmed(),
+                (_, Significance::SignificantSpeedup) => colors::green(text),
+                (_, Significance::SignificantRegression) => colors::red(text),
+                (_, Significance::Noise) => text.dimmed(),
             };
             format!("  {text}")
         }

@@ -93,6 +93,14 @@ Summary
   instead of only the comparisons with the reference. Without `--reference` the reference is the
   fastest command, which makes its comparisons lean towards small p-values; name the reference
   for a scan. The export has `statistics.correction` and `results[].p_value_adjusted`.
+- A significant difference can be too small to matter, and "not significant" does not mean
+  "equivalent". `--noise-threshold 2` reports changes below 2% as `within noise` whatever the
+  p-value. `--equivalence-margin 5` runs an equivalence test (TOST) at the significance level: a
+  command whose change is shown to lie within ±5% of the reference is `equivalent`; one that is
+  neither different nor equivalent is `inconclusive`, with the number of runs per command that
+  would settle it. The export has `results[].effect` (the relative change with its interval,
+  Cohen's d and the common-language effect size), `classification` and
+  `equivalence_p_value`; `--fail-if-regressed` ignores `within_noise` and `equivalent`.
 
 ## What runs when: setup, prepare, conclude, cleanup
 
