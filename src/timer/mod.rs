@@ -7,7 +7,7 @@ pub mod tree;
 mod windows_timer;
 
 #[cfg(not(windows))]
-mod unix_timer;
+pub(crate) mod unix_timer;
 
 #[cfg(target_os = "linux")]
 use nix::fcntl::{splice, SpliceFFlags};

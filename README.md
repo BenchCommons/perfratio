@@ -98,7 +98,7 @@ how to reduce noise. The manual page is [doc/perfratio.1](doc/perfratio.1).
 **Memory.** Peak memory (RSS) of each run is always measured and shown as `Peak Memory`.
 `--resource-usage` adds context switches, page faults and block I/O per run. Windows reports
 page faults and I/O operation counts only; the other counters show as `n/a` ([spec](docs/specs/windows-resource-usage.md)).
-`--counters` (Linux) adds hardware counters (instructions, cycles, cache and branch misses), IPC and the effective CPU frequency per run, and with `--counters=default,sw` CPU migrations and context switches (a warning points to `--affinity` when migrations slow runs down); see `docs/specs/hardware-counters.md`, `docs/specs/software-events-migrations.md` and `docs/specs/effective-frequency.md`. `--scope user|kernel|all|split` and per-event `:u` / `:k` modifiers (`--counters=instructions:u,instructions:k`) choose the privilege level; see `docs/specs/counter-scope-modifiers.md`.
+`--counters` (Linux; macOS Apple Silicon with `-N`, instructions and cycles only, see `docs/specs/counters-macos-windows.md`) adds hardware counters (instructions, cycles, cache and branch misses), IPC and the effective CPU frequency per run, and with `--counters=default,sw` CPU migrations and context switches (a warning points to `--affinity` when migrations slow runs down); see `docs/specs/hardware-counters.md`, `docs/specs/software-events-migrations.md` and `docs/specs/effective-frequency.md`. `--scope user|kernel|all|split` and per-event `:u` / `:k` modifiers (`--counters=instructions:u,instructions:k`) choose the privilege level; see `docs/specs/counter-scope-modifiers.md`.
 `scripts/perf_parity.py` checks the counters against `perf stat` on bare-metal Linux ([spec](docs/specs/perf-parity-harness.md)).
 `--topdown` (Linux x86_64; Intel Ice Lake or later, AMD Zen 4 or later) adds Top-down level 1: the share of pipeline slots that retire work or are lost to bad speculation, frontend stalls or backend stalls. The largest stall class is a hypothesis about the bottleneck, not a diagnosis; see `docs/specs/topdown-tma.md`.
 `--simd` (Linux, Intel and AMD Zen 4/5) adds a floating-point breakdown (scalar, 128-, 256- and 512-bit) and a vectorization ratio per run; see `docs/specs/simd-breakdown.md`.
@@ -259,6 +259,7 @@ The CI builds and tests these targets and attaches them to releases. Features di
 |---|---|---|---|
 | Time, CPU time, peak memory | yes | yes | yes |
 | Energy (`--energy`) | bare metal RAPL, via sysfs `energy_uj` or the perf power PMU | Apple Silicon via IOReport (unavailable where CPU counters are frozen, e.g. macOS 27) | Energy Meter Interface (EMI), needs a meter driver and usually admin |
+| `--counters` | yes | Apple Silicon, `-N` only, instructions and cycles | no (`unavailable`) |
 | `--resource-usage` | yes | yes | partial (page faults, I/O operations; no context switches) |
 | `--affinity` | yes | `p-cores`/`e-cores` only (scheduling preference) | yes |
 | `--priority realtime` | yes (`SCHED_FIFO`) | nice -20 + foreground role (not real-time) | yes |
