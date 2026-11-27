@@ -88,7 +88,14 @@ fn round_trip_writes_every_file_and_verifies() {
         .unwrap()
         .starts_with("sha256:"));
     let command = json(&dir.join("command.json"));
-    assert_eq!(command["argv"][0], "perfratio");
+    // argv[0] is "perfratio.exe" on Windows
+    assert_eq!(
+        command["argv"][0]
+            .as_str()
+            .unwrap()
+            .trim_end_matches(".exe"),
+        "perfratio"
+    );
     assert!(command["argv"]
         .as_array()
         .unwrap()
