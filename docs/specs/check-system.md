@@ -32,14 +32,14 @@ anything that is not ✔.
 | Thermal | max `thermal_zone*/temp` < 85 °C | `pmset -g therm` `CPU_Speed_Limit` = 100 | — |
 
 ## Environment metadata (always, not only with `--check-system`)
-`joulex.system` in the JSON gains `cpu_model` (Linux `/proc/cpuinfo`, macOS
+`perfratio.system` in the JSON gains `cpu_model` (Linux `/proc/cpuinfo`, macOS
 `sysctlbyname("machdep.cpu.brand_string")`, Windows registry `ProcessorNameString`, else `PROCESSOR_IDENTIFIER`) and
 `kernel` (`uname` release on Unix). Both are omitted when unknown. There is still
 no hostname or user name.
 
 ## Testability
 The Linux checks read below a root directory. The hidden environment variable
-`JOULEX_SYSTEM_CHECK_ROOT` points it at a fake `/sys` + `/proc` tree on any
+`PERFRATIO_SYSTEM_CHECK_ROOT` points it at a fake `/sys` + `/proc` tree on any
 platform, which the integration tests use. It only redirects reads.
 
 ## Tests

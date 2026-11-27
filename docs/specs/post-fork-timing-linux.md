@@ -3,7 +3,7 @@
 ## Problem / Motivation
 References: `sharkdp/hyperfine#814`, `#81`.
 
-Previously, joulex/perfratio measured execution time from before `command.spawn()` or attempted to synchronize using an `O_CLOEXEC` pipe unblocking in the parent after `execve`.
+Previously, perfratio measured execution time from before `command.spawn()` or attempted to synchronize using an `O_CLOEXEC` pipe unblocking in the parent after `execve`.
 
 However, starting the timer in the parent after reading EOF from a CLOEXEC pipe severely underestimates short executions. When the child process calls `execve`, the kernel replaces the child's image and schedules the child. For fast commands (e.g. `true`, `sleep 0.001`, or micro-benchmarks taking < 5 ms), the child may finish or execute most of its work while the parent is still waking up from `read()` or context switching. When the parent finally starts its timer, the elapsed time reported is artificially close to zero or drastically undercounted.
 

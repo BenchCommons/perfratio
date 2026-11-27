@@ -2,7 +2,7 @@
 
 **Author:** Matheus Breguêz <matbrgz@gmail.com>  
 **Status:** Approved  
-**Issue:** [UnitedOpen-Source/joulex#13](https://github.com/UnitedOpen-Source/joulex/issues/13)  
+**Issue:** [BenchCommons/perfratio#13](https://github.com/BenchCommons/perfratio/issues/13)  
 **Upstream Reference:** `sharkdp/hyperfine#528`
 
 ---
@@ -12,7 +12,7 @@ In CI pipelines, virtualized environments (e.g. Docker, WSL2, GitHub Actions), a
 
 ## 2. Interface Contract
 - Flag: `--suppress-outlier-warnings` (`ArgAction::SetTrue`).
-- When enabled, `joulex` suppresses `Warnings::SlowInitialRun` and `Warnings::OutliersDetected`.
+- When enabled, `perfratio` suppresses `Warnings::SlowInitialRun` and `Warnings::OutliersDetected`.
 - Other non-outlier warnings (such as `NonZeroExitCode`) continue to be reported normally.
 
 ## 3. Verification Plan

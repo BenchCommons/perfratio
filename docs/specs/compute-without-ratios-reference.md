@@ -1,9 +1,9 @@
 # Specification: Pointer-Based Reference Comparison & Explicit Reference in `compute_without_ratios`
 
-**Issue:** [#109](https://github.com/UnitedOpen-Source/joulex/issues/109)  
+**Issue:** [#109](https://github.com/BenchCommons/perfratio/issues/109)  
 **Author:** Matheus Breguêz <matbrgz@gmail.com>  
 **Status:** Completed  
-**Upstream Reference:** N/A (joulex bugfix)
+**Upstream Reference:** N/A (perfratio bugfix)
 
 ---
 

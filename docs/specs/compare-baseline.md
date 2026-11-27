@@ -9,7 +9,7 @@
 - The baseline is loaded (and validated, via `import::import_json`) **before**
   benchmarking, and so is the threshold: bad input fails fast.
 - After the benchmarks and the regular exports, the table is printed (unless
-  `--style none`), the Markdown file is written, and then joulex exits with 3
+  `--style none`), the Markdown file is written, and then perfratio exits with 3
   if there is a regression. An interrupted run (Ctrl-C) never reports one.
 - Rows: `Command | Baseline (mean ± σ) | Current | Change (+x.x% ▲/▼) |
   Significance (p) | verdict`, where the verdict is `REGRESSION` (threshold and
