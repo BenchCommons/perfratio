@@ -7,7 +7,10 @@ It changes no code and no output contract (no JSON export change).
 ## Scope and method
 
 - `master` at `ef49a5e`, and the diffs of the open PRs #393 to #406 (read with `gh pr diff`;
-  PR heads were fetched as refs, none was checked out). #395 only bumps `cargo-deny-action`
+  PR heads were fetched as refs, none was checked out). M1, M3, M4, L2, L4 and L5 were
+  re-verified later against the heads listed below (`git show <sha>:<file>`) and `master`
+  at `a636d8c`. Audited heads: #393 `8acd95c`, #399 `63397bf`, #401 `ce7b40d`, #402
+  `70e64ac`, #403 `4009ee7`, #404 `598661a`. The other PRs were not re-verified. #395 only bumps `cargo-deny-action`
   (pinned by SHA). #407 (a test fix) is out of scope.
 - Method: reading code. No perfratio code was compiled or run, and no finding was reproduced
   with a proof of concept. The only tool run was `cargo audit` for the SCA line below. Where a finding depends on behavior of an external program (the shell,
@@ -28,12 +31,12 @@ It changes no code and no output contract (no JSON export change).
 |---|---|---|
 | Critical | 0 | |
 | High | 0 | |
-| Medium | 4 | M1 to M4 |
-| Low | 9 | L1 to L9 |
+| Medium | 3 | M2 to M4 |
+| Low | 10 | M1 (reclassified), L1 to L9 |
 | Info | 2 | I1, I2 |
 
 No finding allows code execution by a party that could not already run code as the user who
-starts perfratio. The Medium findings concern availability (M1), terminal and CI-log
+starts perfratio. The Medium findings concern terminal and CI-log
 injection from untrusted data (M2, M4) and disclosure of secrets in shareable files (M3).
 
 Line numbers for PR findings refer to the head of the PR at audit time; they are valid in
@@ -41,22 +44,22 @@ the PR diff, not on `master`.
 
 ## Medium
 
-### M1. `--power-meter`: a stuck reader thread can hang the benchmark (availability)
+### M1. `--power-meter`: the normal exit path can block on a descendant (availability, low)
 
-- Where: PR #402, `src/energy/meter.rs:76-128` (`run_command`), reader `join` at `:112`
-  (timeout path) and `:121` (normal path).
-- Issue: the meter command runs as `sh -c <command>`. On timeout, only `sh` is killed
-  (`child.kill()`, `:110`), not its process group. The reader thread then blocks in
-  `read_to_string` until every holder of the stdout pipe closes it, and `reader.join()`
-  waits for it. If the command spawns a child that outlives `sh` (a pipeline such as
-  `curl ... | awk ...`, or a background process), the `join` does not return and the
-  5 s timeout does not bound the call. The same applies after a normal exit when a
-  descendant keeps the pipe open. The poller thread, `PowerMeterSampler::drop` (`:258`)
-  and `try_new` (`:212`) all wait on this call. Not reproduced.
-- Recommendation: start the meter in its own process group (as the benchmarked commands
-  are) and kill the group. Do not `join` the reader after a kill; drop the handle or use a
-  non-blocking read with a deadline.
-- State: open, in PR #402.
+- Where: PR #402 (head `70e64ac`), `src/energy/meter.rs`, `run_command`: reader `join` at
+  `:130`.
+- Already fixed in this head: the meter runs in its own process group
+  (`process_group(0)`, `:91`), the timeout path kills the group (`kill(-pid, SIGKILL)`,
+  `:118`) and returns without joining the reader (`:75-76`, `:121`).
+- Remaining: on the normal exit path, `reader.join()` waits until every holder of the
+  stdout pipe closes it. If `sh` exits but a background descendant keeps the pipe open
+  (for example `sleep 100 & echo 5`), the `join` blocks, and the timeout does not apply
+  because the loop has already ended. The poller thread, `PowerMeterSampler::drop` and
+  `try_new` wait on this call. Not reproduced. Severity is low: the meter command is
+  chosen by the user.
+- Recommendation: after a normal exit, kill the process group too, or do not `join` and
+  receive the output through a channel with `recv_timeout`.
+- State: open, in PR #402. Reclassified from Medium to Low.
 
 ### M2. `--verify-evidence` prints untrusted text unescaped and reads files without a size bound
 
@@ -91,10 +94,10 @@ the PR diff, not on `master`.
   `curl -H "Authorization: Bearer ..."`). PR #402 redacts one option because it can carry
   a token; the other options carry the same risk. The program name is already reduced to
   its file name for the same kind of reason.
-- Already covered (PR #393 head `8acd95c`): the `--evidence` help in `src/cli.rs:1267` says
-  "The commands are recorded as typed: keep secrets out of them", and the `--meta` help at
-  `src/cli.rs:1204` says "Do not put secrets in values". `docs/specs/evidence-bundle.md`
-  also says so.
+- Already covered: the `--meta` help says "Do not put secrets in values" on `master`
+  (`src/cli.rs:1204`). In PR #393 (head `8acd95c`) the `--evidence` help in `src/cli.rs:1267`
+  says "The commands are recorded as typed: keep secrets out of them", and
+  `docs/specs/evidence-bundle.md` also says so.
 - Missing: no such warning on `--export-json` (and the other exports that carry
   `command_line`) or in the README, and there is no redaction for the other options.
 - Recommendation: (1) add the warning to the `--export-json` help and to the README.
@@ -103,17 +106,19 @@ the PR diff, not on `master`.
   table-driven (a list of option names) instead of one function per option. Adding a
   redaction option changes the export contract: version it and note it in the spec.
 - State: open (master). Partly mitigated: `--power-meter` is redacted in PR #402, and
-  `--evidence` and `--meta` warn in PR #393.
+  `--evidence` warns in PR #393 and `--meta` warns on `master`.
 
 ### M4. Text from the benchmarked program is printed unescaped (region protocol, persistent mode)
 
 - Where, `master`: `src/region.rs:108` (`got '{kind}'`), `:142` (`unknown event '{other}'`),
   `:102` (`report.sdk`, no validation or length limit, exported as `region_sdk`).
-  PR #399: `src/persistent.rs:238-239` (`fail` message, unknown kind) and `:430` (message
-  printed in the error), `:268` (`lines()` without a line-length limit).
+  PR #399 (head `63397bf`): `src/persistent.rs:238-239` (`fail` message, unknown kind) and
+  `:445` (message printed in the error), `:274` (`lines()` without a line-length limit).
 - Issue: the program under test writes these strings, and a CI job may benchmark code from
-  an untrusted pull request. Control characters reach the terminal and CI log (CWE-150,
-  and `::` workflow commands after an embedded newline). `region_sdk` can be any length.
+  an untrusted pull request. Control characters reach the terminal and CI log (CWE-150).
+  The `::` workflow-command case does not apply to `region.rs` and `persistent.rs`: input is
+  read line by line, so no embedded newline survives, and the error message is printed
+  after the `Error:` prefix, not at the start of a line. `region_sdk` can be any length.
   In persistent mode, `BufReader::lines()` has no per-line bound and the channel is
   unbounded, so one long line uses unbounded memory (the collector protocol in #403 has a
   64 KiB bound for the same case). `master` already escapes command names and program
@@ -147,19 +152,18 @@ the PR diff, not on `master`.
 
 - Where: PR #403, `src/collector.rs:290` (`Command::new(path)`), `:298-306` (reader thread
   and `mpsc::channel`), `:293` (`Stdio::inherit()` for stderr).
-- Issue: a plugin given as a bare name (`--collector-plugin gpu`) is looked up in `PATH`.
-  The reader thread sends every line into an unbounded channel while the benchmark runs
+- Fixed in head `4009ee7`: a bare name is rejected and an explicit path is required
+  (`src/collector.rs:290-296`). The path is not looked up in `PATH`.
+- Issue: the reader thread sends every line into an unbounded channel while the benchmark runs
   without reading it, so a plugin that writes unsolicited lines (64 KiB each) grows memory,
   and also shifts replies out of step with requests. The plugin receives the full
-  environment. The `--collector-plugin` help in PR #403 already says "The plugin runs with
-  your privileges: only use programs you trust", and `docs/specs/collector-plugins.md` is
-  referenced from it (that spec was not read in this audit). Reply validation is otherwise good: protocol version, name and unit charset,
+  environment: `docs/specs/collector-plugins.md:66` says it runs with the privileges and
+  environment of the user. The `--collector-plugin` help in PR #403 also says "The plugin
+  runs with your privileges: only use programs you trust". Reply validation is otherwise good: protocol version, name and unit charset,
   declared ids only, finite numbers, escaped error text, 64 KiB line limit, timeouts, no
   shell. Metric values are finite but have no range check (for example `1e308`).
-- Recommendation: require a path with a directory component or canonicalize and print the
-  resolved path. Use `sync_channel` with a small bound and treat an unsolicited line as a
-  protocol error. The trust warning exists; add that the plugin inherits the environment, if the spec does
-  not say so (not checked).
+- Recommendation: use `sync_channel` with a small bound and treat an unsolicited line as a
+  protocol error. The trust warning and the environment note already exist.
 - State: open, in PR #403.
 
 ### L3. Valgrind adapter: binary chosen by an environment variable, unbounded profile read
@@ -190,6 +194,9 @@ the PR diff, not on `master`.
   The code is careful elsewhere: `RTLD_LOCAL`, never `dlclose`, out-pointers of valid
   size, vendor return codes checked, a `// SAFETY:` comment on each block. Error cases
   for `sym` use `Option`, except the `assert_eq!`, which panics.
+- Partly covered: `AMDSMI_LIBS` (head `ce7b40d`, `gpu.rs:251`) already lists
+  `/opt/rocm/lib/libamd_smi.so` as a second candidate, but only after the bare soname.
+  `NVML_LIBS` has only sonames.
 - Recommendation: try fixed absolute system paths first (for example
   `/usr/lib/x86_64-linux-gnu/`, `/usr/lib64/`, `/opt/rocm/lib/`) and fall back to the
   soname only with a warning. Refuse to load when running as root and the file is writable
@@ -198,20 +205,18 @@ the PR diff, not on `master`.
 
 ### L5. `--membw`: arithmetic on values read from sysfs and `numa_maps`
 
-- Where: PR #404, `src/membw.rs:88-98` (`parse_format`, accepts `high < low`), `:114`
-  (`high - low + 1`), `:119` (`value << low` with `low` up to `u32::MAX`), `:250` and `:259`
-  (`kb * 1024`, `count * page_bytes`).
-- Issue: `format/<term>` of an uncore PMU with `config:9-3` or a start bit of 64 or more
-  underflows or overflows. A debug build panics and a release build produces a wrong
-  `config`. The `numa_maps` multiplications are unchecked in the same way. The values come
+- Fixed in head `598661a`: `parse_format` validates `low <= high && high <= 63`
+  (`src/membw.rs:98`), which removes the underflow and the oversized shift.
+- Where (remaining): `src/membw.rs:252` (`kb * 1024`) and `:261` (`count * page_bytes`),
+  both without `checked_mul`.
+- Issue: the `numa_maps` multiplications are unchecked, so a huge value overflows
+  (a debug build panics, a release build wraps). The values come
   from the kernel (root-owned sysfs, `/proc`), so exploitation needs a hostile kernel
   interface or a test root. File names in `numa_maps` are escaped by the kernel (`=` and
   spaces) to my knowledge, so a mapping name cannot forge `N0=` tokens. This was not
-  checked against kernel sources in this audit. The sibling parser in PR #394
-  (`src/pmu_events.rs:144`) already checks `lo > hi || hi > 63`; the same check belongs here.
-  There is also a PID reuse window in `Sampler` (`/proc/{pid}/numa_maps`, `:291`) after the
+  checked against kernel sources in this audit.   There is also a PID reuse window in `Sampler` (`/proc/{pid}/numa_maps`, `:291`) after the
   child is reaped, which can only give wrong placement data.
-- Recommendation: reuse the `pmu_events` range check; use `checked_mul` and `saturating_add`.
+- Recommendation: use `checked_mul` and `saturating_add`.
 - State: open, in PR #404.
 
 ### L6. `--verdict-json`: stale file, baseline path, free text read by agents
