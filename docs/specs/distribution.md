@@ -15,10 +15,14 @@ did not exist. Issue: [#93](https://github.com/BenchCommons/perfratio/issues/93)
   `SHA256SUMS`. This is a draft; no tap exists.
 - The README has no crates.io badge until the crate is published. The JSON export is unchanged.
 
+## Done
+- The repository is public and release v1.0.0 exists, with archives
+  `perfratio-v1.0.0-<target>.tar.gz`/`.zip`, Debian packages, `SHA256SUMS` and an SBOM
+  (checked with `gh release view v1.0.0`).
+
 ## Pending on the maintainers
 - crates.io account, ownership and the `CARGO_REGISTRY_TOKEN` secret (or trusted publishing).
 - Final crate name (`perfratio` returned 404 on crates.io, so it was free when checked).
-- Making the repository or its release assets public.
 - Creating the Homebrew tap repository and choosing its owner/name.
 - Publishing a `publish-crate` job and tap bump in the release workflow after the above.
 - Running `cargo binstall --dry-run perfratio` after the first release.

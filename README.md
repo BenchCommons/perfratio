@@ -29,15 +29,10 @@ files (`--import-json`).
 ## Install
 
 perfratio is not yet published to crates.io, and there is no Homebrew tap yet (see
-[#93](https://github.com/BenchCommons/perfratio/issues/93)). Until the first public release,
-use one of the two methods below. The commands in the next block start working once the
-maintainers publish the crate and the tap, and are listed here so the target is clear:
-
-```sh
-cargo install perfratio                     # not available yet
-cargo binstall perfratio                    # not available yet
-brew install <tap-owner>/tap/perfratio      # not available yet, tap name undecided
-```
+[#93](https://github.com/BenchCommons/perfratio/issues/93)). The repository is public and
+release v1.0.0 exists, so use one of the methods below. `cargo install perfratio`,
+`cargo binstall perfratio` and a Homebrew formula will work only after the maintainers
+publish the crate and the tap; do not run them yet.
 
 **From source** (Rust 1.88 or newer):
 
@@ -49,8 +44,9 @@ cargo install --path .
 
 **GitHub release assets.** Each release at
 <https://github.com/BenchCommons/perfratio/releases> contains one archive per target, named
-`perfratio-v<version>-<target>.tar.gz` (`.zip` on Windows), and Debian packages. Unpack the
-archive and put the `perfratio` binary on your `PATH`.
+`perfratio-v<version>-<target>.tar.gz` (`.zip` on Windows), Debian packages, a `SHA256SUMS`
+file and a CycloneDX SBOM (`perfratio-<version>.cdx.json`). Unpack the archive and put the
+`perfratio` binary on your `PATH`. Verify it against `SHA256SUMS` first.
 
 ## Quick start
 
