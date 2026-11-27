@@ -87,6 +87,8 @@ pub mod frequency;
 #[doc(hidden)]
 pub mod import;
 #[doc(hidden)]
+pub mod mcp;
+#[doc(hidden)]
 pub mod metric;
 #[doc(hidden)]
 pub mod metric_registry;

@@ -1205,6 +1205,16 @@ impl Options {
                 matches.get_flag("debug-mode"),
             )
             .map_err(OptionsError::InvalidCounters)?;
+            let mut config = config;
+            let mut warnings = warnings;
+            let uses_shell = options
+                .executor_kinds
+                .iter()
+                .any(|k| matches!(k, ExecutorKind::Shell(_)));
+            warnings.extend(crate::perf_counters::require_no_shell(
+                &mut config,
+                uses_shell,
+            ));
             for warning in warnings {
                 eprintln!("{} {warning}", crate::output::colors::yellow("Warning:"));
             }
@@ -1227,11 +1237,6 @@ impl Options {
         }
         if matches.get_flag("topdown") {
             let debug_mode = matches.get_flag("debug-mode");
-            if !debug_mode && !crate::topdown::platform_supported() {
-                return Err(OptionsError::InvalidTopdown(
-                    "--topdown is only supported on Linux x86_64".to_string(),
-                ));
-            }
             // On hybrid CPUs the events only count on one core type
             let pinned = options.affinity.is_some() || options.core_class.is_some();
             let (config, warnings) = crate::topdown::resolve(debug_mode, pinned);
