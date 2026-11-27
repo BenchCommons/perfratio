@@ -193,9 +193,17 @@ impl Measurements {
         }
     }
 
-    /// Records the outcome of `--membw` (`false`: not requested).
-    pub fn with_membw(mut self, requested: bool) -> Self {
+    /// Records the outcome of `--membw` (`false`: not requested). `blocked` is why no run can
+    /// be read (`region_scope`, `concurrency`): both sources are then `unavailable`.
+    pub fn with_membw(mut self, requested: bool, blocked: Option<&'static str>) -> Self {
         if !requested {
+            return self;
+        }
+        if let Some(reason) = blocked {
+            self.membw = MeasurementStatus::Unavailable;
+            self.membw_unavailable_reason = Some(reason);
+            self.numa = MeasurementStatus::Unavailable;
+            self.numa_unavailable_reason = Some(reason);
             return self;
         }
         match crate::membw::unavailable() {
@@ -587,6 +595,22 @@ mod tests {
         let m = Measurements::new(Some(Err(crate::energy::Unavailable::RaplUnreadable)), false);
         assert_eq!(m.energy, Unavailable);
         assert_eq!(m.energy_unavailable_reason, Some("rapl_unreadable"));
+    }
+
+    #[test]
+    fn membw_blocked_by_the_run_mode_is_unavailable_with_a_reason() {
+        use MeasurementStatus::*;
+        let m = Measurements::new(None, false).with_membw(true, Some("concurrency"));
+        assert_eq!(
+            (m.membw, m.membw_unavailable_reason),
+            (Unavailable, Some("concurrency"))
+        );
+        assert_eq!(
+            (m.numa, m.numa_unavailable_reason),
+            (Unavailable, Some("concurrency"))
+        );
+        let m = Measurements::new(None, false).with_membw(false, Some("concurrency"));
+        assert_eq!((m.membw, m.numa), (NotRequested, NotRequested));
     }
 
     #[test]

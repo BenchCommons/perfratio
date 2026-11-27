@@ -187,7 +187,7 @@
         },
         "membw_unavailable_reason": {
           "type": "string",
-          "description": "Open enum: unsupported_platform, no_uncore_imc, amd_df_unsupported, perf_paranoid, other."
+          "description": "Open enum: unsupported_platform, no_uncore_imc, amd_df_unsupported, perf_paranoid, other, region_scope, concurrency."
         },
         "numa": {
           "$ref": "#/$defs/status",
@@ -195,7 +195,7 @@
         },
         "numa_unavailable_reason": {
           "type": "string",
-          "description": "Open enum: unsupported_platform, no_numa_maps."
+          "description": "Open enum: unsupported_platform, no_numa_maps, region_scope, concurrency."
         }
       },
       "required": [

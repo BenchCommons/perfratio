@@ -48,6 +48,24 @@ fn exports_bandwidth_numa_and_status() {
 }
 
 #[test]
+fn concurrency_and_region_scope_report_why_there_is_no_reading() {
+    for (flag, reason) in [
+        (&["--concurrency=2"][..], "concurrency"),
+        (&["--region", "--region-scope"][..], "region_scope"),
+    ] {
+        let mut args = vec!["--runs=2", "--membw"];
+        args.extend(flag);
+        args.push("sleep 0.1");
+        let json = export(&args);
+        let m = &json["perfratio"]["measurements"];
+        assert_eq!(m["membw"], "unavailable", "{reason}");
+        assert_eq!(m["membw_unavailable_reason"], reason, "{reason}");
+        assert_eq!(m["numa"], "unavailable", "{reason}");
+        assert_eq!(m["numa_unavailable_reason"], reason, "{reason}");
+    }
+}
+
+#[test]
 fn without_the_flag_nothing_is_added() {
     let json = export(&["--runs=2", "sleep 0.1"]);
     let m = &json["perfratio"]["measurements"];

@@ -69,6 +69,10 @@ One warning on stderr and a reason in the export; the run never fails.
 | `perf_event_open` denied | `unavailable` | `perf_paranoid` |
 | other open error | `unavailable` | `other` |
 
+With `--region-scope` or `--concurrency N > 1` (N > 1) no run can be read: `membw` and `numa` are
+`unavailable` with reason `region_scope` or `concurrency`. These two values were added to the open
+enums without a schema version change (descriptions only).
+
 `measurements.numa` is `unavailable` with `unsupported_platform` (not Linux) or `no_numa_maps`
 (kernel without `CONFIG_NUMA`). One source can work without the other.
 

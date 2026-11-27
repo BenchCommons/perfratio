@@ -158,8 +158,9 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
   `perf_paranoid`, `no_pmu`, `hybrid_cpu_unpinned`, `other` (open enum).
   `membw` and `numa` (`--membw`, new in 1.37) have the values `measured`, `unavailable`,
   `not_requested`. `membw_unavailable_reason` is one of `unsupported_platform`, `no_uncore_imc`,
-  `amd_df_unsupported`, `perf_paranoid`, `other`; `numa_unavailable_reason` is one of
-  `unsupported_platform`, `no_numa_maps` (open enums).
+  `amd_df_unsupported`, `perf_paranoid`, `other`, `region_scope`, `concurrency`;
+  `numa_unavailable_reason` is one of `unsupported_platform`, `no_numa_maps`, `region_scope`,
+  `concurrency` (open enums).
   `perfratio.environment.numa_topology` (new in 1.37, array, Linux) lists `{ node, cpus?,
   memory_bytes?, distances? }` per NUMA node; it is not part of the fingerprint.
 - `interrupted` (bool, optional, only `true`): the run was stopped by Ctrl-C.

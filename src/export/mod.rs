@@ -163,13 +163,24 @@ impl ExportManager {
             None
         };
         let region = matches.get_many::<String>("region").is_some() || metric.is_region();
+        let membw_blocked = if matches.get_flag("region-scope") {
+            Some("region_scope")
+        } else if matches
+            .get_one::<String>("concurrency")
+            .and_then(|v| v.parse::<usize>().ok())
+            .is_some_and(|n| n > 1)
+        {
+            Some("concurrency")
+        } else {
+            None
+        };
         let mut metadata = ExportMetadata::new(
             labels,
             Measurements::new(energy, matches.get_flag("resource-usage"))
                 .with_counters(counters)
                 .with_topdown(topdown)
                 .with_region(region)
-                .with_membw(crate::membw::enabled()),
+                .with_membw(crate::membw::enabled(), membw_blocked),
         );
         metadata.region_protocol = region.then_some(crate::region::PROTOCOL_VERSION);
         metadata.energy_backend = energy.and_then(Result::ok).map(|b| b.as_str());

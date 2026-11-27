@@ -87,13 +87,15 @@ pub struct ImcPmu {
 /// Bit range of a `format/<term>` file such as `config:0-7`
 fn parse_format(text: &str) -> Option<(u32, u32)> {
     let range = text.trim().strip_prefix("config:")?;
-    match range.split_once('-') {
-        Some((low, high)) => Some((low.parse().ok()?, high.parse().ok()?)),
+    let (low, high) = match range.split_once('-') {
+        Some((low, high)) => (low.parse().ok()?, high.parse().ok()?),
         None => {
             let bit = range.parse().ok()?;
-            Some((bit, bit))
+            (bit, bit)
         }
-    }
+    };
+    // A bit range of a 64-bit `config`: anything else would overflow the shifts below
+    (low <= high && high <= 63).then_some((low, high))
 }
 
 fn parse_number(text: &str) -> Option<u64> {
@@ -672,6 +674,15 @@ pub fn terminal_line(export: &Export) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn invalid_bit_ranges_are_rejected_without_panicking() {
+        assert_eq!(super::parse_format("config:0-7"), Some((0, 7)));
+        assert_eq!(super::parse_format("config:63"), Some((63, 63)));
+        assert_eq!(super::parse_format("config:8-4"), None);
+        assert_eq!(super::parse_format("config:0-64"), None);
+        assert_eq!(super::parse_format("config:70"), None);
+    }
+
     use super::*;
 
     fn write(root: &Path, path: &str, text: &str) {
