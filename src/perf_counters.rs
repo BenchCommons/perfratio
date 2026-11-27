@@ -625,13 +625,62 @@ fn resolve_native(
     Ok((config, warnings))
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
 fn resolve_native(
     requested: Vec<CounterSpec>,
     hidden: Vec<CounterKind>,
     requested_scope: Scope,
     want_simd: bool,
 ) -> Result<(CounterConfig, Vec<String>), String> {
+    let (mut config, mut warnings) = if requested.is_empty() {
+        let (config, _) = unsupported_config(requested, hidden, requested_scope, false);
+        (config, Vec::new())
+    } else {
+        plan(requested, hidden, requested_scope, None, macos::probe)?
+    };
+    if config.is_active() {
+        warnings.push(
+            "on macOS '--counters' reads instructions and cycles of the command process only \
+             (task-level counters, no root): processes it starts are not counted."
+                .to_string(),
+        );
+    }
+    if want_simd {
+        warnings.push(
+            "'--simd' is only supported on Linux (no per-instruction-class counters on macOS); \
+             continuing without the SIMD breakdown."
+                .to_string(),
+        );
+        config.simd = Some(SimdState::unavailable(
+            UnavailableReason::UnsupportedPlatform,
+        ));
+    }
+    Ok((config, warnings))
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+fn resolve_native(
+    requested: Vec<CounterSpec>,
+    hidden: Vec<CounterKind>,
+    requested_scope: Scope,
+    want_simd: bool,
+) -> Result<(CounterConfig, Vec<String>), String> {
+    Ok(unsupported_config(
+        requested,
+        hidden,
+        requested_scope,
+        want_simd,
+    ))
+}
+
+/// The result on a platform without counters: one warning, benchmark continues.
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+fn unsupported_config(
+    requested: Vec<CounterSpec>,
+    hidden: Vec<CounterKind>,
+    requested_scope: Scope,
+    want_simd: bool,
+) -> (CounterConfig, Vec<String>) {
     let why = if cfg!(target_os = "macos") {
         "on macOS the kperf framework needs root and cannot follow child processes"
     } else {
@@ -651,7 +700,7 @@ fn resolve_native(
             "'--simd' is only supported on Linux ({why}); continuing without the SIMD breakdown."
         ));
     }
-    Ok((
+    (
         CounterConfig {
             requested,
             active: vec![],
@@ -664,7 +713,27 @@ fn resolve_native(
             simd: want_simd.then(|| SimdState::unavailable(UnavailableReason::UnsupportedPlatform)),
         },
         warnings,
-    ))
+    )
+}
+
+/// macOS counts the process it spawns and nothing below it, so a shell wrapper
+/// would be measured instead of the command. Called once the shells are known:
+/// with a shell the counters are dropped (`unavailable`, reason `other`) and
+/// the warning says how to get them (`-N`). No-op elsewhere, in `--debug-mode`
+/// and when nothing is active.
+pub fn require_no_shell(config: &mut CounterConfig, uses_shell: bool) -> Option<String> {
+    if !cfg!(target_os = "macos") || config.mock || !uses_shell || !config.is_active() {
+        return None;
+    }
+    config.active.clear();
+    config.availability = Availability::Unavailable(UnavailableReason::Other);
+    config.partial_reason = None;
+    Some(
+        "on macOS '--counters' counts the process perfratio starts, which would be the shell, not \
+         your command. Use '-N' (or '--shell=none') to count the command; continuing without \
+         hardware counters."
+            .to_string(),
+    )
 }
 
 /// Deterministic values for `--debug-mode`, derived from the simulated time.
@@ -1236,6 +1305,8 @@ pub(crate) fn attr_flags(scope: Scope, for_run: bool) -> u64 {
 pub struct OpenCounters {
     #[cfg(target_os = "linux")]
     inner: linux::Open,
+    #[cfg(target_os = "macos")]
+    kinds: Vec<CounterKind>,
 }
 
 /// Opens the active events for the next child spawned on this thread.
@@ -1260,7 +1331,14 @@ pub fn open(config: &CounterConfig) -> Option<OpenCounters> {
             inner: linux::open_events(&events),
         })
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    {
+        macos::arm();
+        Some(OpenCounters {
+            kinds: config.active.iter().map(|s| s.kind).collect(),
+        })
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         None
     }
@@ -1398,9 +1476,154 @@ impl OpenCounters {
         {
             self.inner.read()
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(target_os = "macos")]
+        {
+            macos::read(&self.kinds)
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         {
             vec![]
+        }
+    }
+}
+
+/// macOS: task-level counters from `proc_pid_rusage(RUSAGE_INFO_V4)`, which
+/// need no root (`kpc` does). The kernel keeps `ri_instructions` and
+/// `ri_cycles` for the process itself: its children are not included, so the
+/// numbers describe the spawned process only. The child is read while it is a
+/// zombie (`waitid(WNOWAIT)`), right before `wait4` reaps it. Not available on
+/// Intel Macs (the fields stay 0), which the probe reports.
+#[cfg(target_os = "macos")]
+pub(crate) mod macos {
+    use super::{CounterKind, Scope};
+    use crate::pmu_scaling::ScaledCounter;
+    use std::cell::Cell;
+
+    const EOPNOTSUPP: i32 = 95;
+
+    thread_local! {
+        /// Set by `open`: the next reaped child on this thread is read
+        static ARMED: Cell<bool> = const { Cell::new(false) };
+        /// (instructions, cycles) of the last child read
+        static LAST: Cell<Option<(u64, u64)>> = const { Cell::new(None) };
+    }
+
+    /// (instructions, cycles) of `pid`, or `None` when the call fails.
+    fn rusage(pid: libc::pid_t) -> Option<(u64, u64)> {
+        // SAFETY: the struct is plain integers, so all-zero is a valid value.
+        let mut info: libc::rusage_info_v4 = unsafe { std::mem::zeroed() };
+        // SAFETY: the pointer is valid for one `rusage_info_v4` for the duration
+        // of the call; a bad `pid` only makes the call fail.
+        let ret = unsafe {
+            libc::proc_pid_rusage(
+                pid,
+                libc::RUSAGE_INFO_V4,
+                (&mut info as *mut libc::rusage_info_v4).cast(),
+            )
+        };
+        (ret == 0).then_some((info.ri_instructions, info.ri_cycles))
+    }
+
+    /// Whether `kind` can be read here. Only `instructions` and `cycles`
+    /// exist, in the default scope; scoped (`:u`, `:k`) reads have no source.
+    pub fn probe(kind: CounterKind, scope: Scope) -> Result<(), i32> {
+        let supported =
+            matches!(kind, CounterKind::Instructions | CounterKind::Cycles) && scope == Scope::All;
+        if !supported {
+            return Err(EOPNOTSUPP);
+        }
+        // This process has run code, so a working source reports > 0
+        // SAFETY: getpid has no preconditions
+        match rusage(unsafe { libc::getpid() }) {
+            Some((instructions, cycles)) if instructions > 0 && cycles > 0 => Ok(()),
+            _ => Err(EOPNOTSUPP),
+        }
+    }
+
+    pub fn arm() {
+        ARMED.with(|a| a.set(true));
+        LAST.with(|l| l.set(None));
+    }
+
+    /// Called before the child is reaped; keeps the counts when armed.
+    pub fn snapshot_child(pid: libc::pid_t) {
+        if !ARMED.with(Cell::get) {
+            return;
+        }
+        // SAFETY: `siginfo_t` is plain data, so all-zero is a valid value.
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        // SAFETY: `info` is a valid out-pointer; WNOWAIT leaves the child
+        // waitable for the `wait4` that follows.
+        let waited = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                pid as libc::id_t,
+                &mut info,
+                libc::WEXITED | libc::WNOWAIT,
+            )
+        };
+        if waited == 0 {
+            LAST.with(|l| l.set(rusage(pid)));
+        }
+    }
+
+    pub fn read(kinds: &[CounterKind]) -> Vec<Option<ScaledCounter>> {
+        ARMED.with(|a| a.set(false));
+        let last = LAST.with(Cell::take);
+        kinds
+            .iter()
+            .map(|kind| {
+                let (instructions, cycles) = last?;
+                let value = match kind {
+                    CounterKind::Instructions => instructions,
+                    CounterKind::Cycles => cycles,
+                    _ => return None,
+                };
+                Some(ScaledCounter {
+                    value,
+                    raw: value,
+                    time_enabled: 1,
+                    time_running: 1,
+                })
+            })
+            .collect()
+    }
+
+    // The children are reaped by `wait_with_rusage` (wait4), which clippy can't see.
+    #[cfg(test)]
+    #[allow(clippy::zombie_processes)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn only_instructions_and_cycles_in_the_default_scope() {
+            assert_eq!(probe(CounterKind::CacheMisses, Scope::All), Err(EOPNOTSUPP));
+            assert_eq!(probe(CounterKind::TaskClock, Scope::All), Err(EOPNOTSUPP));
+            assert_eq!(probe(CounterKind::Cycles, Scope::User), Err(EOPNOTSUPP));
+        }
+
+        #[test]
+        fn reads_the_child_before_it_is_reaped() {
+            use std::os::unix::process::ExitStatusExt;
+            let child = std::process::Command::new("/usr/bin/true").spawn().unwrap();
+            arm();
+            let (status, _) = crate::timer::unix_timer::wait_with_rusage(&child).unwrap();
+            assert!(status.success() && status.signal().is_none());
+            let reading = read(&[CounterKind::Instructions, CounterKind::Cycles]);
+            // Apple Silicon reports both; on Intel the probe rejects the events
+            if probe(CounterKind::Instructions, Scope::All).is_ok() {
+                assert!(reading[0].unwrap().value > 0);
+                assert!(reading[1].unwrap().value > 0);
+            }
+        }
+
+        #[test]
+        fn nothing_is_kept_when_not_armed() {
+            let child = std::process::Command::new("/usr/bin/true").spawn().unwrap();
+            ARMED.with(|a| a.set(false));
+            LAST.with(|l| l.set(None));
+            crate::timer::unix_timer::wait_with_rusage(&child).unwrap();
+            assert!(read(&[CounterKind::Instructions])[0].is_none());
         }
     }
 }

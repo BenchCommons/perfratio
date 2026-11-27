@@ -336,6 +336,15 @@ pub struct UntilSettings {
     pub match_stderr: bool,
 }
 
+/// `--thermal` reads Linux sysfs sensors; on other systems it cannot sample.
+#[cfg(feature = "cli")]
+fn thermal_warning(requested: bool, linux: bool) -> Option<&'static str> {
+    (requested && !linux).then_some(
+        "'--thermal' reads Linux sysfs temperature sensors; on this platform no temperature \
+         is sampled and 'interference.thermal' is absent from the export.",
+    )
+}
+
 /// The main settings for a perfratio benchmark session
 pub struct Options {
     /// Upper and lower bound for the number of benchmark runs
@@ -1130,6 +1139,9 @@ impl Options {
             .get_one::<String>("fail-on-quality")
             .and_then(|value| crate::quality::Grade::parse(value));
         options.thermal = matches.get_flag("thermal");
+        if let Some(warning) = thermal_warning(options.thermal, cfg!(target_os = "linux")) {
+            eprintln!("Warning: {warning}");
+        }
         options.cooldown = matches
             .get_one::<String>("cooldown")
             .map(|value| {
@@ -1193,6 +1205,16 @@ impl Options {
                 matches.get_flag("debug-mode"),
             )
             .map_err(OptionsError::InvalidCounters)?;
+            let mut config = config;
+            let mut warnings = warnings;
+            let uses_shell = options
+                .executor_kinds
+                .iter()
+                .any(|k| matches!(k, ExecutorKind::Shell(_)));
+            warnings.extend(crate::perf_counters::require_no_shell(
+                &mut config,
+                uses_shell,
+            ));
             for warning in warnings {
                 eprintln!("{} {warning}", crate::output::colors::yellow("Warning:"));
             }
@@ -1215,11 +1237,6 @@ impl Options {
         }
         if matches.get_flag("topdown") {
             let debug_mode = matches.get_flag("debug-mode");
-            if !debug_mode && !crate::topdown::platform_supported() {
-                return Err(OptionsError::InvalidTopdown(
-                    "--topdown is only supported on Linux x86_64".to_string(),
-                ));
-            }
             // On hybrid CPUs the events only count on one core type
             let pinned = options.affinity.is_some() || options.core_class.is_some();
             let (config, warnings) = crate::topdown::resolve(debug_mode, pinned);
@@ -1843,4 +1860,16 @@ fn parse_stat_settings<'a>(
         .validate()
         .map_err(OptionsError::InvalidStatistics)?;
     Ok(settings)
+}
+
+#[cfg(all(test, feature = "cli"))]
+mod thermal_warning_tests {
+    use super::thermal_warning;
+
+    #[test]
+    fn warns_only_when_requested_off_linux() {
+        assert!(thermal_warning(true, false).is_some());
+        assert!(thermal_warning(true, true).is_none());
+        assert!(thermal_warning(false, false).is_none());
+    }
 }

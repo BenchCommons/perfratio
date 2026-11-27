@@ -148,17 +148,24 @@ fn delta_table_has_a_row_per_class_per_class() {
         .stdout(predicate::str::contains("Topdown: backend bound"));
 }
 
-/// Other platforms fail fast with the message of the spec.
+/// Other platforms warn once and continue (#411): no error, topdown unavailable.
 #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
 #[test]
-fn unsupported_platform_is_an_error() {
+fn unsupported_platform_warns_and_continues() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("o.json");
     perfratio()
-        .args(["--runs=2", "--topdown", "--", env!("CARGO"), "--version"])
+        .args(["--runs=2", "--topdown", "-N", "--export-json"])
+        .arg(&out)
+        .args(["--", env!("CARGO"), "--version"])
         .assert()
-        .failure()
-        .stderr(predicate::str::contains(
-            "--topdown is only supported on Linux x86_64",
-        ));
+        .success()
+        .stderr(predicate::str::contains("'--topdown' is not available"));
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
+    let m = &json["perfratio"]["measurements"];
+    assert_eq!(m["topdown"], "unavailable");
+    assert_eq!(m["topdown_unavailable_reason"], "unsupported_platform");
 }
 
 /// Real events: needs Intel Ice Lake or later, or AMD Zen 4 or later, and a
