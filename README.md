@@ -28,8 +28,11 @@ files (`--import-json`).
 
 ## Install
 
-perfratio is not yet on crates.io or Homebrew. Both are planned (see
-[#93](https://github.com/BenchCommons/perfratio/issues/93)).
+perfratio is not yet published to crates.io, and there is no Homebrew tap yet (see
+[#93](https://github.com/BenchCommons/perfratio/issues/93)). The repository is public and
+release v1.0.0 exists, so use one of the methods below. `cargo install perfratio`,
+`cargo binstall perfratio` and a Homebrew formula will work only after the maintainers
+publish the crate and the tap; do not run them yet.
 
 **From source** (Rust 1.88 or newer):
 
@@ -41,8 +44,9 @@ cargo install --path .
 
 **GitHub release assets.** Each release at
 <https://github.com/BenchCommons/perfratio/releases> contains one archive per target, named
-`perfratio-v<version>-<target>.tar.gz` (`.zip` on Windows), and Debian packages. Unpack the
-archive and put the `perfratio` binary on your `PATH`.
+`perfratio-v<version>-<target>.tar.gz` (`.zip` on Windows), Debian packages, a `SHA256SUMS`
+file and a CycloneDX SBOM (`perfratio-<version>.cdx.json`). Unpack the archive and put the
+`perfratio` binary on your `PATH`. Verify it against `SHA256SUMS` first.
 
 ## Quick start
 
@@ -184,6 +188,8 @@ The exit code is 3. A benchmark counts as regressed only if it is slower than th
 alone does not fail the gate. When the command did not get slower, the same gate prints
 `-2.3%  p = 0.401  ~` and exits 0. `--export-diff-markdown <FILE>` writes the table for a pull
 request comment. A GitHub Actions example is in [doc/ci.md](doc/ci.md).
+
+`--verdict-json <FILE>` writes a compact verdict for scripts and agents: per command and metric `improved`, `regressed`, `unchanged`, `equivalent` or `inconclusive` with the change, its confidence interval and the p-value, an overall `improved`, `regressed`, `trade_off`, `unchanged` or `inconclusive`, and the result of `--budget` ([spec](docs/specs/verdict-json.md), schema `docs/schema/verdict.schema.json`). An MCP server is not built yet; the open questions are in the spec.
 
 Every benchmark also gets a measurement quality report (`results[].quality` in the JSON, a summary in the terminal when a check warns or fails): sample sufficiency, CI precision, outliers, trend, clusters, counter and energy coverage, workload validation. `--fail-on-quality with_caveats` exits with code 5 if a measurement is `unreliable`, next to `--fail-if-regressed` ([spec](docs/specs/measurement-quality.md)). Exports carry an environment block and a fingerprint (`perfratio.environment_fingerprint`); `--compare` and `--import-json` warn when the hardware class differs, `--meta git` records the commit ([spec](docs/specs/environment-fingerprint.md)). A command within the runner floor (measured at start with a trivial command, `--calibrate`) is flagged as below resolution, `--below-floor fail` exits with code 6 ([spec](docs/specs/measurement-floor.md)). `--evidence DIR` writes a hashed bundle (results, every sample, environment, calibration, validation, quality, command line) and `perfratio --verify-evidence DIR` checks it ([spec](docs/specs/evidence-bundle.md)). Cgroup throttling and thermal readings during the runs are reported as `interference` and a quality check; `--cooldown` waits before every run ([spec](docs/specs/cgroup-thermal.md)).
 

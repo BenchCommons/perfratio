@@ -558,6 +558,7 @@ pub fn execute_and_measure(
     #[cfg(windows)]
     if let Some(class) = crate::util::priority::windows_priority_class(priority) {
         self::windows_timer::set_priority_class(&child, class)?;
+        crate::util::priority::warn_if_downgraded(&child, priority, class)?;
     }
 
     #[cfg(windows)]
