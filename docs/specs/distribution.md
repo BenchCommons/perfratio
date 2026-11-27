@@ -24,5 +24,5 @@ did not exist. Issue: [#93](https://github.com/BenchCommons/perfratio/issues/93)
 - crates.io account, ownership and the `CARGO_REGISTRY_TOKEN` secret (or trusted publishing).
 - Final crate name (`perfratio` returned 404 on crates.io, so it was free when checked).
 - Creating the Homebrew tap repository and choosing its owner/name.
-- Publishing a `publish-crate` job and tap bump in the release workflow after the above.
+- Configuring the `CARGO_REGISTRY_TOKEN` secret: the `publish-crate` job already exists in `.github/workflows/CICD.yml` and is skipped while the secret is unset. The Homebrew tap bump still has to be added after the tap exists.
 - Running `cargo binstall --dry-run perfratio` after the first release.
