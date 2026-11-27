@@ -4,7 +4,7 @@
 //! `_meta`, `server/discover`) and the legacy `initialize` handshake of 2025-11-25. Nothing here
 //! opens a network socket. See `docs/specs/mcp-server.md` for the contract and the trust model.
 
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Read, Write};
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
@@ -22,6 +22,8 @@ pub const LEGACY_VERSION: &str = "2025-11-25";
 pub const MAX_RUNS: u64 = 1000;
 /// Largest argument vector accepted.
 pub const MAX_ARGV: usize = 256;
+/// Largest input line in bytes (without the newline); longer lines are answered with `-32600`.
+pub const MAX_LINE: usize = 1 << 20;
 
 const META_VERSION: &str = "io.modelcontextprotocol/protocolVersion";
 const META_SERVER_INFO: &str = "io.modelcontextprotocol/serverInfo";
@@ -55,19 +57,43 @@ impl Server {
     ///
     /// # Errors
     /// Fails on an I/O error of `input` or `output`.
-    pub fn serve<R: BufRead, W: Write>(&mut self, input: R, mut output: W) -> Result<()> {
-        for line in input.lines() {
-            let line = line.context("could not read from stdin")?;
-            if line.trim().is_empty() {
-                continue;
+    pub fn serve<R: BufRead, W: Write>(&mut self, mut input: R, mut output: W) -> Result<()> {
+        let mut buf = Vec::new();
+        loop {
+            buf.clear();
+            let read = (&mut input)
+                .take(MAX_LINE as u64 + 1)
+                .read_until(b'\n', &mut buf)
+                .context("could not read from stdin")?;
+            if read == 0 {
+                return Ok(());
             }
-            if let Some(response) = self.handle_line(&line) {
+            let response = if buf.len() > MAX_LINE && buf.last() != Some(&b'\n') {
+                discard_line(&mut input)?;
+                Some(error(
+                    Value::Null,
+                    -32600,
+                    &format!("message too large: the limit is {MAX_LINE} bytes per line"),
+                    None,
+                ))
+            } else {
+                match std::str::from_utf8(&buf) {
+                    Ok(line) if line.trim().is_empty() => None,
+                    Ok(line) => self.handle_line(line),
+                    Err(_) => Some(error(
+                        Value::Null,
+                        -32700,
+                        "parse error: invalid UTF-8",
+                        None,
+                    )),
+                }
+            };
+            if let Some(response) = response {
                 let text = serde_json::to_string(&response)?;
                 writeln!(output, "{text}")?;
                 output.flush()?;
             }
         }
-        Ok(())
     }
 
     /// Handle one message; `None` for a notification.
@@ -121,6 +147,12 @@ impl Server {
             Ok(mut result) => {
                 if modern_version(&params).is_some() {
                     result["resultType"] = json!("complete");
+                    // Caching hints are mandatory on these results (SEP caching, 2026-07-28).
+                    // Nothing here is user-specific; ttlMs 0 because the host may change.
+                    if matches!(method, "server/discover" | "tools/list") {
+                        result["ttlMs"] = json!(0);
+                        result["cacheScope"] = json!("public");
+                    }
                 }
                 json!({"jsonrpc": "2.0", "id": id, "result": result})
             }
@@ -299,7 +331,13 @@ impl Server {
         if !parent.starts_with(self.root()?) {
             bail!("'{relative}' is outside the root directory");
         }
-        Ok(parent.join(name))
+        let target = parent.join(name);
+        if let Ok(meta) = std::fs::symlink_metadata(&target) {
+            if meta.file_type().is_symlink() {
+                bail!("'{relative}' is a symbolic link; refusing to write through it");
+            }
+        }
+        Ok(target)
     }
 
     fn root(&self) -> Result<PathBuf> {
@@ -318,6 +356,21 @@ impl Server {
             bail!("'{relative}' must be a relative path without '..'");
         }
         Ok(self.config.root.join(path))
+    }
+}
+
+/// Skip the rest of an over-long line, in bounded chunks.
+fn discard_line<R: BufRead>(input: &mut R) -> Result<()> {
+    let mut chunk = Vec::new();
+    loop {
+        chunk.clear();
+        let read = input
+            .take(64 * 1024)
+            .read_until(b'\n', &mut chunk)
+            .context("could not read from stdin")?;
+        if read == 0 || chunk.last() == Some(&b'\n') {
+            return Ok(());
+        }
     }
 }
 

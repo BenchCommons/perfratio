@@ -39,7 +39,7 @@ channel. No socket is opened and there is no HTTP transport.
 ### Protocol (subset)
 - **Modern (2026-07-28):** stateless. Every request carries
   `params._meta["io.modelcontextprotocol/protocolVersion"]`; a different value is answered with
-  error `-32022` and `data: {supported, requested}`. Results carry `"resultType": "complete"`.
+  error `-32022` and `data: {supported, requested}`. Results carry `"resultType": "complete"`; those of `server/discover` and `tools/list` also carry the mandatory caching hints `ttlMs: 0` and `cacheScope: "public"` (no user-specific data; the tool set depends on the build only).
   Methods: `server/discover`, `ping`, `tools/list`, `tools/call`.
 - **Legacy (2025-11-25):** `initialize` answers `protocolVersion: "2025-11-25"`; after it (or after
   `notifications/initialized`) the methods above are accepted without `_meta`. Without `_meta` and
@@ -92,6 +92,8 @@ of the `perfratio-mcp` process**. This is code execution by design, like any she
   resolve (after symlinks) to a path below `--root` (default: the working directory). For
   `export_file` the directory must already exist. This limits what the file tools read and write,
   not what an executed program can do.
+- Input: a line is at most 1 MiB (`MAX_LINE`, without the newline). A longer line is answered with `-32600` (`id: null`) and its remainder is discarded without being buffered; invalid UTF-8 gives `-32700`.
+- `export_file` is refused if the destination is a symbolic link, so a link planted below the root cannot redirect the write.
 - Limits: `runs` and `warmup` at most 1000, `argv` at most 256 strings. There is no time limit, one
   call at a time, no cancellation: a slow command blocks the server until it ends. The host should
   apply its own timeout and kill the process.
@@ -104,12 +106,13 @@ of the `perfratio-mcp` process**. This is code execution by design, like any she
 legacy handshake, version mismatch (`-32022`), unknown method and tool, parse error and batch,
 `capabilities`, `compare` of two fixed exports (trade-off: faster, more memory; identical data),
 paths outside the root (`..`, absolute, empty, symlink), invalid arguments (empty `argv`, `runs`
-0 and 1001, unknown key, missing key), the allow-list, and a `run_benchmark` of `true` whose export
+0 and 1001, unknown key, missing key), caching hints, an oversized line, `--root` without value, export to a symlink), the allow-list, and a `run_benchmark` of `true` whose export
 is read back by `compare` (with `current_file` and with `argv`). Verdicts are asserted only on
 fixed exports; the commands that run are checked for shape, not for timing. Unix-only tests use
 `true` and `false`.
 
 ## Not done
+- Distribution: the `perfratio-mcp` binary is not in the release archives of `CICD.yml` (pending; it is built with `cargo install` or from source only).
 - Budgets and the `gate` in `compare`; `--noise-threshold`, `--equivalence-margin`, estimator as
   arguments.
 - Fingerprint (#314) and measurement-quality floor (#313) in `capabilities`.

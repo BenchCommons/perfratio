@@ -71,6 +71,69 @@ fn discover_and_tools_list() {
         .map(|t| t["name"].as_str().unwrap())
         .collect();
     assert_eq!(names, ["capabilities", "run_benchmark", "compare"]);
+    for response in &out {
+        assert_eq!(response["result"]["ttlMs"], 0);
+        assert_eq!(response["result"]["cacheScope"], "public");
+    }
+}
+
+#[test]
+fn oversized_line_is_refused_and_skipped() {
+    let dir = tempfile::tempdir().unwrap();
+    let ping = modern(7, "ping", json!({}));
+    let input = format!("{}\n{ping}\n", "x".repeat(3 * 1024 * 1024));
+    let output = assert_cmd::Command::new(assert_cmd::cargo::cargo_bin!("perfratio-mcp"))
+        .args(["--root", dir.path().to_str().unwrap()])
+        .write_stdin(input)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let lines: Vec<Value> = String::from_utf8(output)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0]["error"]["code"], -32600);
+    assert_eq!(lines[1]["id"], 7);
+    assert!(lines[1]["result"].is_object());
+}
+
+#[test]
+fn root_without_value_is_a_usage_error() {
+    assert_cmd::Command::new(assert_cmd::cargo::cargo_bin!("perfratio-mcp"))
+        .arg("--root")
+        .assert()
+        .code(2);
+}
+
+#[cfg(unix)]
+#[test]
+fn export_to_a_symlink_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("target.json"), "keep").unwrap();
+    std::os::unix::fs::symlink(dir.path().join("target.json"), dir.path().join("out.json"))
+        .unwrap();
+    let out = server(
+        dir.path(),
+        &[],
+        &[call(
+            1,
+            "run_benchmark",
+            json!({"argv": ["true"], "runs": 1, "export_file": "out.json"}),
+        )],
+    );
+    assert_eq!(out[0]["result"]["isError"], true);
+    assert!(out[0]["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("symbolic link"));
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("target.json")).unwrap(),
+        "keep"
+    );
 }
 
 #[test]

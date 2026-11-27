@@ -26,7 +26,10 @@ fn main() -> ExitCode {
                 println!("{HELP}");
                 return ExitCode::SUCCESS;
             }
-            "--root" => root = args.next(),
+            "--root" => match args.next() {
+                Some(dir) => root = Some(dir),
+                None => return usage("--root needs a value"),
+            },
             "--allow" => match args.next() {
                 Some(program) => config.allow.push(program),
                 None => return usage("--allow needs a value"),
