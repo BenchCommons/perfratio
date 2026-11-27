@@ -337,6 +337,7 @@ pub struct UntilSettings {
 }
 
 /// `--thermal` reads Linux sysfs sensors; on other systems it cannot sample.
+#[cfg(feature = "cli")]
 fn thermal_warning(requested: bool, linux: bool) -> Option<&'static str> {
     (requested && !linux).then_some(
         "'--thermal' reads Linux sysfs temperature sensors; on this platform no temperature \
@@ -1856,7 +1857,7 @@ fn parse_stat_settings<'a>(
     Ok(settings)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "cli"))]
 mod thermal_warning_tests {
     use super::thermal_warning;
 
