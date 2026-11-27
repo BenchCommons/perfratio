@@ -187,6 +187,9 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR VAR
 .IR MIN
 .IR MAX ]
+.RB [ \-\-optimize\-algorithm
+.IR ALGORITHM ]
+.RB [ \-\-optimize\-validate ]
 .RB [ \-\-optimize\-budget
 .IR N ]
 .RB [ \-\-optimize\-confirm
@@ -446,6 +449,14 @@ Fit O(1), O(log n), O(n), O(n log n), O(n^2) and O(n^3) by least squares to the 
 \fB\-\-optimize\fR \fIVAR\fP \fIMIN\fP \fIMAX\fP
 .IP
 Search the parameter VAR in MIN..MAX (integers, or fractional values in steps of \fB\-D\fR) for the value that minimizes the primary metric (see \fB\-\-metric\fR) instead of benchmarking every value. Replaces '{VAR}' in the command by the current value. Uses a golden-section search and assumes that the metric is unimodal in VAR; perfratio warns if the evaluated points suggest otherwise. Other parameters are combined with the search: one search runs per combination.
+.HP
+\fB\-\-optimize\-algorithm\fR \fIALGORITHM\fP
+.IP
+Search algorithm of \fB\-\-optimize\fR: golden (default for one variable), random, halving (successive halving: the best third of the points get three times as many runs, until two are left) or bayes (Gaussian process, expected improvement). Give \fB\-\-optimize\fR several times to search several integer variables; random is then the default. Random choices follow \fB\-\-seed\fR.
+.HP
+\fB\-\-optimize\-validate\fR
+.IP
+After a random, halving or bayes search, benchmark the winner and the runner-up again in a fresh round and report whether the winner holds up (confirmed, refuted or inconclusive) and how far its value drifted.
 .HP
 \fB\-\-optimize\-budget\fR \fIN\fP
 .IP

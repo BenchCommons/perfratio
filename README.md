@@ -81,6 +81,7 @@ Common options:
 | `-s, --setup <CMD>` / `-c, --cleanup <CMD>` | Run CMD once before or after all runs of a command. |
 | `-P`, `-L`, `-F` | Parameter scans over a range, a list or a file. |
 | `--optimize <VAR> <MIN> <MAX>` | Search a parameter for the value that minimizes `--metric` (golden-section search, assumes a unimodal metric; `--optimize-budget <N>` caps the evaluations; `-D <DELTA>` allows fractional values; the best candidates are re-run once and pooled, `--optimize-confirm <N>`; the HTML report marks the best value). |
+| `--optimize-algorithm golden\|random\|halving\|bayes`, `--optimize-validate` | Give `--optimize` several times to search several integer variables at once (default `random`), or pick successive halving or Bayesian optimization. `--optimize-validate` benchmarks the winner and runner-up again in a fresh round (`docs/specs/optimize-search.md`). |
 | `-e, --export <FILE>` | Export results. The format follows the file extension. |
 | `--deep-stats` | Bootstrapped confidence intervals and hypothesis tests. |
 | `--estimator <mean\|median\|pNN>`, `--confidence-level`, `--significance-level`, `--bootstrap-resamples`, `--seed` | Choose the central value behind ranking, ratios and tests (default `mean`), and the levels and bootstrap settings of intervals and tests (see `docs/specs/statistics-settings.md`). |
@@ -191,7 +192,7 @@ Every benchmark also gets a measurement quality report (`results[].quality` in t
 
 `--export-json <FILE>` (or `-e results.json`) writes the summary statistics and every run's
 timings. perfratio owns this output, and consumers such as `tools-benchmark` read it.
-The current version is `"1.36"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested.
+The current version is `"1.37"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested.
 
 The contract is a top-level `"schemaVersion": "MAJOR.MINOR"` string. Consumers must ignore
 unknown keys and accept any MINOR version of the MAJOR version they support. A removed or
