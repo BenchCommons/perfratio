@@ -1882,7 +1882,9 @@ impl<'a> BenchmarkRunner<'a> {
                     } else {
                         crate::outln!(
                             "  Energy:             {:>14}",
-                            "RAPL unprivileged/unavailable on host".dimmed()
+                            crate::energy::last_unavailable()
+                                .map_or("RAPL unprivileged/unavailable on host", |r| r.message())
+                                .dimmed()
                         );
                     }
                 }
