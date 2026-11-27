@@ -1790,6 +1790,33 @@ impl<'a> BenchmarkRunner<'a> {
                     }
                 }
 
+                if self.options.persistent {
+                    let report = crate::persistent::IterationsReport::from_times(
+                        &self.times_real,
+                        self.region_sdk.clone(),
+                    );
+                    let line = match (&report.steady_state, report.status) {
+                        (Some(steady), _) => format!(
+                            "{} warm-up iterations, then {} steady (mean {} ± {})",
+                            report.warmup_iterations.unwrap_or(0),
+                            steady.count,
+                            format_duration(steady.mean, Some(time_unit)),
+                            steady
+                                .stddev
+                                .map_or("n/a".to_string(), |sd| format_duration(
+                                    sd,
+                                    Some(time_unit)
+                                )),
+                        ),
+                        (None, crate::persistent::SteadyStatus::TooFewIterations) => format!(
+                            "no analysis, fewer than {} iterations",
+                            crate::persistent::MIN_ITERATIONS
+                        ),
+                        (None, _) => "no steady state reached".to_string(),
+                    };
+                    crate::outln!("  Persistent:         {}", line.dimmed());
+                }
+
                 if let Some(warmup) = self.warmup.filter(|w| w.auto) {
                     crate::outln!(
                         "  Warmup (auto):      {}",
@@ -2053,7 +2080,8 @@ impl<'a> BenchmarkRunner<'a> {
                     > 0,
             };
 
-            if !self.options.suppress_off_cpu_warnings {
+            // persistent mode collects no CPU time, and the warm-up is the first slow iterations
+            if !self.options.suppress_off_cpu_warnings && !self.options.persistent {
                 let total_cpu = user_mean + system_mean;
                 if t_mean >= 0.1 && (total_cpu <= 0.0 || t_mean >= 5.0 * total_cpu) {
                     let ratio = if total_cpu > 0.0 {
@@ -2068,7 +2096,7 @@ impl<'a> BenchmarkRunner<'a> {
             let diag = Diagnostics::compute(&metric_samples, OUTLIER_THRESHOLD);
 
             if !self.options.suppress_outlier_warnings {
-                if scores[0] > OUTLIER_THRESHOLD {
+                if scores[0] > OUTLIER_THRESHOLD && !self.options.persistent {
                     warnings.push(Warnings::SlowInitialRun(
                         metric_samples[0],
                         outlier_warning_options,
@@ -2205,6 +2233,12 @@ impl<'a> BenchmarkRunner<'a> {
             b
         });
 
+        let iterations = self.options.persistent.then(|| {
+            crate::persistent::IterationsReport::from_times(
+                &self.times_real,
+                self.region_sdk.clone(),
+            )
+        });
         let mut result = BenchmarkResult {
             command: self.command.get_name(),
             command_with_unused_parameters: self.command.get_name_with_unused_parameters(),
@@ -2338,6 +2372,8 @@ impl<'a> BenchmarkRunner<'a> {
             custom_metrics,
             custom_metrics_summary,
             regions,
+            mode: self.options.persistent.then(|| "persistent".to_string()),
+            iterations,
         };
         let quality = crate::quality::QualityReport::assess(
             &result,

@@ -45,6 +45,14 @@ fn available(program: &str) -> bool {
         .is_ok_and(|o| o.status.success())
 }
 
+/// Whether `program <flag>` runs (`go version`, `kotlinc -version`).
+fn available_with(program: &str, flag: &str) -> bool {
+    Command::new(program)
+        .arg(flag)
+        .output()
+        .is_ok_and(|o| o.status.success())
+}
+
 /// A program that can run the example.
 struct Client {
     /// Language label, the prefix of the SDK id in the `hello` line
@@ -212,6 +220,134 @@ fn cpp_example() -> Option<&'static Client> {
                 "c",
                 "example_cpp",
             )
+        })
+        .as_ref()
+}
+
+fn js_example() -> Option<&'static Client> {
+    static CLIENT: OnceLock<Option<Client>> = OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            if !available("node") {
+                eprintln!("skipping the JavaScript client: no node");
+                return None;
+            }
+            Some(Client {
+                lang: "javascript",
+                program: "node".into(),
+                args: vec![sdk_dir()
+                    .join("js/example.js")
+                    .to_string_lossy()
+                    .into_owned()],
+                exit_mode: ("exit", 3),
+                unwind_mode: Some(("throw", 1)),
+            })
+        })
+        .as_ref()
+}
+
+/// Build a Go program of `sdk/go` into the scratch directory.
+fn build_go(package: &str) -> Option<PathBuf> {
+    if !available_with("go", "version") {
+        eprintln!("skipping the Go client: no go");
+        return None;
+    }
+    let target = exe(&format!("go_{package}"));
+    run_checked(
+        Command::new("go")
+            .args(["build", "-o"])
+            .arg(&target)
+            .arg(format!("./{package}"))
+            .current_dir(sdk_dir().join("go")),
+        "building the Go example",
+    );
+    Some(target)
+}
+
+fn go_example() -> Option<&'static Client> {
+    static CLIENT: OnceLock<Option<Client>> = OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            Some(Client {
+                lang: "go",
+                program: build_go("example")?.to_string_lossy().into_owned(),
+                args: vec![],
+                // Go has no exit handlers: the example defers Flush (os.Exit skips it)
+                exit_mode: ("", 0),
+                unwind_mode: Some(("panic", 2)),
+            })
+        })
+        .as_ref()
+}
+
+/// Compile the Java files of `sdk/java` into the scratch directory; the class path.
+fn build_java(main_file: &str) -> Option<PathBuf> {
+    if !available("java") || !available("javac") {
+        eprintln!("skipping the Java client: no java/javac");
+        return None;
+    }
+    let classes = scratch().join("java-classes");
+    run_checked(
+        Command::new("javac")
+            .arg("-d")
+            .arg(&classes)
+            .arg(sdk_dir().join("java/perfratio/PerfratioRegion.java"))
+            .arg(sdk_dir().join("java").join(main_file)),
+        "building the Java example",
+    );
+    Some(classes)
+}
+
+fn java_example() -> Option<&'static Client> {
+    static CLIENT: OnceLock<Option<Client>> = OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            let classes = build_java("Example.java")?;
+            Some(Client {
+                lang: "java",
+                program: "java".into(),
+                args: vec![
+                    "-cp".into(),
+                    classes.to_string_lossy().into_owned(),
+                    "Example".into(),
+                ],
+                exit_mode: ("exit", 3),
+                unwind_mode: Some(("throw", 1)),
+            })
+        })
+        .as_ref()
+}
+
+/// Compile a Kotlin example with the client into a jar in the scratch directory.
+fn build_kotlin(main_file: &str, jar: &str) -> Option<PathBuf> {
+    if !available_with("kotlinc", "-version") || !available("java") {
+        eprintln!("skipping the Kotlin client: no kotlinc/java");
+        return None;
+    }
+    let target = scratch().join(jar);
+    run_checked(
+        Command::new("kotlinc")
+            .arg(sdk_dir().join("kotlin/PerfratioRegion.kt"))
+            .arg(sdk_dir().join("kotlin").join(main_file))
+            .args(["-include-runtime", "-d"])
+            .arg(&target),
+        "building the Kotlin example",
+    );
+    Some(target)
+}
+
+fn kotlin_example() -> Option<&'static Client> {
+    static CLIENT: OnceLock<Option<Client>> = OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            let jar = build_kotlin("Example.kt", "kotlin_example.jar")?;
+            Some(Client {
+                lang: "kotlin",
+                program: "java".into(),
+                args: vec!["-jar".into(), jar.to_string_lossy().into_owned()],
+                exit_mode: ("exit", 3),
+                unwind_mode: Some(("throw", 1)),
+            })
         })
         .as_ref()
 }
@@ -399,6 +535,58 @@ fn python_client() {
 }
 
 #[test]
+fn javascript_client() {
+    if !sdk_present() {
+        return;
+    }
+    let Some(client) = js_example() else { return };
+    check_client(client);
+}
+
+#[test]
+fn go_client() {
+    if !sdk_present() {
+        return;
+    }
+    let Some(client) = go_example() else { return };
+    check_client(client);
+}
+
+#[test]
+fn go_client_unit_tests() {
+    if !sdk_present() || !available_with("go", "version") {
+        return;
+    }
+    run_checked(
+        Command::new("go")
+            .args(["test", "."])
+            .current_dir(sdk_dir().join("go"))
+            .env_remove(ENV_FILE),
+        "the Go client unit tests",
+    );
+}
+
+#[test]
+fn java_client() {
+    if !sdk_present() {
+        return;
+    }
+    let Some(client) = java_example() else { return };
+    check_client(client);
+}
+
+#[test]
+fn kotlin_client() {
+    if !sdk_present() {
+        return;
+    }
+    let Some(client) = kotlin_example() else {
+        return;
+    };
+    check_client(client);
+}
+
+#[test]
 fn python_client_unit_tests() {
     if !sdk_present() {
         return;
@@ -489,4 +677,163 @@ time.sleep(0.3)
     let whole = result["user"].as_f64().unwrap() + result["system"].as_f64().unwrap();
     assert!(whole > in_region, "whole {whole} <= region {in_region}");
     assert!(region["times"][0].as_f64().unwrap() > 0.25);
+}
+
+// ---- persistent mode (#370) -------------------------------------------------------------
+
+/// The command line of the persistent example of a language: `None` when the toolchain is
+/// missing (the test is skipped with a message).
+fn persistent_example(lang: &str) -> Option<Vec<String>> {
+    if !sdk_present() {
+        return None;
+    }
+    match lang {
+        "python" => {
+            let python = ["python3", "python"].into_iter().find(|p| available(p))?;
+            Some(vec![
+                python.into(),
+                sdk_dir()
+                    .join("python/persistent_example.py")
+                    .to_string_lossy()
+                    .into_owned(),
+            ])
+        }
+        "rust" => {
+            let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+            if !available(&cargo) {
+                return None;
+            }
+            run_checked(
+                Command::new(&cargo)
+                    .args([
+                        "build",
+                        "--locked",
+                        "--example",
+                        "persistent",
+                        "--manifest-path",
+                    ])
+                    .arg(sdk_dir().join("rust/Cargo.toml"))
+                    .arg("--target-dir")
+                    .arg(scratch().join("rust-target")),
+                "building the Rust persistent example",
+            );
+            Some(vec![scratch()
+                .join("rust-target/debug/examples")
+                .join(format!("persistent{}", std::env::consts::EXE_SUFFIX))
+                .to_string_lossy()
+                .into_owned()])
+        }
+        "javascript" => {
+            if !available("node") {
+                return None;
+            }
+            Some(vec![
+                "node".into(),
+                sdk_dir()
+                    .join("js/persistent_example.js")
+                    .to_string_lossy()
+                    .into_owned(),
+            ])
+        }
+        "go" => Some(vec![build_go("persistent_example")?
+            .to_string_lossy()
+            .into_owned()]),
+        "java" => {
+            let classes = build_java("PersistentExample.java")?;
+            Some(vec![
+                "java".into(),
+                "-cp".into(),
+                classes.to_string_lossy().into_owned(),
+                "PersistentExample".into(),
+            ])
+        }
+        "kotlin" => {
+            let jar = build_kotlin("PersistentExample.kt", "kotlin_persistent.jar")?;
+            Some(vec![
+                "java".into(),
+                "-jar".into(),
+                jar.to_string_lossy().into_owned(),
+            ])
+        }
+        _ => None,
+    }
+}
+
+fn check_persistent(lang: &str) {
+    let Some(argv) = persistent_example(lang) else {
+        eprintln!("skipping the persistent {lang} example: toolchain or sdk/ missing");
+        return;
+    };
+    // Without perfratio the program runs its work once and exits
+    let output = run_checked(
+        Command::new(&argv[0])
+            .args(&argv[1..])
+            .env_remove("PERFRATIO_PERSISTENT_PROTOCOL"),
+        &format!("{lang}: running the persistent example without perfratio"),
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "{lang}: wrote protocol lines without perfratio"
+    );
+
+    let line = argv
+        .iter()
+        .map(|part| format!("\"{}\"", part.replace('\\', "/")))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let out = scratch().join(format!("persistent_{lang}.json"));
+    perfratio()
+        .args(["--persistent", "-w", "0", "--runs=40", "--export-json"])
+        .arg(&out)
+        .arg(&line)
+        .assert()
+        .success();
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
+    let result = &json["results"][0];
+    assert_eq!(result["mode"], "persistent", "{lang}");
+    let it = &result["iterations"];
+    assert_eq!(it["count"], 40, "{lang}");
+    assert!(
+        it["sdk"].as_str().is_some_and(|s| s.starts_with(lang)),
+        "{lang}: {it}"
+    );
+    // 5 slow calls (40 ms), then fast ones (10 ms)
+    assert_eq!(it["status"], "steady_state", "{lang}: {it}");
+    let warmup = it["warmup_iterations"].as_u64().unwrap();
+    assert!((4..=7).contains(&warmup), "{lang}: warm-up {warmup}");
+    let times = result["times"].as_array().unwrap();
+    assert!(times[0].as_f64().unwrap() >= 0.039, "{lang}: {times:?}");
+    let mean = it["steady_state"]["mean"].as_f64().unwrap();
+    assert!((0.010..0.020).contains(&mean), "{lang}: steady mean {mean}");
+}
+
+#[test]
+fn persistent_python_example() {
+    check_persistent("python");
+}
+
+#[test]
+fn persistent_rust_example() {
+    check_persistent("rust");
+}
+
+#[test]
+fn persistent_javascript_example() {
+    check_persistent("javascript");
+}
+
+#[test]
+fn persistent_go_example() {
+    check_persistent("go");
+}
+
+#[test]
+fn persistent_java_example() {
+    check_persistent("java");
+}
+
+#[test]
+fn persistent_kotlin_example() {
+    check_persistent("kotlin");
 }

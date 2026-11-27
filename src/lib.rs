@@ -104,6 +104,8 @@ pub mod pareto;
 #[doc(hidden)]
 pub mod perf_counters;
 #[doc(hidden)]
+pub mod persistent;
+#[doc(hidden)]
 pub mod pmu;
 #[doc(hidden)]
 pub mod pmu_scaling;

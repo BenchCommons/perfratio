@@ -75,6 +75,14 @@ fn export(args: &[&str]) -> Value {
 const CASES: &[(&str, &[&str])] = &[
     ("default", &["--runs=3", "sleep 0.1"]),
     (
+        "persistent mode",
+        &["--persistent", "--warmup=0", "--runs=20", "sleep 0.1"],
+    ),
+    (
+        "persistent mode too few iterations",
+        &["--persistent", "--warmup=0", "--runs=4", "sleep 0.1"],
+    ),
+    (
         "absolute budgets",
         &[
             "--runs=3",

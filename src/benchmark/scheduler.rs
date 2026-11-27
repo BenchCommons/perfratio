@@ -132,12 +132,20 @@ impl<'a> Scheduler<'a> {
                             Vec::new()
                         })
                         .with_concurrency(self.options.concurrency)
+                        .with_persistent(self.options.persistent)
                         .with_validation(self.options.validation.clone()),
                 ),
                 ExecutorKind::Shell(shell) => Box::new(ShellExecutor::new(shell, self.options)),
             };
+            if self.options.persistent && !matches!(kind, ExecutorKind::Mock(_)) {
+                executor = Box::new(crate::persistent::PersistentExecutor::new(
+                    executor,
+                    self.options,
+                ));
+            }
             executor.calibrate()?;
             if self.options.calibrate == crate::calibration::CalibrateMode::Auto
+                && !self.options.persistent
                 && !matches!(kind, ExecutorKind::Mock(_))
             {
                 let floor = crate::calibration::measure_floor(&*executor, self.options);

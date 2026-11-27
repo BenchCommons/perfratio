@@ -283,6 +283,15 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub regions: Option<Vec<RegionResult>>,
 
+    /// `--persistent`: `persistent` when the command ran as one long-lived process
+    /// (`docs/specs/persistent-mode.md`). Absent otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+
+    /// `--persistent`: warm-up phase and steady-state statistics of the iterations
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iterations: Option<crate::persistent::IterationsReport>,
+
     /// `--concurrency N` (only when N > 1): instances started simultaneously per
     /// run. With it present, `times` holds the makespan of each run.
     #[serde(default, skip_serializing_if = "Option::is_none")]

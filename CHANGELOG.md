@@ -4,6 +4,11 @@ perfratio is a fork of [hyperfine](https://github.com/sharkdp/hyperfine). This f
 
 Migrating from hyperfine: see [docs/MIGRATION.md](docs/MIGRATION.md). Measuring one algorithm in several languages: see [docs/CROSS_LANGUAGE.md](docs/CROSS_LANGUAGE.md).
 
+## Unreleased
+
+- `--persistent` runs the command once and drives the runs through a versioned stdin/stdout protocol, with per-iteration times, warm-up detection and steady-state statistics; JSON 1.37 adds `results[].mode` and `results[].iterations`; Rust and Python SDKs gain `serve` (issue [#370](https://github.com/BenchCommons/perfratio/issues/370))
+- Region SDKs for JavaScript/TypeScript, Go, Java and Kotlin under `sdk/`, with `serve` for `--persistent` and the shared protocol test; the protocol and the JSON export do not change (issue [#372](https://github.com/BenchCommons/perfratio/issues/372))
+
 ## 1.0.0 - 2026-11-26
 
 Generated from the merged pull requests (#1 to #338). Pull requests that bump dependencies or GitHub Actions are listed under Internal.

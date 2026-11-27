@@ -536,6 +536,10 @@ pub struct Options {
     /// `--until`: stop timer upon readiness output pattern
     pub until: Option<UntilSettings>,
 
+    /// `--persistent`: start each command once and drive the iterations through the
+    /// persistent protocol (`docs/specs/persistent-mode.md`)
+    pub persistent: bool,
+
     /// `--region`: names of the instrumented regions to measure
     pub regions: Vec<String>,
 
@@ -618,6 +622,7 @@ impl Default for Options {
             artifact_dir: None,
             cpu_partition: None,
             until: None,
+            persistent: false,
             regions: Vec::new(),
             region_scope: false,
             output_metrics: Vec::new(),
@@ -1076,6 +1081,7 @@ impl Options {
                 options.regions.push(name.to_string());
             }
         }
+        options.persistent = matches.get_flag("persistent");
         options.region_scope = matches.get_flag("region-scope");
         if options.region_scope && options.regions.is_empty() {
             return Err(OptionsError::InvalidRegion(

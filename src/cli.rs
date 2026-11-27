@@ -1026,6 +1026,24 @@ pub fn build_command() -> Command {
                        reports no region fails."),
         )
         .arg(
+            Arg::new("persistent")
+                .long("persistent")
+                .action(ArgAction::SetTrue)
+                .conflicts_with_all([
+                    "concurrency", "subtract", "region", "region-scope", "jobs", "until",
+                    "output-metric", "energy", "counters", "topdown", "simd", "shell",
+                    "expect-output-sha256", "validate",
+                ])
+                .help("Start every command once and drive the runs as iterations of that one \
+                       process through the persistent protocol (see sdk/ and \
+                       docs/specs/persistent-mode.md). The program times each iteration itself, \
+                       so JIT runtimes reach steady state and services can be measured. The JSON \
+                       export gains 'mode: persistent' and 'iterations' with the detected warm-up \
+                       phase and the steady-state statistics. The command runs without a shell. \
+                       CPU time and memory are not collected. Use '-w 0' and many runs to see \
+                       the warm-up."),
+        )
+        .arg(
             Arg::new("region-scope")
                 .long("region-scope")
                 .action(ArgAction::SetTrue)

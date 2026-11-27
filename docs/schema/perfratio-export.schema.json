@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.36 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.37 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.36",
+      "const": "1.37",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -1639,6 +1639,35 @@
         "leftover_processes": {
           "type": "boolean",
           "description": "Only present when true (1.19): processes started by the command outlived it in at least one run and were killed."
+        },
+        "mode": {
+          "const": "persistent",
+          "description": "`--persistent` (1.37): the command ran as one long-lived process and every run is an iteration. Absent otherwise."
+        },
+        "iterations": {
+          "type": "object",
+          "properties": {
+            "protocol": {"type": "integer", "description": "Persistent protocol version spoken."},
+            "sdk": {"type": "string", "description": "Identifier the SDK sent in its hello line."},
+            "count": {"type": "integer", "minimum": 0, "description": "Measured iterations (the length of `times`)."},
+            "status": {"enum": ["steady_state", "no_steady_state", "too_few_iterations"]},
+            "warmup_iterations": {"type": "integer", "minimum": 0, "description": "Iterations before the steady state. Only with status steady_state."},
+            "steady_state": {
+              "type": "object",
+              "properties": {
+                "first_iteration": {"type": "integer", "minimum": 0},
+                "count": {"type": "integer", "minimum": 1},
+                "mean": {"type": "number"},
+                "stddev": {"type": ["number", "null"]},
+                "min": {"type": "number"},
+                "max": {"type": "number"}
+              },
+              "required": ["first_iteration", "count", "mean", "min", "max"],
+              "description": "Statistics in seconds of the iterations after the warm-up phase."
+            }
+          },
+          "required": ["protocol", "count", "status"],
+          "description": "`--persistent` (1.37): warm-up detection and steady-state statistics of the iterations."
         },
         "regions": {
           "type": "array",

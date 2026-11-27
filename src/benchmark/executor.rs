@@ -1104,6 +1104,8 @@ pub struct MockExecutor {
     /// `--region-scope`: metrics simulated inside each region
     scoped: Vec<String>,
     validation: Option<crate::validation::ValidationConfig>,
+    /// `--persistent`: simulate a program that warms up over its first iterations
+    persistent: bool,
 }
 
 impl MockExecutor {
@@ -1117,7 +1119,15 @@ impl MockExecutor {
             regions: Vec::new(),
             scoped: Vec::new(),
             validation: None,
+            persistent: false,
         }
+    }
+
+    /// Simulate `--persistent`: the first measured iterations take 4, 2 and 1.5 times as long
+    /// (every `--warmup` iteration 4 times), so the warm-up detection has a known answer.
+    pub fn with_persistent(mut self, persistent: bool) -> Self {
+        self.persistent = persistent;
+        self
     }
 
     /// Simulate `--region-scope`: inside a region the CPU time is 60% user and 20% system
@@ -1264,6 +1274,15 @@ impl Executor for MockExecutor {
         let timed_out = self.timeout.is_some_and(|t| requested > t.as_secs_f64());
         let time_real = if timed_out {
             self.timeout.unwrap().as_secs_f64()
+        } else if self.persistent {
+            requested
+                * match iteration {
+                    BenchmarkIteration::Warmup(_) => 4.0,
+                    BenchmarkIteration::Benchmark(0) => 4.0,
+                    BenchmarkIteration::Benchmark(1) => 2.0,
+                    BenchmarkIteration::Benchmark(2) => 1.5,
+                    _ => 1.0,
+                }
         } else {
             requested
         };
@@ -1328,7 +1347,7 @@ impl Executor for MockExecutor {
                         .chain(scoped)
                     })
                     .collect(),
-                region_sdk: None,
+                region_sdk: self.persistent.then(|| "mock/1.0.0".to_string()),
                 instances,
                 leftover_processes: false,
                 stdout: self
