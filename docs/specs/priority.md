@@ -16,14 +16,14 @@ priority is useful for benchmarking background workloads.
 | idle | `SCHED_IDLE` | `setpriority(19)` | `IDLE_PRIORITY_CLASS` |
 | realtime | `SCHED_FIFO`, max priority | `setpriority(-20)` + `TASK_FOREGROUND_APPLICATION` role (#291) | `REALTIME_PRIORITY_CLASS` |
 
-- Applies to every process joulex starts: the benchmarked command, `--prepare`,
+- Applies to every process perfratio starts: the benchmarked command, `--prepare`,
   `--conclude`, `--setup`, `--cleanup`, and the shell spawning time calibration,
   so the subtracted shell overhead is measured under the same priority.
 - Unix: set in the child between fork and exec (`pre_exec`, like `--affinity`),
   so the program and all its children inherit it. Windows: `SetPriorityClass`
   on the still-suspended process, before it is resumed.
 - `high`/`realtime` without privileges fail with a hint: on Linux, root or
-  `sudo setcap cap_sys_nice+ep "$(command -v joulex)"` (root in a container
+  `sudo setcap cap_sys_nice+ep "$(command -v perfratio)"` (root in a container
   usually lacks `CAP_SYS_NICE`); on macOS, root. Windows silently turns
   `realtime` into `high` without administrator rights.
 - `realtime` prints a starvation warning at startup (`--timeout`, #51, does not exist yet).

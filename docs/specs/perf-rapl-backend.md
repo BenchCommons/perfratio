@@ -38,7 +38,6 @@ PMU discovery (root is injectable in code, default `/sys/bus/event_source/device
 given or no backend is usable. It lives in the `perfratio` metadata object, next to `version`.
 Adding an optional key is a MINOR change under the #240 rules, so a file that carries it is
 `schemaVersion` 1.1 once #240 lands (1.0 → 1.1); consumers must ignore it if they do not know it.
-The legacy `joulex` copy contains the same key until #225 removes it.
 
 ### Interaction with #240 `measurements.energy_unavailable_reason`
 The reason is computed from both backends under the effective preference:

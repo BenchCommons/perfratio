@@ -60,6 +60,8 @@ pub mod command;
 #[doc(hidden)]
 pub mod compare;
 #[doc(hidden)]
+pub mod complexity;
+#[doc(hidden)]
 pub mod cooldown;
 #[doc(hidden)]
 pub mod counters;
@@ -109,6 +111,8 @@ pub mod pmu_scaling;
 pub mod quality;
 #[doc(hidden)]
 pub mod region;
+/// Region-scoped CPU time, energy and counters.
+pub mod region_scope;
 #[doc(hidden)]
 pub mod run_id;
 #[doc(hidden)]

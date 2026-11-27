@@ -179,6 +179,8 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR MAX ]
 .RB [ \-\-work
 .IR N[UNIT] ]
+.RB [ \-\-complexity
+.IR VAR ]
 .RB [ \-\-optimize
 .IR VAR
 .IR MIN
@@ -237,6 +239,7 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR TEXT ]
 .RB [ \-\-until\-stderr ]
 .RB [ \-\-region [ =\fINAME\fR ]]
+.RB [ \-\-region\-scope ]
 .RB [ \-\-output\-metric
 .IR NAME=REGEX ]
 .RB [ \-\-output\-metric\-stderr ]
@@ -430,6 +433,9 @@ Perform benchmark runs for each value in the range MIN..MAX. Replaces the string
 \fB\-\-work\fR \fIN[UNIT]\fP
 .IP
 The amount of work one run does, e.g. 1000000 or 4096ops (unit defaults to op). Adds metrics per unit of work, marked kind derived in the metric descriptors: time_per_op, energy_per_op, ops_per_second, ops_per_joule, instructions_per_op, cycles_per_op, edp_per_op and ed2p_per_op (the energy ones need \fB\-\-energy\fR, the counter ones \fB\-\-counters\fR). With \fB\-\-energy\fR the energy-delay products edp (E*t) and ed2p (E*t^2) are always added. Select them with \fB\-\-metric\fR custom:NAME, \fB\-\-pareto\fR or \fB\-\-budget\fR.
+\fB\-\-complexity\fR \fIVAR\fP
+.IP
+Fit O(1), O(log n), O(n), O(n log n), O(n^2) and O(n^3) by least squares to the results over the values of the parameter VAR (at least 3 positive numeric values per command) and report the best model with coefficient, RMS and R\(u2 for wall time, and for memory, energy and instructions when available. An empirical fit, not a proof of the complexity. Exported as \fBcomplexity\fR in the JSON file. Conflicts with \fB\-\-optimize\fR.
 .HP
 \fB\-\-optimize\fR \fIVAR\fP \fIMIN\fP \fIMAX\fP
 .IP
@@ -632,6 +638,10 @@ Match the pattern specified by \fB\-\-until\fR against stderr instead of stdout.
 \fB\-\-region\fR[=\fINAME\fR]
 .IP
 Measure only the region(s) the program brackets with the perfratio region SDK (see \fBsdk/\fR and \fBdocs/specs/region-protocol.md\fR). Without NAME the region \fBdefault\fR is measured. Can be given several times. perfratio passes the path of an event file in \fBPERFRATIO_REGION_FILE\fR and the protocol version in \fBPERFRATIO_REGION_PROTOCOL\fR; the SDK appends start and stop events with monotonic timestamps. The JSON export lists \fBregions\fR next to the whole-process times and \fB\-\-metric region:\fINAME\fR\fR ranks on one. CPU time, memory, counters and energy still cover the whole process. A command that reports no region fails. Conflicts with \fB\-\-concurrency\fR and \fB\-\-subtract\fR.
+.HP
+\fB\-\-region\-scope\fR
+.IP
+With \fB\-\-region\fR: also report the CPU time, the energy (with \fB\-\-energy\fR) and the hardware counters (with \fB\-\-counters\fR, Linux) spent inside each region, as \fBregions[].metrics[]\fR with scope \fBregion\fR. perfratio reads them when the SDK reports the start and the stop (the SDK writes every marker at once when \fBPERFRATIO_REGION_LIVE\fR is 1), so a thread of perfratio polls while the program runs; the error is bounded by the marker latency (see \fBdocs/specs/region-scope.md\fR). Whole-process values are unchanged. Needs \fB\-\-region\fR or \fB\-\-metric region:\fINAME\fR. Conflicts with \fB\-\-concurrency\fR and \fB\-\-subtract\fR.
 .HP
 \fB\-\-output\-metric\fR \fINAME=REGEX\fP
 .IP

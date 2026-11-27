@@ -357,6 +357,25 @@ pub fn build_command() -> Command {
                 ),
         )
         .arg(
+            Arg::new("complexity")
+                .long("complexity")
+                .action(ArgAction::Set)
+                .value_name("VAR")
+                .conflicts_with_all(["import-json", "optimize"])
+                .help(
+                    "Fit growth models to the results over the values of the parameter VAR (a '-P', \
+                     '-L' or '--parameter-file' parameter with positive numeric values; at least 3 \
+                     values per command).\n\n  \
+                     Example:  perfratio -P n 1000 64000 --parameter-step-n 6 --parameter-step-log \
+                     --complexity n 'sort-data {n}'\n\n\
+                     By least squares, O(1), O(log n), O(n), O(n log n), O(n^2) and O(n^3) are fitted \
+                     to the mean wall time (and to memory, energy and instructions when every point \
+                     has them); the model with the lowest RMS error is reported with its coefficient, \
+                     RMS and R². This is an empirical fit of noisy points, not a proof of the \
+                     complexity. Exported as 'complexity' in the JSON file.",
+                ),
+        )
+        .arg(
             Arg::new("optimize-budget")
                 .long("optimize-budget")
                 .action(ArgAction::Set)
@@ -1003,8 +1022,21 @@ pub fn build_command() -> Command {
                        Without NAME the region 'default' is measured. Can be given several \
                        times. The JSON export lists the region times next to the whole-process \
                        time; use '--metric region:NAME' to rank on a region. CPU time, memory, \
-                       counters and energy still cover the whole process. A command that \
+                       counters and energy still cover the whole process unless '--region-scope' is given. A command that \
                        reports no region fails."),
+        )
+        .arg(
+            Arg::new("region-scope")
+                .long("region-scope")
+                .action(ArgAction::SetTrue)
+                .conflicts_with_all(["concurrency", "subtract"])
+                .help("With '--region': also report the CPU time, the energy (with '--energy') \
+                       and the hardware counters (with '--counters', Linux) spent inside each \
+                       region, with scope 'region'. perfratio reads them when the SDK reports \
+                       the start and the stop, so a thread of perfratio polls while the program \
+                       runs. The error is bounded by the marker latency, see \
+                       docs/specs/region-scope.md. Whole-process values stay unchanged. Needs \
+                       an SDK that supports PERFRATIO_REGION_LIVE."),
         )
         .arg(
             Arg::new("jobs")

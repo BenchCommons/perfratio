@@ -7,7 +7,7 @@ Issue #113 code review identified several remaining defects and inconsistencies:
 3. **Unbenchmarked Commands Count with `--import-json` (Ctrl-C Review Finding 2):** When `--import-json` is combined with live benchmarks and an interruption occurs, `self.results.len()` includes imported results, under-counting the number of unbenchmarked commands.
 4. **Flaky Unit Test in `interrupt.rs` (Ctrl-C Review Finding 4):** `test_interrupt_flag` mutated the process-global atomic `PRESSES`, which could cause concurrently running tests to treat themselves as interrupted.
 5. **Real Errors Swallowed in `main.rs` (Ctrl-C Review Finding 5):** In `main.rs`, any error returning while `interrupted()` is true exited `130` without printing the error. Only `Interrupted` errors should be silent; actual operational failures (e.g. I/O failure during export) must be reported before exiting.
-6. **Leftover Rebrand File:** `doc/hyperfine.1` was still present in the repository alongside `doc/joulex.1`.
+6. **Leftover Rebrand File:** `doc/hyperfine.1` was still present in the repository alongside `doc/perfratio.1`.
 
 ## 2. Design and Implementation Plan
 

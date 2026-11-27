@@ -123,6 +123,14 @@ impl<'a> Scheduler<'a> {
                         .with_counters(self.options.counters.clone())
                         .with_topdown(self.options.topdown.clone())
                         .with_regions(&self.options.regions)
+                        .with_region_scope(if self.options.region_scope {
+                            crate::region_scope::metric_names(
+                                self.options.measure_energy,
+                                self.options.counters.as_ref(),
+                            )
+                        } else {
+                            Vec::new()
+                        })
                         .with_concurrency(self.options.concurrency)
                         .with_validation(self.options.validation.clone()),
                 ),
@@ -779,6 +787,28 @@ impl<'a> Scheduler<'a> {
         let text = crate::pareto::terminal(config, &analysis, &results);
         if !text.is_empty() {
             crate::out!("{text}");
+        }
+    }
+
+    /// `--complexity`: fit and print the growth models, and hand them to the JSON export.
+    pub fn print_complexity(&self) {
+        let Some(var) = &self.options.complexity else {
+            return;
+        };
+        let (reports, warnings) = crate::complexity::analyze(var, &self.results);
+        for warning in warnings {
+            eprintln!("{} {warning}", colors::yellow("Warning:"));
+        }
+        self.export_manager.set_complexity(
+            (!reports.is_empty())
+                .then(|| serde_json::to_value(&reports).ok())
+                .flatten(),
+        );
+        if self.options.output_style != OutputStyleOption::Disabled {
+            let text = crate::complexity::terminal(&reports);
+            if !text.is_empty() {
+                crate::out!("{text}");
+            }
         }
     }
 

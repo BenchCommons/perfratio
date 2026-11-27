@@ -2,7 +2,7 @@
 
 ## Problem
 The first timing run of a command often includes one-time costs (page cache, lazy
-loading, JIT). joulex only warns ("the first benchmarking run … was significantly
+loading, JIT). perfratio only warns ("the first benchmarking run … was significantly
 slower") and keeps the run in the statistics, so users can neither see the cold
 start on its own nor get clean warm statistics without guessing a `--warmup` count.
 

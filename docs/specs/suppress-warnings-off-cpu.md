@@ -21,7 +21,7 @@
    - Explain that off-CPU time is normal for I/O-bound commands, but indicates external latency is included in the measurements.
 4. **Documentation Updates:**
    - Update `src/cli.rs` `--help`.
-   - Update `doc/joulex.1`.
+   - Update `doc/perfratio.1`.
    - Update `doc/understanding-output.md`.
 
 ## 3. Verification Plan

@@ -20,7 +20,7 @@ contract (no JSON export change).
 | Secrets | gitleaks runs in CI over the full history with a digest-pinned image. `.gitleaks.toml` extends the default ruleset and allowlists only `tests/` and `src/**/test(s).rs` fixtures |
 
 ## Left open
-- `winget` job still uses the identifier `UnitedOpenSource.joulex`. It is
+- `winget` job still uses the identifier `UnitedOpenSource.perfratio`. It is
   opt-in (`WINGET_ENABLED`), but must be renamed before enabling it for 1.0.
 - `windows_timer.rs` uses `assert!` on Win32 failures (panic instead of an
   error); acceptable, but a candidate for `Result`.

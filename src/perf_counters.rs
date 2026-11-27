@@ -1266,6 +1266,31 @@ pub fn open(config: &CounterConfig) -> Option<OpenCounters> {
     }
 }
 
+/// Opens the `--counters` events on the running process `pid` for region-scoped
+/// reads (`--region-scope`). They count the program's initial thread from now on.
+/// `None` when nothing is to be measured or the platform has no support.
+pub fn open_for_pid(config: &CounterConfig, pid: u32) -> Option<OpenCounters> {
+    if config.mock || config.active.is_empty() {
+        return None;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let events: Vec<(u32, u64, Scope)> = config
+            .active
+            .iter()
+            .map(|s| (s.kind.perf_type(), s.kind.hw_config(), s.scope))
+            .collect();
+        Some(OpenCounters {
+            inner: linux::open_pid(&events, pid),
+        })
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = pid;
+        None
+    }
+}
+
 /// Tries to open the `--topdown` group once and closes it again. The error is
 /// the `errno` of `perf_event_open`.
 pub fn probe_group(events: &[(u32, u64)], scope: Scope) -> Result<(), i32> {
@@ -1406,6 +1431,15 @@ mod linux {
     }
 
     fn open_fd(attr: &[u64; 16], group_fd: libc::c_int) -> Result<OwnedFd, i32> {
+        open_fd_for(attr, group_fd, 0)
+    }
+
+    /// `pid` 0 is the calling thread, otherwise the thread (group leader) `pid`.
+    fn open_fd_for(
+        attr: &[u64; 16],
+        group_fd: libc::c_int,
+        pid: libc::pid_t,
+    ) -> Result<OwnedFd, i32> {
         // SAFETY: `attr` is a valid perf_event_attr of the size it declares;
         // the other arguments are plain integers (this thread, any CPU, and
         // the leader's fd or -1).
@@ -1413,7 +1447,7 @@ mod linux {
             libc::syscall(
                 libc::SYS_perf_event_open,
                 attr.as_ptr(),
-                0 as libc::pid_t,
+                pid,
                 -1 as libc::c_int,
                 group_fd,
                 PERF_FLAG_FD_CLOEXEC,
@@ -1446,6 +1480,22 @@ mod linux {
 
     pub struct Open {
         fds: Vec<Option<OwnedFd>>,
+    }
+
+    /// Events on the running process `pid`, counting from now on (no `inherit`: the
+    /// kernel only rolls the counts of children into an inherited event when they exit,
+    /// so a mid-run read would not see them anyway).
+    pub fn open_pid(events: &[(u32, u64, Scope)], pid: u32) -> Open {
+        Open {
+            fds: events
+                .iter()
+                .map(|&(t, c, scope)| {
+                    let mut attr = attr(t, c, scope, false, false);
+                    attr[5] &= !1; // not disabled
+                    open_fd_for(&attr, -1, pid as libc::pid_t).ok()
+                })
+                .collect(),
+        }
     }
 
     /// `events` are `(perf type, config, scope)` triples.

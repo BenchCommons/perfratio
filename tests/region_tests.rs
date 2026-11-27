@@ -23,7 +23,7 @@ fn json_of(args: &[&str]) -> Value {
 #[test]
 fn debug_mode_reports_region_next_to_whole_process_time() {
     let json = json_of(&["--debug-mode", "--runs=3", "--region=work", "sleep 0.2"]);
-    assert_eq!(json["schemaVersion"], "1.32");
+    assert_eq!(json["schemaVersion"], "1.35");
     assert_eq!(json["perfratio"]["region_protocol"], 1);
     assert_eq!(json["perfratio"]["measurements"]["region"], "measured");
     let result = &json["results"][0];
@@ -227,4 +227,51 @@ mod fake_sdk {
             .failure()
             .stderr(predicate::str::contains("every run"));
     }
+}
+
+#[test]
+fn debug_mode_region_scope_reports_scoped_metrics_with_scope_region() {
+    let json = json_of(&[
+        "--debug-mode",
+        "--runs=3",
+        "--region=work",
+        "--region-scope",
+        "--energy",
+        "sleep 0.2",
+    ]);
+    let result = &json["results"][0];
+    let metrics = result["regions"][0]["metrics"].as_array().unwrap();
+    let names: Vec<&str> = metrics
+        .iter()
+        .map(|m| m["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["cpu_user", "cpu_system", "energy"]);
+    for metric in metrics {
+        assert_eq!(metric["scope"], "region");
+        assert_eq!(metric["values"].as_array().unwrap().len(), 3);
+    }
+    // region time 0.1 s: 60% user, 20% system, 10 J/s
+    let mean = |i: usize| metrics[i]["mean"].as_f64().unwrap();
+    assert!((mean(0) - 0.06).abs() < 1e-9);
+    assert!((mean(1) - 0.02).abs() < 1e-9);
+    assert!((mean(2) - 1.0).abs() < 1e-9);
+    assert_eq!(metrics[2]["unit"], "J");
+    // process-wide values are unchanged and carry no scoped series
+    assert!(result.get("custom_metrics").is_none());
+    assert!(result["user"].is_number());
+}
+
+#[test]
+fn region_scope_is_absent_without_the_flag() {
+    let json = json_of(&["--debug-mode", "--runs=2", "--region=work", "sleep 0.2"]);
+    assert!(json["results"][0]["regions"][0].get("metrics").is_none());
+}
+
+#[test]
+fn region_scope_needs_a_region() {
+    perfratio()
+        .args(["--debug-mode", "--region-scope", "sleep 0.1"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("--region-scope"));
 }

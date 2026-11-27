@@ -34,7 +34,6 @@ fn json_contains_run_metadata_and_labels() {
         "sleep 0.1",
     ]);
     let meta = &json["perfratio"];
-    assert!(json.get("joulex").is_none());
 
     assert_eq!(meta["version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(meta["labels"]["commit"], "abc123");
@@ -155,7 +154,7 @@ fn json_percentiles_are_imported_back_unchanged() {
 }
 
 #[test]
-fn json_starts_with_schema_version_and_has_no_joulex_key() {
+fn json_starts_with_schema_version() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("out.json");
     perfratio()
@@ -167,11 +166,10 @@ fn json_starts_with_schema_version_and_has_no_joulex_key() {
     let text = std::fs::read_to_string(&path).unwrap();
     // `schemaVersion` must be the first key of the document
     assert!(
-        text.starts_with("{\n  \"schemaVersion\": \"1.32\","),
+        text.starts_with("{\n  \"schemaVersion\": \"1.35\","),
         "{text}"
     );
     let json: serde_json::Value = serde_json::from_str(&text).unwrap();
-    assert!(json.get("joulex").is_none());
     let keys: Vec<&String> = json.as_object().unwrap().keys().collect();
     assert!(keys.contains(&&"perfratio".to_string()));
 }
@@ -323,33 +321,4 @@ fn schema_1_1_layout_snapshot() {
       - results
       - schemaVersion
     "#);
-}
-
-#[test]
-fn import_json_reads_legacy_files_with_only_joulex_key() {
-    let dir = tempfile::tempdir().unwrap();
-    let legacy = dir.path().join("legacy.json");
-    std::fs::write(
-        &legacy,
-        r#"{"joulex": {"version": "0.1.0", "command_line": [], "started_at": "2024-01-01T00:00:00Z", "system": {"os": "linux", "arch": "x86_64", "cpus": 1}},
-"results": [{"command": "sleep 0.1", "mean": 0.1, "stddev": null, "median": 0.1, "user": 0.0, "system": 0.0, "min": 0.1, "max": 0.1, "times": [0.1], "exit_codes": [0]}]}"#,
-    )
-    .unwrap();
-    let out = dir.path().join("out.json");
-    perfratio()
-        .arg("--import-json")
-        .arg(&legacy)
-        .arg("--export-json")
-        .arg(&out)
-        .assert()
-        .success()
-        .stdout(predicates::str::contains("sleep 0.1"));
-    let json: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
-    let results = json["results"].as_array().unwrap();
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0]["command"], "sleep 0.1");
-    assert_eq!(results[0]["mean"].as_f64().unwrap(), 0.1);
-    assert_eq!(results[0]["times"].as_array().unwrap().len(), 1);
-    assert!(json.get("joulex").is_none());
 }

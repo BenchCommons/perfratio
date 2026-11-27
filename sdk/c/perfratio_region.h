@@ -89,6 +89,7 @@ static struct {
   perfratio_region_event_ *events;
   size_t len, cap, flushed;
   int warned;
+  int live;  /* PERFRATIO_REGION_LIVE=1: write every marker at once (--region-scope) */
 } perfratio_region_state_;
 
 /* Monotonic clock in nanoseconds: CLOCK_MONOTONIC, or QueryPerformanceCounter on Windows. */
@@ -143,7 +144,9 @@ static void perfratio_region_init_(void) {
   if (path && *path) {
     perfratio_region_state_.path = (char *)malloc(strlen(path) + 1);
     if (perfratio_region_state_.path) {
+      const char *live = getenv("PERFRATIO_REGION_LIVE");
       strcpy(perfratio_region_state_.path, path);
+      perfratio_region_state_.live = live && live[0] == '1' && live[1] == '\0';
       atexit(perfratio_region_flush);
     }
   }
@@ -181,6 +184,9 @@ static void perfratio_region_record_(const char *name, int stop) {
   e->stop = (char)stop;
   strcpy(e->name, name);
   e->t_ns = stop ? t : perfratio_region_now_();
+  /* --region-scope: perfratio reads the child when it sees the line. The write comes after
+     the clock read of a start and of a stop, so it lies inside a region only after a start. */
+  if (perfratio_region_state_.live) perfratio_region_flush();
 }
 
 void perfratio_region_start(const char *name) { perfratio_region_record_(name, 0); }

@@ -1,6 +1,6 @@
 # Spec: efficiency metrics, `--work N[unit]`, EDP and ED²P (#373)
 
-**Status:** Shipped, `schemaVersion` 1.34. Parent: #364; builds on the metric descriptors (#317,
+**Status:** Shipped, `schemaVersion` 1.35. Parent: #364; builds on the metric descriptors (#317,
 `metric-descriptors.md`) and `--pareto` (#326).
 
 ## Problem / Motivation
@@ -38,7 +38,7 @@ the per-run values for the imported results that have the inputs and no series o
 `--metric custom:<name>` (a missing input is an error; the energy ones enable `--energy`),
 `--pareto custom:edp,wall`, `--budget 'custom:edp<=2'`. Direction and unit follow the descriptor.
 
-### JSON (MINOR, 1.34)
+### JSON (MINOR, 1.35)
 No new keys. `perfratio.metrics[]` lists the derived metrics as `custom.<name>` with
 `kind: "derived"` and `source: "perfratio.derived"`; the schema version marks the new values.
 
