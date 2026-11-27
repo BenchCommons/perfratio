@@ -27,7 +27,8 @@ reported unavailable with the usual single warning.
 ### JSON (MINOR, schemaVersion 1.37)
 Raw events add keys to `results[].counters`, `counters_summary` and
 `counters_coverage`: `r01c2`, `cpu/event=0x3c,umask=0x01/`, `cpu/mem-loads/`
-(lowercase, no spaces, no modifier) plus `:u` / `:k` as for built-in events.
+(`rNNNN` keys are lowercased; `pmu/.../` keys keep the case as written, with no spaces; no
+modifier) plus `:u` / `:k` as for built-in events.
 No new field; no change for consumers that accept unknown keys.
 
 ### Behavior
@@ -40,7 +41,7 @@ No new field; no change for consumers that accept unknown keys.
 
 ## Tests
 Parser and sysfs discovery against a fake tree (`src/pmu_events.rs`), CLI via
-`--debug-mode` (`tests/raw_pmu_tests.rs`). Not run on hardware: `perf_event_open`
+`--debug-mode` (`tests/counters_tests.rs`). Not run on hardware: `perf_event_open`
 with raw configs and the real sysfs layouts (tracked in #337).
 
 ## References

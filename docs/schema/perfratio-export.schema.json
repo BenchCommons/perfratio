@@ -1439,7 +1439,7 @@
               "minimum": 0
             }
           },
-          "description": "Raw counts per run aligned with `times`; null = not readable. Keys are event names (hardware events, and the software events cpu-migrations, context-switches, page-faults, task-clock in ns), optionally suffixed :u or :k. New in 1.37 (#377): raw PMU events use their own key as written in --counters, lowercased and without the modifier: `r01c2` (raw:r01c2), `cpu/event=0x3c,umask=0x01/` (terms without spaces), `cpu/mem-loads/`."
+          "description": "Raw counts per run aligned with `times`; null = not readable. Keys are event names (hardware events, and the software events cpu-migrations, context-switches, page-faults, task-clock in ns), optionally suffixed :u or :k. New in 1.37 (#377): raw PMU events use their own key as written in --counters, without the modifier (`rNNNN` is lowercased): `r01c2` (raw:r01c2), `cpu/event=0x3c,umask=0x01/` (terms without spaces), `cpu/mem-loads/`."
         },
         "counters_summary": {
           "type": "object",
