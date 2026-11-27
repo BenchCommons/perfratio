@@ -257,7 +257,16 @@ fn debug_mode_region_scope_reports_scoped_metrics_with_scope_region() {
     assert!((mean(2) - 1.0).abs() < 1e-9);
     assert_eq!(metrics[2]["unit"], "J");
     // process-wide values are unchanged and carry no scoped series
-    assert!(result.get("custom_metrics").is_none());
+    // (with energy, only the derived energy-delay products are series of their own)
+    let series: Vec<&String> = result
+        .get("custom_metrics")
+        .and_then(|m| m.as_object())
+        .map(|m| m.keys().collect())
+        .unwrap_or_default();
+    assert!(
+        series.iter().all(|k| *k == "edp" || *k == "ed2p"),
+        "{series:?}"
+    );
     assert!(result["user"].is_number());
 }
 
