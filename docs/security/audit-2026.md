@@ -9,13 +9,15 @@ It changes no code and no output contract (no JSON export change).
 - `master` at `ef49a5e`, and the diffs of the open PRs #393 to #406 (read with `gh pr diff`;
   PR heads were fetched as refs, none was checked out). #395 only bumps `cargo-deny-action`
   (pinned by SHA). #407 (a test fix) is out of scope.
-- Method: reading code. Nothing was compiled or run, and no finding was reproduced with a
-  proof of concept. Where a finding depends on behavior of an external program (the shell,
+- Method: reading code. No perfratio code was compiled or run, and no finding was reproduced
+  with a proof of concept. The only tool run was `cargo audit` for the SCA line below. Where a finding depends on behavior of an external program (the shell,
   the kernel), the text says so.
 - Focus: execution of external commands, parsing of untrusted input, `dlopen`/FFI, file
   paths and writes, and secrets in `command_line` and exports.
-- SCA: `cargo audit` on the `master` lockfile reports no vulnerabilities (1571 advisories,
-  170 crates).
+- SCA: `cargo audit` on the `master` lockfile reported no vulnerabilities (1571 advisories,
+  170 crates). The command line, date and advisory-database commit of that run were not
+  recorded, and `cargo-audit` was not available to re-run it when this text was corrected, so
+  the figure is not verified here. Re-run `cargo audit` to confirm.
 - PRs reviewed for these sinks with no finding: #394 (raw PMU events), #396, #397, #398,
   #400, #405 (statistics and CLI only; no process, file, `unsafe` or `/proc` access beyond
   what is listed below). The language SDKs of #399 (`sdk/`) were not reviewed in depth.
@@ -76,7 +78,7 @@ the PR diff, not on `master`.
   Cap the manifest size (for example 1 MiB).
 - State: open, in PR #393.
 
-### M3. Secrets in the command line are exported and bundled; redaction exists only for `--power-meter`
+### M3. Secrets in the command line are exported and bundled; warnings and redaction are partial
 
 - Where: `master` `src/export/metadata.rs:457-468` (`command_line`, exported as
   `perfratio.command_line`) and `results[].command`. PR #402 adds `redact_power_meter`
@@ -87,16 +89,21 @@ the PR diff, not on `master`.
   benchmarked commands, `--prepare`, `--setup`, `--conclude`, `--cleanup`, `--shell`,
   `--meta`, `--label`, `--collector-plugin` and parameter values (for example
   `curl -H "Authorization: Bearer ..."`). PR #402 redacts one option because it can carry
-  a token, which shows the problem is known, but the other options carry the same risk.
-  The bundle spec (`docs/specs/evidence-bundle.md`) says so in prose; `--help` and the
-  JSON export docs do not. The program name is already reduced to its file name for the
-  same kind of reason.
-- Recommendation: (1) warn in `--help` of `--evidence`, `--export-json` and in the README.
+  a token; the other options carry the same risk. The program name is already reduced to
+  its file name for the same kind of reason.
+- Already covered (PR #393 head `8acd95c`): the `--evidence` help in `src/cli.rs:1267` says
+  "The commands are recorded as typed: keep secrets out of them", and the `--meta` help at
+  `src/cli.rs:1204` says "Do not put secrets in values". `docs/specs/evidence-bundle.md`
+  also says so.
+- Missing: no such warning on `--export-json` (and the other exports that carry
+  `command_line`) or in the README, and there is no redaction for the other options.
+- Recommendation: (1) add the warning to the `--export-json` help and to the README.
   (2) Add an opt-in `--redact-command-line` (or a general redaction list) applied to
   `command_line`, `results[].command` and the bundle. (3) Make the redaction code in #402
   table-driven (a list of option names) instead of one function per option. Adding a
   redaction option changes the export contract: version it and note it in the spec.
-- State: open (master). Partly mitigated in PR #402 for `--power-meter`.
+- State: open (master). Partly mitigated: `--power-meter` is redacted in PR #402, and
+  `--evidence` and `--meta` warn in PR #393.
 
 ### M4. Text from the benchmarked program is printed unescaped (region protocol, persistent mode)
 
@@ -144,12 +151,15 @@ the PR diff, not on `master`.
   The reader thread sends every line into an unbounded channel while the benchmark runs
   without reading it, so a plugin that writes unsolicited lines (64 KiB each) grows memory,
   and also shifts replies out of step with requests. The plugin receives the full
-  environment. Reply validation is otherwise good: protocol version, name and unit charset,
+  environment. The `--collector-plugin` help in PR #403 already says "The plugin runs with
+  your privileges: only use programs you trust", and `docs/specs/collector-plugins.md` is
+  referenced from it (that spec was not read in this audit). Reply validation is otherwise good: protocol version, name and unit charset,
   declared ids only, finite numbers, escaped error text, 64 KiB line limit, timeouts, no
   shell. Metric values are finite but have no range check (for example `1e308`).
 - Recommendation: require a path with a directory component or canonicalize and print the
   resolved path. Use `sync_channel` with a small bound and treat an unsolicited line as a
-  protocol error. Document that the plugin is trusted and inherits the environment.
+  protocol error. The trust warning exists; add that the plugin inherits the environment, if the spec does
+  not say so (not checked).
 - State: open, in PR #403.
 
 ### L3. Valgrind adapter: binary chosen by an environment variable, unbounded profile read
@@ -161,8 +171,10 @@ the PR diff, not on `master`.
   which is good, but the benchmarked process runs as the same user, so it can write a
   `cachegrind.out.*` file (or a symlink) there. The read has no size limit.
   `Profile::merge` saturates, so there is no overflow.
-- Recommendation: document the variable next to the other `PERFRATIO_*` ones and print the
-  resolved binary in verbose mode. Limit the profile read (`take`) and skip entries that are
+- Already covered: `PERFRATIO_VALGRIND` is documented in `docs/specs/valgrind-collector.md`
+  (section "CLI", PR #403), which calls the binary trusted code run with the user's
+  privileges, and in the `--collector` help.
+- Recommendation: print the resolved binary in verbose mode. Limit the profile read (`take`) and skip entries that are
   not regular files (`symlink_metadata`).
 - State: open, in PR #403.
 
