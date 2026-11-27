@@ -25,7 +25,7 @@ pub struct PrimaryMetricStats {
 }
 
 /// Version of the JSON output contract (`docs/specs/output-schema-contract.md`).
-pub const SCHEMA_VERSION: &str = "1.35";
+pub const SCHEMA_VERSION: &str = "1.36";
 
 #[derive(Serialize, Debug)]
 struct PerfratioSummary<'a> {
@@ -79,6 +79,16 @@ struct ResultEntry<'a> {
     /// is decided on this value. Omitted without a correction.
     #[serde(skip_serializing_if = "Option::is_none")]
     p_value_adjusted: Option<f64>,
+    /// Relative change with its interval and standardized size (new in 1.33, #323);
+    /// only with `--noise-threshold` or `--equivalence-margin`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effect: Option<crate::stats::effect::Effect>,
+    /// `faster`, `slower`, `equivalent`, `inconclusive` or `within_noise` (new in 1.33, #323)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    classification: Option<crate::stats::effect::Classification>,
+    /// p-value of the equivalence test (TOST) for the mean (new in 1.33, #323)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    equivalence_p_value: Option<f64>,
 }
 
 /// The `perfratio` object: the run metadata plus the descriptor of every metric (#317).
@@ -231,6 +241,9 @@ impl Exporter for JsonExporter {
                     significance: assessment.map(|a| a.significance),
                     p_value: assessment.map(|a| a.p_value),
                     p_value_adjusted: assessment.and_then(|a| a.p_adjusted),
+                    effect: assessment.and_then(|a| a.verdict).map(|v| v.effect),
+                    classification: assessment.and_then(|a| a.verdict).map(|v| v.classification),
+                    equivalence_p_value: assessment.and_then(|a| a.verdict?.equivalence_p),
                 }
             })
             .collect();

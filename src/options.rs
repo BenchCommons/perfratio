@@ -1820,6 +1820,25 @@ fn parse_stat_settings<'a>(
     if let Some(value) = matches.get_one::<String>("comparison-family") {
         settings.family = value.parse().map_err(OptionsError::InvalidStatistics)?;
     }
+    let percent = |name: &str| -> Result<Option<f64>, OptionsError<'a>> {
+        matches
+            .get_one::<String>(name)
+            .map(|v| {
+                v.trim()
+                    .trim_end_matches('%')
+                    .trim()
+                    .parse::<f64>()
+                    .map(|pct| pct / 100.0)
+                    .map_err(|_| {
+                        OptionsError::InvalidStatistics(format!(
+                            "invalid --{name} '{v}': expected a percentage such as '5%'"
+                        ))
+                    })
+            })
+            .transpose()
+    };
+    settings.noise_threshold = percent("noise-threshold")?;
+    settings.equivalence_margin = percent("equivalence-margin")?;
     settings
         .validate()
         .map_err(OptionsError::InvalidStatistics)?;

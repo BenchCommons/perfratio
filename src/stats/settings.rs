@@ -99,6 +99,10 @@ pub struct StatSettings {
     pub correction: Correction,
     /// The comparisons the correction is applied to
     pub family: Family,
+    /// Relative changes below this are within noise whatever the p-value (0.05 = 5%) (#323)
+    pub noise_threshold: Option<f64>,
+    /// Relative margin of the equivalence test, TOST (0.05 = 5%) (#323)
+    pub equivalence_margin: Option<f64>,
 }
 
 impl Default for StatSettings {
@@ -111,6 +115,8 @@ impl Default for StatSettings {
             seed: DEFAULT_SEED,
             correction: Correction::None,
             family: Family::Reference,
+            noise_threshold: None,
+            equivalence_margin: None,
         }
     }
 }
@@ -134,6 +140,22 @@ impl StatSettings {
                 "invalid --bootstrap-resamples {}: expected at least 100",
                 self.bootstrap_resamples
             ));
+        }
+        if let Some(v) = self.noise_threshold {
+            if !(v.is_finite() && v >= 0.0) {
+                return Err(format!(
+                    "invalid --noise-threshold {}%: expected a percentage >= 0",
+                    v * 100.0
+                ));
+            }
+        }
+        if let Some(v) = self.equivalence_margin {
+            if !(v.is_finite() && v > 0.0 && v < 1.0) {
+                return Err(format!(
+                    "invalid --equivalence-margin {}%: expected a percentage greater than 0 and below 100",
+                    v * 100.0
+                ));
+            }
         }
         Ok(())
     }

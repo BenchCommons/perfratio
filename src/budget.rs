@@ -477,7 +477,26 @@ fn relative(
             e.p_value = p;
             match p {
                 Some(p) if p < crate::stats::settings::current().significance_level => {
-                    e.verdict = Verdict::Fail
+                    // #323: a change within the noise threshold or shown equivalent is no failure
+                    let tolerated = wall
+                        && crate::stats::effect::evaluate(
+                            baseline,
+                            current,
+                            p,
+                            &crate::stats::settings::current(),
+                        )
+                        .is_some_and(|v| {
+                            use crate::stats::effect::Classification;
+                            matches!(
+                                v.classification,
+                                Classification::WithinNoise | Classification::Equivalent
+                            )
+                        });
+                    e.verdict = if tolerated {
+                        Verdict::WithinNoise
+                    } else {
+                        Verdict::Fail
+                    }
                 }
                 Some(_) => e.verdict = Verdict::WithinNoise,
                 None => return e.not_evaluated("too_few_runs"),

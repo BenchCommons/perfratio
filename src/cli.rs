@@ -1359,12 +1359,25 @@ pub fn build_command() -> Command {
             Arg::new("noise-threshold")
                 .long("noise-threshold")
                 .value_name("PERCENT")
-                .requires("pareto")
                 .help(
-                    "With '--pareto': a command counts as dominated only if another is better \
-                     by more than PERCENT of the value on some metric and not worse beyond it \
-                     on any. Otherwise it stays on the frontier as 'not dominated (within \
-                     noise)'. Default: strict comparison.",
+                    "Differences smaller than PERCENT of the reference are classified as \
+                     'within noise' whatever the p-value, and replace the default 1% floor of \
+                     the significance markers. With '--pareto': a command counts as dominated \
+                     only if another is better by more than PERCENT of the value on some \
+                     metric and not worse beyond it; otherwise it stays on the frontier as \
+                     'not dominated (within noise)'. Default: off.",
+                ),
+        )
+        .arg(
+            Arg::new("equivalence-margin")
+                .long("equivalence-margin")
+                .value_name("PERCENT")
+                .help(
+                    "Equivalence test (TOST, two one-sided tests) at '--significance-level': a \
+                     command is 'equivalent' to the reference when its change is shown to lie \
+                     within ±PERCENT of the reference. A result that is neither different nor \
+                     equivalent is 'inconclusive'; the number of runs that would settle it is \
+                     reported.",
                 ),
         )
         .arg(

@@ -29,6 +29,9 @@ pub struct Assessment {
     /// The p-value after `--correction` (`None` without a correction); the
     /// significance is decided on this value when present (#321)
     pub p_adjusted: Option<f64>,
+    /// Effect size and classification (#323); only with `--noise-threshold`
+    /// or `--equivalence-margin`
+    pub verdict: Option<crate::stats::effect::Verdict>,
 }
 
 /// Classify a change of the mean (`rel_change` = other / reference − 1) with
@@ -39,8 +42,14 @@ pub fn classify(rel_change: f64, p_value: f64) -> Significance {
 
 /// [`classify`] at significance level `alpha` (`--significance-level`).
 pub fn classify_with(rel_change: f64, p_value: f64, alpha: f64) -> Significance {
+    classify_with_floor(rel_change, p_value, alpha, MIN_EFFECT)
+}
+
+/// [`classify_with`] with a smallest relative change `floor`
+/// (`--noise-threshold`, by default [`MIN_EFFECT`]).
+pub fn classify_with_floor(rel_change: f64, p_value: f64, alpha: f64, floor: f64) -> Significance {
     // NaN comparisons are false, so undefined input falls through to `Noise`.
-    let significant = p_value < alpha && rel_change.abs() >= MIN_EFFECT;
+    let significant = p_value < alpha && rel_change.abs() >= floor;
     if !significant {
         Significance::Noise
     } else if rel_change < 0.0 {
@@ -65,11 +74,33 @@ pub fn assess_with(
     settings: &crate::stats::settings::StatSettings,
 ) -> Option<Assessment> {
     let (rel_change, p_value) = raw_comparison(reference, other, settings)?;
-    Some(Assessment {
-        significance: classify_with(rel_change, p_value, settings.significance_level),
+    Some(assessment(
+        reference, other, rel_change, p_value, None, settings,
+    ))
+}
+
+/// The assessment of one comparison; the significance is decided on the
+/// adjusted p-value if there is one.
+fn assessment(
+    reference: &BenchmarkResult,
+    other: &BenchmarkResult,
+    rel_change: f64,
+    p_value: f64,
+    p_adjusted: Option<f64>,
+    settings: &crate::stats::settings::StatSettings,
+) -> Assessment {
+    let decisive = p_adjusted.unwrap_or(p_value);
+    Assessment {
+        significance: classify_with_floor(
+            rel_change,
+            decisive,
+            settings.significance_level,
+            settings.noise_threshold.unwrap_or(MIN_EFFECT),
+        ),
         p_value,
-        p_adjusted: None,
-    })
+        p_adjusted,
+        verdict: crate::stats::effect::evaluate(reference, other, decisive, settings),
+    }
 }
 
 /// Relative change of the estimator (`other / reference - 1`) and the raw
@@ -145,11 +176,7 @@ pub fn assess_family(
             if let Some((change, p)) = *comparison {
                 out.entries.push((
                     address(r),
-                    Assessment {
-                        significance: classify_with(change, p, settings.significance_level),
-                        p_value: p,
-                        p_adjusted: None,
-                    },
+                    assessment(reference, r, change, p, None, settings),
                 ));
             }
         }
@@ -172,11 +199,7 @@ pub fn assess_family(
         if let Some((change, p)) = *comparison {
             out.entries.push((
                 address(r),
-                Assessment {
-                    significance: classify_with(change, adjusted[i], settings.significance_level),
-                    p_value: p,
-                    p_adjusted: Some(adjusted[i]),
-                },
+                assessment(reference, r, change, p, Some(adjusted[i]), settings),
             ));
         }
     }
@@ -196,6 +219,59 @@ impl Assessment {
     /// `fancy` selects symbols over the plain-text markers `[+]`, `[-]`, `[~]`
     /// (used for `NO_COLOR`, non-TTY output and dumb terminals).
     pub fn label(&self, fancy: bool) -> String {
+        self.label_with(fancy, &crate::stats::settings::current())
+    }
+
+    /// [`label`](Self::label) with explicit settings. With `--noise-threshold` or
+    /// `--equivalence-margin` the label follows the classification:
+    /// `[=] equivalent`, `[?] inconclusive` and `[~] within noise`, with the
+    /// symbols `≈` and `?` for color output.
+    pub fn label_with(
+        &self,
+        fancy: bool,
+        settings: &crate::stats::settings::StatSettings,
+    ) -> String {
+        use crate::stats::effect::Classification;
+        let p_text = match self.p_adjusted {
+            Some(adjusted) => format!(
+                "{}, adjusted {}",
+                format_p(self.p_value),
+                format_p(adjusted)
+            ),
+            None => format_p(self.p_value),
+        };
+        let percent = |fraction: f64| format!("{}", (fraction * 1e11).round() / 1e9);
+        if let Some(verdict) = self.verdict {
+            let change = format!("{:+.1}%", verdict.effect.relative_change * 100.0);
+            match verdict.classification {
+                Classification::Equivalent => {
+                    let margin = settings.equivalence_margin.map(percent).unwrap_or_default();
+                    let marker = if fancy { "≈" } else { "[=]" };
+                    let test = verdict
+                        .equivalence_p
+                        .map(|p| format!(", TOST {}", format_p(p)))
+                        .unwrap_or_default();
+                    return format!("{marker} equivalent within ±{margin}% ({change}{test})");
+                }
+                Classification::Inconclusive => {
+                    let marker = if fancy { "?" } else { "[?]" };
+                    let runs = verdict
+                        .effect
+                        .runs_needed
+                        .map(|n| format!(", about {n} runs per command would settle it"))
+                        .unwrap_or_default();
+                    return format!(
+                        "{marker} inconclusive, more runs needed ({change}, {p_text}{runs})"
+                    );
+                }
+                Classification::WithinNoise => {
+                    let floor = percent(settings.noise_threshold.unwrap_or(MIN_EFFECT));
+                    let marker = if fancy { "~" } else { "[~]" };
+                    return format!("{marker} within noise ({change}, threshold {floor}%)");
+                }
+                Classification::Faster | Classification::Slower => {}
+            }
+        }
         let (marker, text) = match (self.significance, fancy) {
             (Significance::SignificantSpeedup, true) => ("⚡", "significant speedup"),
             (Significance::SignificantSpeedup, false) => ("[+]", "significant speedup"),
@@ -204,14 +280,7 @@ impl Assessment {
             (Significance::Noise, true) => ("~", "indistinguishable from noise"),
             (Significance::Noise, false) => ("[~]", "indistinguishable from noise"),
         };
-        match self.p_adjusted {
-            Some(adjusted) => format!(
-                "{marker} {text} ({}, adjusted {})",
-                format_p(self.p_value),
-                format_p(adjusted)
-            ),
-            None => format!("{marker} {text} ({})", format_p(self.p_value)),
-        }
+        format!("{marker} {text} ({p_text})")
     }
 }
 
@@ -268,6 +337,7 @@ mod tests {
             significance,
             p_value,
             p_adjusted: None,
+            verdict: None,
         };
         assert_eq!(
             a(Significance::SignificantSpeedup, 0.0).label(false),

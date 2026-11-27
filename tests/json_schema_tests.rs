@@ -477,6 +477,30 @@ fn real_cases() -> Vec<(&'static str, Vec<String>)> {
                 "pwd",
             ]),
         ),
+        (
+            "effect size and equivalence",
+            args(&[
+                "--runs=4",
+                "-N",
+                "--noise-threshold=2",
+                "--equivalence-margin=10",
+                "--bootstrap-resamples=200",
+                "true",
+                "echo",
+            ]),
+        ),
+        (
+            "effect size with the median",
+            args(&[
+                "--runs=4",
+                "-N",
+                "--estimator=median",
+                "--equivalence-margin=10",
+                "--bootstrap-resamples=200",
+                "true",
+                "echo",
+            ]),
+        ),
         #[cfg(unix)]
         (
             "leftover processes",
