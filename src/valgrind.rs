@@ -435,7 +435,11 @@ totals: 700
         let split = args.iter().position(|a| a == "--").unwrap();
         assert_eq!(args[split + 1..], ["/bin/echo", "a b", "$HOME"]);
         assert!(args.contains(&"--tool=callgrind".to_string()));
-        assert!(args.contains(&"--callgrind-out-file=/tmp/out/callgrind.out.%p".to_string()));
+        let expected = format!(
+            "--callgrind-out-file={}",
+            Path::new("/tmp/out").join("callgrind.out.%p").display()
+        );
+        assert!(args.contains(&expected));
         let envs: Vec<_> = wrapped.get_envs().collect();
         assert!(envs.contains(&(std::ffi::OsStr::new("X"), Some(std::ffi::OsStr::new("1")))));
         assert!(envs.contains(&(std::ffi::OsStr::new("Y"), None)));
