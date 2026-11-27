@@ -392,3 +392,53 @@ fn metric_instructions_fails_clearly_without_counters() {
             "'--metric instructions' requires a 'instructions' reading for every run",
         ));
 }
+
+#[test]
+fn raw_events_get_their_own_keys_and_scope_suffix() {
+    let json = export(&[
+        "--runs=2",
+        "--counters=instructions,raw:r01C2,r01c2:u",
+        "sleep 0.1",
+    ]);
+    let r = &json["results"][0];
+    let keys: Vec<&String> = r["counters"].as_object().unwrap().keys().collect();
+    assert_eq!(keys, ["instructions", "r01c2", "r01c2:u"]);
+    // 1,000,000 counts/s for 0.1 simulated seconds; user is a quarter
+    assert_eq!(r["counters"]["r01c2"][0], 100_000u64);
+    assert_eq!(r["counters"]["r01c2:u"][0], 25_000u64);
+    assert_eq!(r["counters_summary"]["r01c2"]["mean"], 100_000.0);
+}
+
+#[test]
+fn bad_raw_event_is_a_usage_error() {
+    perfratio()
+        .args(["--debug-mode", "--counters=raw:rzz", "true"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not a raw event"));
+    perfratio()
+        .args(["--debug-mode", "--counters=nonexistent/event=1/", "true"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not found"));
+}
+
+#[test]
+fn unknown_name_points_to_list_events() {
+    perfratio()
+        .args(["--debug-mode", "--counters=bogus", "true"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--list-events"));
+}
+
+#[test]
+fn list_events_needs_no_command() {
+    perfratio()
+        .arg("--list-events")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Built-in events"))
+        .stdout(predicate::str::contains("raw:rXXXX"))
+        .stdout(predicate::str::contains("cache-misses"));
+}

@@ -83,6 +83,16 @@ fn run() -> Result<()> {
         return Ok(());
     }
 
+    if cli_arguments.get_flag("list-events") {
+        perfratio::out!(
+            "{}",
+            perfratio::pmu_events::render_list(std::path::Path::new(
+                perfratio::pmu_events::SYSFS_DEVICES
+            ))
+        );
+        return Ok(());
+    }
+
     let mut options = Options::from_cli_arguments(&cli_arguments)?;
     perfratio::stats::settings::install(options.stat_settings.clone());
     if let Some(precision) = cli_arguments.get_one::<String>("precision") {

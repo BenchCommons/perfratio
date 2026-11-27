@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.36 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.37 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.36",
+      "const": "1.37",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -1439,7 +1439,7 @@
               "minimum": 0
             }
           },
-          "description": "Raw counts per run aligned with `times`; null = not readable. Keys are event names (hardware events, and the software events cpu-migrations, context-switches, page-faults, task-clock in ns), optionally suffixed :u or :k."
+          "description": "Raw counts per run aligned with `times`; null = not readable. Keys are event names (hardware events, and the software events cpu-migrations, context-switches, page-faults, task-clock in ns), optionally suffixed :u or :k. New in 1.37 (#377): raw PMU events use their own key as written in --counters, lowercased and without the modifier: `r01c2` (raw:r01c2), `cpu/event=0x3c,umask=0x01/` (terms without spaces), `cpu/mem-loads/`."
         },
         "counters_summary": {
           "type": "object",
