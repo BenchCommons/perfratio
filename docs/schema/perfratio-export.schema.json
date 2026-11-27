@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.36 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.37 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.36",
+      "const": "1.37",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -48,6 +48,10 @@
         "$ref": "#/$defs/complexity"
       },
       "description": "Present with --complexity: one empirical growth-model fit per command template (docs/specs/complexity-fit.md)."
+    },
+    "roofline": {
+      "$ref": "#/$defs/roofline",
+      "description": "Present with --roofline: arithmetic intensity and placement of every command (docs/specs/roofline.md). New in 1.37 (#379)."
     }
   },
   "required": [
@@ -2215,6 +2219,136 @@
         "kind",
         "status",
         "fields"
+      ]
+    },
+    "roofline": {
+      "type": "object",
+      "properties": {
+        "precision": {
+          "enum": [
+            "single",
+            "double"
+          ],
+          "description": "Element size the packed FP counts were multiplied with."
+        },
+        "bytes_source": {
+          "enum": [
+            "llc_misses"
+          ],
+          "description": "Where the bytes come from: last-level cache misses times cache_line_bytes (a lower bound of the traffic)."
+        },
+        "cache_line_bytes": {
+          "type": "number"
+        },
+        "peaks": {
+          "type": "object",
+          "properties": {
+            "gflops": {
+              "type": "number"
+            },
+            "gbytes_per_s": {
+              "type": "number"
+            },
+            "source": {
+              "enum": [
+                "configured",
+                "observed"
+              ]
+            }
+          },
+          "required": [
+            "gflops",
+            "gbytes_per_s",
+            "source"
+          ],
+          "description": "The roofs; absent when 'observed' peaks cannot be derived (peaks_note says why)."
+        },
+        "ridge_point": {
+          "type": "number",
+          "description": "peaks.gflops / peaks.gbytes_per_s in FLOP per byte."
+        },
+        "peaks_note": {
+          "type": "string"
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/roofline_result"
+          }
+        }
+      },
+      "required": [
+        "precision",
+        "bytes_source",
+        "cache_line_bytes",
+        "results"
+      ]
+    },
+    "roofline_result": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "no_flops",
+            "no_traffic",
+            "unavailable"
+          ],
+          "description": "Open enum. no_flops: no floating-point arithmetic retired. no_traffic: no cache miss counted, the intensity is unbounded."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why status is unavailable: simd_unavailable, cache_misses_unavailable, no_run_times, no_complete_run."
+        },
+        "runs_used": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "flops_per_run": {
+          "type": "number"
+        },
+        "bytes_per_run": {
+          "type": "number"
+        },
+        "arithmetic_intensity": {
+          "type": "number",
+          "description": "FLOP per byte, total FLOPs over total bytes of the runs used."
+        },
+        "gflops": {
+          "type": "number"
+        },
+        "gbytes_per_s": {
+          "type": "number"
+        },
+        "bound": {
+          "enum": [
+            "memory",
+            "compute"
+          ],
+          "description": "memory below the ridge point; needs peaks."
+        },
+        "attainable_gflops": {
+          "type": "number",
+          "description": "min(peaks.gflops, arithmetic_intensity * peaks.gbytes_per_s)."
+        },
+        "efficiency": {
+          "type": "number",
+          "description": "gflops / attainable_gflops; may exceed 1 when the peaks are too low or the miss count undercounts the traffic."
+        }
+      },
+      "required": [
+        "command",
+        "status",
+        "runs_used"
       ]
     },
     "complexity": {

@@ -234,6 +234,7 @@ fn run() -> Result<()> {
     }
     scheduler.print_pareto();
     scheduler.print_complexity();
+    scheduler.print_roofline();
 
     // The comparison and the budgets go into the JSON export, so they come first
     let comparison = baseline
