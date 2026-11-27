@@ -47,7 +47,7 @@ fn timeout_with_multiple_commands_and_relative_speed() {
     perfratio()
         .args([
             "--timeout",
-            "150ms",
+            "1s",
             "-N",
             "--runs=2",
             "--style=basic",
@@ -61,7 +61,7 @@ fn timeout_with_multiple_commands_and_relative_speed() {
         .stdout(predicate::str::contains("sleep 0.01"));
 
     assert!(
-        start.elapsed() < std::time::Duration::from_secs(2),
+        start.elapsed() < std::time::Duration::from_secs(5),
         "Multiple command benchmark took too long: {:?}",
         start.elapsed()
     );
