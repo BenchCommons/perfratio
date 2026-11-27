@@ -47,6 +47,8 @@ pub struct TimerResult {
     pub counters: Option<crate::benchmark::timing_result::ResourceCounters>,
     /// Hardware counter totals (`--counters`), filled by the executor
     pub hw_counters: Option<crate::perf_counters::HwReading>,
+    /// Memory bandwidth and NUMA placement (`--membw`)
+    pub membw: Option<crate::membw::Run>,
     /// The exit status of the process
     pub status: ExitStatus,
     /// The tail of stdout and stderr (`--show-output-on-failure`)
@@ -799,6 +801,7 @@ pub fn execute_and_measure(
         memory_usage_byte,
         counters,
         hw_counters: None,
+        membw: None,
         status,
         captured,
         timed_out,

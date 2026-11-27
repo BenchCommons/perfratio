@@ -1635,6 +1635,19 @@ pub fn build_command() -> Command {
                        permissions give one warning, never an error."),
         )
         .arg(
+            Arg::new("membw")
+                .long("membw")
+                .action(ArgAction::SetTrue)
+                .help("Measure memory bandwidth and NUMA placement per run (Linux): bytes read \
+                       and written through the memory controllers (Intel uncore_imc) and the \
+                       resident bytes per NUMA node from /proc/<pid>/numa_maps. The bandwidth \
+                       counters are system wide, so other activity on the machine is included. \
+                       Needs bare metal and 'kernel.perf_event_paranoid' <= 0 or CAP_PERFMON; \
+                       where a source is missing, one warning is printed and the other source \
+                       still works. Use '-N' or '--shell=none' for NUMA placement of the \
+                       command itself instead of the shell."),
+        )
+        .arg(
             Arg::new("first-run")
                 .long("first-run")
                 .action(ArgAction::Set)

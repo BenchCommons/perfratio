@@ -108,6 +108,9 @@ pub struct TimingResult {
     /// Hardware counter totals (`--counters`, None when not collected)
     pub hw_counters: Option<crate::perf_counters::HwReading>,
 
+    /// Memory bandwidth and NUMA placement (`--membw`, None when not collected)
+    pub membw: Option<crate::membw::Run>,
+
     /// Whether this run timed out
     pub timed_out: bool,
 

@@ -784,6 +784,10 @@ Collect Top\-down Microarchitecture Analysis level 1 per run (Linux x86_64): the
 .IP
 Collect a floating\-point scalar/vector breakdown per run (Linux, x86_64): retired scalar, 128\-, 256\- and 512\-bit packed floating\-point arithmetic and the vectorization ratio ('simd' and 'simd_summary' in JSON, one terminal block). Intel counts instructions, AMD Zen 4/5 counts uops, so compare ratios only within one vendor. Integer SIMD is not counted. Works with or without \fB\-\-counters\fR and honors \fB\-\-scope\fR (except split). Unsupported CPUs (including AArch64), hybrid Intel CPUs, VMs without a PMU, permissions and other platforms give one warning and status 'unavailable' in perfratio.measurements.simd.
 .HP
+\fB\-\-membw\fR
+.IP
+Measure memory bandwidth and NUMA placement per run (Linux). Bandwidth is the bytes read and written through the memory controllers (Intel uncore_imc PMUs, 'membw' and 'membw_summary' in JSON); the counters are system wide, so other activity on the machine is included. NUMA placement is the largest sample of resident bytes per node from /proc/<pid>/numa_maps ('numa' in JSON); use \fB\-N\fR or \fB\-\-shell=none\fR to sample the command instead of the shell. The NUMA topology is always in perfratio.environment.numa_topology. Bandwidth needs bare metal and kernel.perf_event_paranoid <= 0 or CAP_PERFMON; VMs, Arm, AMD (Data Fabric events are not mapped) and other platforms give one warning and status 'unavailable' in perfratio.measurements.membw, and NUMA sampling still works where /proc/<pid>/numa_maps exists.
+.HP
 \fB\-\-first\-run\fR \fIMODE\fP
 .IP
 How to treat the first (cold) timing run of each command: include (default) keeps it in the statistics, separate shows it on its own line ("Cold (1st run)"), exports it as 'first_run' in the JSON and excludes it from all statistics, discard excludes it silently, like an extra warmup run. With separate and discard, one extra run is performed so that the requested number of runs is still measured. If \fB\-\-warmup\fR is used with separate, the first warmup run is the cold one: it is reported (wall-clock time only) and no timing run is excluded.

@@ -497,6 +497,9 @@ pub struct Options {
     /// Hardware performance counters (--counters), resolved against the machine
     pub counters: Option<crate::perf_counters::CounterConfig>,
 
+    /// `--membw`: memory bandwidth and NUMA placement
+    pub membw: bool,
+
     /// Top-down analysis (--topdown), resolved against the machine
     pub topdown: Option<crate::topdown::TopdownConfig>,
 
@@ -605,6 +608,7 @@ impl Default for Options {
             discard_outliers: None,
             show_resource_usage: false,
             counters: None,
+            membw: false,
             topdown: None,
             affinity: None,
             core_class: None,
@@ -1153,6 +1157,23 @@ impl Options {
             .unwrap_or_default();
         options.show_resource_usage = matches.get_flag("resource-usage");
         let simd = matches.get_flag("simd");
+        if matches.get_flag("membw") && !importing {
+            options.membw = true;
+            let debug_mode = matches.get_flag("debug-mode");
+            if let Some(reason) = crate::membw::configure(debug_mode) {
+                eprintln!(
+                    "{} --membw: memory bandwidth is unavailable: {}",
+                    crate::output::colors::yellow("Warning:"),
+                    reason.explain()
+                );
+            }
+            if let Some(reason) = crate::membw::numa_unavailable().filter(|_| !debug_mode) {
+                eprintln!(
+                    "{} --membw: NUMA placement is unavailable ({reason})",
+                    crate::output::colors::yellow("Warning:"),
+                );
+            }
+        }
         // `--metric instructions|cycles` collects its own counter
         let counters_list = matches.get_one::<String>("counters").cloned().or_else(|| {
             (!importing)

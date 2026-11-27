@@ -168,7 +168,8 @@ impl ExportManager {
             Measurements::new(energy, matches.get_flag("resource-usage"))
                 .with_counters(counters)
                 .with_topdown(topdown)
-                .with_region(region),
+                .with_region(region)
+                .with_membw(crate::membw::enabled()),
         );
         metadata.region_protocol = region.then_some(crate::region::PROTOCOL_VERSION);
         metadata.energy_backend = energy.and_then(Result::ok).map(|b| b.as_str());

@@ -200,6 +200,19 @@ pub struct BenchmarkResult {
     /// Mean and spread of the topdown classes and the largest stall class
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub topdown_summary: Option<crate::topdown::TopdownSummary>,
+    /// Memory bandwidth per run (`--membw`), aligned with `times`; see
+    /// `docs/specs/membw-numa.md`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub membw: Option<crate::membw::BandwidthSeries>,
+
+    /// Summary of read, write and total bandwidth in bytes per second
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub membw_summary: Option<BTreeMap<String, MetricSummary>>,
+
+    /// NUMA placement per run (`--membw`): resident bytes per node
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub numa: Option<crate::membw::NumaSeries>,
+
     /// Per-run floating-point breakdown (`--simd`), aligned with `times`; see
     /// `docs/specs/simd-breakdown.md`
     #[serde(default, skip_serializing_if = "Option::is_none")]

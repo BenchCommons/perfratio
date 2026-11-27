@@ -86,6 +86,21 @@ impl Backends {
     }
 }
 
+/// One NUMA node of the topology (`perfratio.environment.numa_topology[]`, new in 1.37)
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct NumaNode {
+    pub node: u32,
+    /// CPUs of the node as the kernel lists them, e.g. `0-15,32-47`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpus: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_bytes: Option<u64>,
+    /// ACPI SLIT distance to every node, in node order (10 is the node itself)
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub distances: Vec<u32>,
+}
+
 /// `perfratio.environment`
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
@@ -116,6 +131,10 @@ pub struct Environment {
     pub turbo: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub numa_nodes: Option<usize>,
+    /// Per-node CPUs, memory and distances (Linux; absent when the kernel has no NUMA
+    /// topology). Not part of the fingerprint.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub numa_topology: Vec<NumaNode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub memory_bytes: Option<u64>,
     /// Present when a container was detected
@@ -230,6 +249,7 @@ impl Environment {
             })
             .count();
         self.numa_nodes = (nodes > 0).then_some(nodes);
+        self.numa_topology = numa_topology(root);
 
         self.memory_bytes = read(root, "/proc/meminfo").as_deref().and_then(mem_total);
 
@@ -329,6 +349,51 @@ impl BuildInfo {
 pub fn kernel_major(release: &str) -> Option<String> {
     let digits: String = release.chars().take_while(char::is_ascii_digit).collect();
     (!digits.is_empty()).then_some(digits)
+}
+
+/// Node memory from `nodeN/meminfo` (`Node 0 MemTotal:  16384 kB`)
+#[cfg(any(target_os = "linux", test))]
+fn node_mem_total(meminfo: &str) -> Option<u64> {
+    let line = meminfo.lines().find(|l| l.contains("MemTotal:"))?;
+    let mut parts = line.split("MemTotal:").nth(1)?.split_whitespace();
+    let value: u64 = parts.next()?.parse().ok()?;
+    match parts.next() {
+        Some("kB") => value.checked_mul(1024),
+        Some(_) => None,
+        None => Some(value),
+    }
+}
+
+/// The nodes below `/sys/devices/system/node`, by node number
+#[cfg(any(target_os = "linux", test))]
+fn numa_topology(root: &Path) -> Vec<NumaNode> {
+    use crate::system_check::entries;
+    let mut nodes: Vec<NumaNode> = entries(root, "/sys/devices/system/node", "node")
+        .into_iter()
+        .filter_map(|dir| {
+            let name = dir.file_name()?.to_str()?.to_string();
+            let node: u32 = name.strip_prefix("node")?.parse().ok()?;
+            let text = |file: &str| {
+                std::fs::read_to_string(dir.join(file))
+                    .ok()
+                    .map(|s| s.trim().to_string())
+            };
+            Some(NumaNode {
+                node,
+                cpus: text("cpulist").filter(|c| !c.is_empty()),
+                memory_bytes: text("meminfo").as_deref().and_then(node_mem_total),
+                distances: text("distance")
+                    .map(|d| {
+                        d.split_whitespace()
+                            .filter_map(|v| v.parse().ok())
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            })
+        })
+        .collect();
+    nodes.sort_by_key(|n| n.node);
+    nodes
 }
 
 /// `MemTotal:       16384 kB` in `/proc/meminfo` -> bytes
@@ -554,6 +619,61 @@ mod tests {
         assert_eq!(env.numa_nodes, Some(1));
         assert_eq!(env.memory_bytes, Some(16384 * 1024));
         assert_eq!(env.container, None);
+        // a node without meminfo or distance still lists its CPUs
+        assert_eq!(
+            env.numa_topology,
+            vec![NumaNode {
+                node: 0,
+                cpus: Some("0-3".into()),
+                memory_bytes: None,
+                distances: vec![],
+            }]
+        );
+    }
+
+    #[test]
+    fn reads_a_two_node_numa_topology() {
+        let dir = fixture("performance", "1\n");
+        let root = dir.path();
+        write(root, "sys/devices/system/node/node0/cpulist", "0-1\n");
+        write(root, "sys/devices/system/node/node1/cpulist", "2-3\n");
+        write(root, "sys/devices/system/node/node0/distance", "10 21\n");
+        write(root, "sys/devices/system/node/node1/distance", "21 10\n");
+        write(
+            root,
+            "sys/devices/system/node/node0/meminfo",
+            "Node 0 MemTotal:       8192 kB\nNode 0 MemFree: 1 kB\n",
+        );
+        write(
+            root,
+            "sys/devices/system/node/node1/meminfo",
+            "Node 1 MemTotal:       4096 kB\n",
+        );
+        let env = linux_env(root);
+        assert_eq!(env.numa_nodes, Some(2));
+        assert_eq!(env.numa_topology.len(), 2);
+        assert_eq!(env.numa_topology[0].memory_bytes, Some(8192 * 1024));
+        assert_eq!(env.numa_topology[1].cpus.as_deref(), Some("2-3"));
+        assert_eq!(env.numa_topology[0].distances, vec![10, 21]);
+        // the fingerprint ignores the topology
+        assert_eq!(
+            env.fingerprint(),
+            linux_env(fixture("performance", "1\n").path()).fingerprint()
+        );
+        let json = serde_json::to_value(&env).unwrap();
+        assert_eq!(json["numa_topology"][1]["node"], 1);
+        let back: Environment = serde_json::from_value(json).unwrap();
+        assert_eq!(back, env);
+    }
+
+    #[test]
+    fn a_machine_without_numa_has_no_topology() {
+        let dir = fixture("performance", "1\n");
+        std::fs::remove_dir_all(dir.path().join("sys/devices/system/node")).unwrap();
+        let env = linux_env(dir.path());
+        assert!(env.numa_topology.is_empty());
+        let json = serde_json::to_value(&env).unwrap();
+        assert!(json.get("numa_topology").is_none());
     }
 
     #[test]
