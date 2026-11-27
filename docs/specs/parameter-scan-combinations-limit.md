@@ -1,10 +1,10 @@
 # Spec: Parameter Scan Combinations Limit & OOM Protection (Issue #104)
 
 ## 1. Problem Statement
-When multiple parameter scans (`-P`), lists (`-L`), and files (`-F`) are combined across commands, Joulex eagerly builds every `Command` struct in memory.
+When multiple parameter scans (`-P`), lists (`-L`), and files (`-F`) are combined across commands, Perfratio eagerly builds every `Command` struct in memory.
 While individual `-P` ranges are capped at 100,000 steps via `RangeStep::MAX_PARAMETERS`, the Cartesian product across multiple parameters had no upper bound or overflow protection. For example:
 ```sh
-joulex -N -r 1 -P a 1 20000 -P b 1 20000 'echo {a} {b}'
+perfratio -N -r 1 -P a 1 20000 -P b 1 20000 'echo {a} {b}'
 ```
 produces 400,000,000 combinations, leading to memory exhaustion (OOM) and massive unresponsiveness.
 
@@ -32,5 +32,5 @@ produces 400,000,000 combinations, leading to memory exhaustion (OOM) and massiv
   - Assert combination overflow or exceeding limit fails immediately without allocating.
   - Assert `--max-benchmarks` allows overriding the limit when explicitly requested.
 - Integration test in `tests/integration_tests.rs`:
-  - Run `joulex -N -r 1 -P a 1 20000 -P b 1 20000 'echo {a} {b}'` and verify immediate exit with error message.
+  - Run `perfratio -N -r 1 -P a 1 20000 -P b 1 20000 'echo {a} {b}'` and verify immediate exit with error message.
   - Run valid multi-parameter scan `-P a 1 100 -P b 1 100` and verify it succeeds.

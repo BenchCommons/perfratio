@@ -688,13 +688,12 @@ fn prepare_and_conclude_see_the_current_perfratio_iteration() {
 #[cfg(unix)]
 #[test]
 fn old_iteration_variables_are_not_exported() {
-    for var in ["JOULEX_ITERATION", "HYPERFINE_ITERATION"] {
-        let command = format!("test -z \"${{{var}}}\" && test -n \"${{PERFRATIO_ITERATION}}\"");
-        perfratio()
-            .args(["--runs=2", "--style=basic", &command])
-            .assert()
-            .success();
-    }
+    let var = "HYPERFINE_ITERATION";
+    let command = format!("test -z \"${{{var}}}\" && test -n \"${{PERFRATIO_ITERATION}}\"");
+    perfratio()
+        .args(["--runs=2", "--style=basic", &command])
+        .assert()
+        .success();
 }
 
 #[test]

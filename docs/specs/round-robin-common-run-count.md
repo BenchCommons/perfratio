@@ -30,9 +30,9 @@
    - Add `pub initial_total_time: f64` to `BenchmarkRunner`.
    - Record `res.time_real + self.executor.time_overhead() + preparation_overhead + conclusion_overhead` in `run_initial_measurement()`.
 
-3. **CLI & Schedule Mode Cleanup (`src/cli.rs`, `src/options.rs`, `doc/joulex.1`):**
+3. **CLI & Schedule Mode Cleanup (`src/cli.rs`, `src/options.rs`, `doc/perfratio.1`):**
    - In `src/cli.rs`, remove `sequential` from `--schedule`'s `value_parser`, keeping `["grouped", "round-robin", "interleaved"]`.
-   - Clarify `--help` text in `src/cli.rs` and documentation in `doc/joulex.1`.
+   - Clarify `--help` text in `src/cli.rs` and documentation in `doc/perfratio.1`.
    - In `src/options.rs`, update parser to handle `round-robin` and `interleaved`.
    - Update tests to verify `interleaved` maps to `RoundRobin`.
 

@@ -1,7 +1,7 @@
 # Spec: Better Progress UI (#66)
 
 ## Problem / Motivation
-References: `sharkdp/hyperfine#416`, `#581`, `#670`, `#706`, `#820`, `joulex#66`.
+References: `sharkdp/hyperfine#416`, `#581`, `#670`, `#706`, `#820`, `perfratio#66`.
 
 When benchmarking commands that take several seconds or minutes per run:
 1. During the initial time measurement, the progress bar shows a static message `"Initial time measurement"` with no counter and no indication of progress or elapsed time, appearing completely frozen.
@@ -13,9 +13,9 @@ When benchmarking commands that take several seconds or minutes per run:
 ### 1. Progress Bar Templates
 - **Standard Run Template:**
   ```
-   {spinner} {msg:<32} {wide_bar} {pos}/{len} ETA {joulex_eta} 
+   {spinner} {msg:<32} {wide_bar} {pos}/{len} ETA {eta} 
   ```
-  Where `{pos}/{len}` displays the completed runs and total planned runs, and `{joulex_eta}` formats the custom decreasing ETA.
+  Where `{pos}/{len}` displays the completed runs and total planned runs, and `{eta}` formats the custom decreasing ETA.
 - **Initial Time Measurement Template:**
   ```
    {spinner} {msg} {elapsed_precise}

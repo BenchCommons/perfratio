@@ -7,8 +7,6 @@ for the same command and compares the results with statistics. It is the measure
 of [BenchCommons](https://github.com/BenchCommons). It owns the versioned JSON output
 contract that other BenchCommons tools consume. Every JSON export starts with a `schemaVersion` field (see [JSON export](#json-export-and-the-schemaversion-contract)).
 
-perfratio was formerly called `joulex`.
-
 ## How it differs from hyperfine
 
 perfratio is a fork of [`sharkdp/hyperfine`](https://github.com/sharkdp/hyperfine) by
@@ -25,7 +23,7 @@ borrow from [`Gabriella439/bench`](https://github.com/Gabriella439/bench). perfr
 - `--pareto wall,energy,memory` marks the commands on the Pareto frontier; `--constraint 'memory <= 256MiB'` and `--objective minimize:energy` pick the best candidate under limits.
 - A versioned JSON export for tools that consume the results (`schemaVersion`).
 
-Run `perfratio --help` for every option. perfratio can read hyperfine and joulex JSON
+Run `perfratio --help` for every option. perfratio can read hyperfine JSON
 files (`--import-json`).
 
 ## Install
@@ -193,7 +191,7 @@ Every benchmark also gets a measurement quality report (`results[].quality` in t
 
 `--export-json <FILE>` (or `-e results.json`) writes the summary statistics and every run's
 timings. perfratio owns this output, and consumers such as `tools-benchmark` read it.
-The current version is `"1.34"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested. The legacy top-level `joulex` key was removed in `schemaVersion` 1.0: read `perfratio` instead ([docs/MIGRATION.md](docs/MIGRATION.md)).
+The current version is `"1.34"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested.
 
 The contract is a top-level `"schemaVersion": "MAJOR.MINOR"` string. Consumers must ignore
 unknown keys and accept any MINOR version of the MAJOR version they support. A removed or

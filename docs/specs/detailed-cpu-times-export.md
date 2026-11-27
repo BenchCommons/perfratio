@@ -2,13 +2,13 @@
 
 **Author:** Matheus Breguêz <matbrgz@gmail.com>  
 **Status:** Approved  
-**Issue:** [UnitedOpen-Source/joulex#11](https://github.com/UnitedOpen-Source/joulex/issues/11)  
+**Issue:** [BenchCommons/perfratio#11](https://github.com/BenchCommons/perfratio/issues/11)  
 **Upstream Reference:** `sharkdp/hyperfine#660`
 
 ---
 
 ## 1. Overview
-Currently, `joulex` exports all wall-clock timing samples in `times: Vec<Second>`, but only exports the aggregate means for user and system CPU times (`user: Second`, `system: Second`).
+Currently, `perfratio` exports all wall-clock timing samples in `times: Vec<Second>`, but only exports the aggregate means for user and system CPU times (`user: Second`, `system: Second`).
 
 External tools (such as Jupyter notebooks, CI benchmarking bots, and statistical analyzers) need access to individual CPU run samples to compute quantiles, medians, standard deviations, and generate distribution plots.
 

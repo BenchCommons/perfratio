@@ -1,6 +1,6 @@
 # Specification: CPU Utilization Metric and Off-CPU Time Detection
 
-**Issue:** [#21](https://github.com/UnitedOpen-Source/joulex/issues/21)  
+**Issue:** [#21](https://github.com/BenchCommons/perfratio/issues/21)  
 **Author:** Matheus Breguêz <matbrgz@gmail.com>  
 **Status:** In Progress  
 **Upstream References:** `sharkdp/hyperfine#898`, `sharkdp/hyperfine#711`, `Gabriella439/bench#25`, `Gabriella439/bench#26`, `sharkdp/hyperfine#781`, `sharkdp/hyperfine#882`
@@ -11,9 +11,9 @@
 
 In command-line benchmarking, measuring wall-clock time alone is insufficient to diagnose the root cause of performance variations. A command may appear slow because it performs intensive computation on multiple CPU cores, or because it is blocked off-CPU waiting for I/O, timers (`sleep`), thread locks, or page faults.
 
-Currently, `joulex` records real (wall), user CPU, and system CPU times, but does not calculate or display CPU utilization in the benchmark summary, nor does it warn when a command is predominantly off-CPU.
+Currently, `perfratio` records real (wall), user CPU, and system CPU times, but does not calculate or display CPU utilization in the benchmark summary, nor does it warn when a command is predominantly off-CPU.
 
-Furthermore, upstream `Gabriella439/bench` defines `--before` and `--after` for per-iteration setup and teardown, which directly correspond to `hyperfine`'s `--prepare` and `--conclude`. Adding visible aliases for `--before` and `--after` makes `joulex` a drop-in superset for both ecosystems.
+Furthermore, upstream `Gabriella439/bench` defines `--before` and `--after` for per-iteration setup and teardown, which directly correspond to `hyperfine`'s `--prepare` and `--conclude`. Adding visible aliases for `--before` and `--after` makes `perfratio` a drop-in superset for both ecosystems.
 
 ## 2. Functional Specification
 
@@ -43,7 +43,7 @@ Furthermore, upstream `Gabriella439/bench` defines `--before` and `--after` for 
   - Add `.visible_alias("after")` to `--conclude`.
 
 ### 2.4 Verification of Iteration Environment Variables
-- Ensure integration tests assert that `JOULEX_ITERATION` and `HYPERFINE_ITERATION` are accessible in `--prepare`, the benchmarked command, and `--conclude` across warmup and benchmark runs.
+- Ensure integration tests assert that `PERFRATIO_ITERATION` is accessible in `--prepare`, the benchmarked command, and `--conclude` across warmup and benchmark runs.
 
 ---
 
@@ -56,4 +56,4 @@ Furthermore, upstream `Gabriella439/bench` defines `--before` and `--after` for 
    - Test that `--before` works identically to `--prepare`.
    - Test that `--after` works identically to `--conclude`.
    - Test that off-CPU warning appears on `sleep 0.1` and is suppressed with `--suppress-outlier-warnings`.
-   - Test that `JOULEX_ITERATION` and `HYPERFINE_ITERATION` are expanded properly during prepare, main, and conclude.
+   - Test that `PERFRATIO_ITERATION` is expanded properly during prepare, main, and conclude.

@@ -117,7 +117,6 @@ fn json_export_records_the_environment() {
     let json: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&json).unwrap()).unwrap();
     let system = &json["perfratio"]["system"];
-    assert!(json.get("joulex").is_none());
     assert!(system["cpus"].as_u64().unwrap() >= 1);
     if cfg!(unix) {
         assert!(!system["kernel"].as_str().unwrap().is_empty());
@@ -125,17 +124,4 @@ fn json_export_records_the_environment() {
     if cfg!(target_os = "macos") {
         assert!(!system["cpu_model"].as_str().unwrap().is_empty());
     }
-}
-
-#[test]
-fn old_root_variable_is_ignored() {
-    let root = fake_root("powersave");
-    perfratio()
-        .env_remove("PERFRATIO_SYSTEM_CHECK_ROOT")
-        .env("JOULEX_SYSTEM_CHECK_ROOT", root.path())
-        .args(["--check-system", "--debug-mode", "--runs=1", "sleep 0.1"])
-        .assert()
-        .success()
-        .stderr(predicate::str::contains("deprecated").not())
-        .stdout(predicate::str::contains("powersave on 1 CPU").not());
 }

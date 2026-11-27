@@ -2,7 +2,7 @@
 
 **Author:** Matheus Breguêz <matbrgz@gmail.com>  
 **Status:** In Progress  
-**Issue:** [UnitedOpen-Source/joulex#17](https://github.com/UnitedOpen-Source/joulex/issues/17)  
+**Issue:** [BenchCommons/perfratio#17](https://github.com/BenchCommons/perfratio/issues/17)  
 **Upstream References:** `sharkdp/hyperfine#852`, `sharkdp/hyperfine#902`
 
 ---
@@ -42,4 +42,4 @@ When exporting benchmark results containing parameterized commands alongside unp
 ## 3. Verification Plan
 - Unit test in `src/export/csv.rs` verifying CSV output with a reference command (no parameters) and parameterized commands.
 - Unit test verifying heterogeneous parameter sets across commands (e.g. command 1 with `param_a`, command 2 with `param_b`).
-- Integration test running `joulex --reference 'sleep 0.01' --parameter-list secs 0.01,0.02 'sleep {secs}' --export-csv <FILE>` ensuring valid CSV generation without record length errors.
+- Integration test running `perfratio --reference 'sleep 0.01' --parameter-list secs 0.01,0.02 'sleep {secs}' --export-csv <FILE>` ensuring valid CSV generation without record length errors.
