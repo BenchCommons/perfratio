@@ -418,6 +418,7 @@ mod tests {
     // statsmodels 0.15.0 `ttost_ind(OTHER, REF, -m, m, usevar='unequal')` with
     // m = margin * mean(REF) (mean(REF) = 10.1875); df = 14.431167956916864
     #[test]
+    #[allow(clippy::excessive_precision)]
     fn tost_matches_statsmodels() {
         let w = welch(&REF, &OTHER).unwrap();
         assert_relative_eq!(w.difference, 0.3125, max_relative = 1e-12);
