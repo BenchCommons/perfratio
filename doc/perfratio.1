@@ -175,6 +175,8 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR POLICY ]
 .RB [ \-\-export\-diff\-markdown
 .IR FILE ]
+.RB [ \-\-verdict\-json
+.IR FILE ]
 .RB [ \-\-parameter\-scan
 .IR VAR
 .IR MIN
@@ -391,6 +393,10 @@ What to do with a budget that cannot be evaluated (the metric is missing in the 
 \fB\-\-export\-diff\-markdown\fR \fIFILE\fP
 .IP
 With \fB\-\-compare\fR: write the comparison as a Markdown table to FILE, e.g. for a pull request comment or a CI job summary.
+.HP
+\fB\-\-verdict\-json\fR \fIFILE\fP
+.IP
+With \fB\-\-compare\fR: write a compact JSON verdict to FILE. Per command and metric it says whether the metric improved, regressed, is unchanged or inconclusive, with the change, its confidence interval and the p-value, plus an overall verdict (improved, regressed, trade_off, unchanged, inconclusive) and the result of \fB\-\-budget\fR. Written also when a budget fails.
 .HP
 \fB\-w\fR, \fB\-\-warmup\fR \fINUM|auto\fP
 .IP
