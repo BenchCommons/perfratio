@@ -1,4 +1,4 @@
-//! External power meter backend (`--power-meter`, `docs/specs/external-power-meter.md`, #382).
+//! External power meter backend (`--power-meter`, `docs/specs/energy-attribution-and-power-meter.md`, #382).
 //!
 //! The meter is any command that prints one number on stdout. Two modes:
 //!
@@ -66,14 +66,15 @@ pub fn command_reader(config: &MeterConfig) -> Reader {
     let command = config.command.clone();
     let mode = config.mode;
     Arc::new(move || {
-        let out = run_command(&command, &AtomicBool::new(false))?;
+        let out = run_command(&command, COMMAND_TIMEOUT)?;
         parse_reading(&out, mode)
     })
 }
 
 /// Runs `command` through the shell and returns its stdout (at most 4 KiB).
-/// A command that runs longer than [`COMMAND_TIMEOUT`], or while `cancel` is set, is killed.
-fn run_command(command: &str, cancel: &AtomicBool) -> Result<String, String> {
+/// A command that runs longer than `timeout` is killed with its whole process group (Unix), and
+/// the reader thread is not joined, since a grandchild may keep the pipe open.
+fn run_command(command: &str, timeout: Duration) -> Result<String, String> {
     use std::process::{Command, Stdio};
     #[cfg(windows)]
     let mut cmd = {
@@ -85,6 +86,10 @@ fn run_command(command: &str, cancel: &AtomicBool) -> Result<String, String> {
     let mut cmd = {
         let mut c = Command::new("sh");
         c.arg("-c").arg(command);
+        {
+            use std::os::unix::process::CommandExt;
+            c.process_group(0);
+        }
         c
     };
     let mut child = cmd
@@ -99,20 +104,24 @@ fn run_command(command: &str, cancel: &AtomicBool) -> Result<String, String> {
         let _ = (&mut stdout).take(4096).read_to_string(&mut buf);
         buf
     });
-    let deadline = Instant::now() + COMMAND_TIMEOUT;
+    let deadline = Instant::now() + timeout;
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
-            Ok(None) if Instant::now() < deadline && !cancel.load(Ordering::Relaxed) => {
+            Ok(None) if Instant::now() < deadline => {
                 std::thread::sleep(Duration::from_millis(5));
             }
             Ok(None) => {
+                #[cfg(unix)]
+                // SAFETY: killpg on the group created by process_group(0); no memory is touched.
+                unsafe {
+                    libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL);
+                }
                 let _ = child.kill();
                 let _ = child.wait();
-                let _ = reader.join();
                 return Err(format!(
                     "the meter command did not finish within {} s",
-                    COMMAND_TIMEOUT.as_secs()
+                    timeout.as_secs()
                 ));
             }
             Err(e) => return Err(format!("cannot wait for the meter command: {e}")),
@@ -337,6 +346,15 @@ pub fn build(config: &MeterConfig, read: Reader) -> Result<Box<dyn EnergySampler
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicU64;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_hung_command_is_killed_at_the_timeout_even_with_a_grandchild() {
+        let start = Instant::now();
+        let r = run_command("sleep 30; echo 5", Duration::from_millis(300));
+        assert!(r.unwrap_err().contains("did not finish"));
+        assert!(start.elapsed() < Duration::from_secs(10));
+    }
 
     #[test]
     fn readings_with_and_without_units() {

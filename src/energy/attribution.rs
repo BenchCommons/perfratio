@@ -1,4 +1,4 @@
-//! Estimated energy attribution (`--energy-attribution`, `docs/specs/energy-attribution.md`, #381).
+//! Estimated energy attribution (`--energy-attribution`, `docs/specs/energy-attribution-and-power-meter.md`, #381).
 //!
 //! RAPL and the other sensors measure a package or a machine, not a process. When other work
 //! shares the host, part of the measured energy is not the benchmark's. The models split the
