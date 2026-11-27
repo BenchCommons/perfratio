@@ -104,7 +104,7 @@ Accepted limits, no issue:
 - cgroup counters have no equivalent on macOS and Windows; no flag exists to warn about.
 
 ## Tests
-- `energy::tests::every_reason_has_a_message_and_only_rapl_ones_mention_rapl`
+- `energy::baseline_tests::every_reason_has_a_message_and_only_rapl_ones_mention_rapl`
 - `options::thermal_warning_tests::warns_only_when_requested_off_linux`
 - macOS behaviour in the matrix was run manually with the debug binary; it is not in CI.
 
