@@ -75,8 +75,8 @@ been checked here. Each adds a row to the matrix once merged.
 | `--collector cachegrind\|callgrind` (#403) | yes, needs Valgrind | no: Valgrind unsupported on Apple Silicon | no |
 | `--membw` memory bandwidth and NUMA (#404) | yes (uncore IMC, `numa_maps`) | no: warning, reason `unsupported_platform` | no: same |
 
-Merge order matters: #401 to #404 each use schema 1.37 (stated in their descriptions), so the
-second one to merge renumbers. Update this table when they land.
+Merge order matters: open PRs that add JSON fields each pick the next `schemaVersion`, so
+they renumber it in the order they merge. Update this table when they land.
 
 ## Gaps
 Fixed in this change (small, no JSON change):
