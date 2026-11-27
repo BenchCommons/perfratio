@@ -145,7 +145,7 @@ impl ExportManager {
                 .map(String::as_str),
         )?;
         let energy = if matches.get_flag("energy") || metric == Metric::Energy {
-            let pref = crate::energy::BackendPreference::resolve(
+            let mut pref = crate::energy::BackendPreference::resolve(
                 matches
                     .get_one::<String>("energy-backend")
                     .map(String::as_str),
@@ -155,9 +155,13 @@ impl ExportManager {
             )
             .map_err(|v| {
                 anyhow::anyhow!(
-                    "Invalid energy backend '{v}': expected auto, sysfs, perf, ioreport or emi"
+                    "Invalid energy backend '{v}': expected auto, sysfs, perf, ioreport, emi or meter"
                 )
             })?;
+            // `--power-meter` selects the meter backend (checked by the option parser)
+            if matches.get_one::<String>("power-meter").is_some() {
+                pref = crate::energy::BackendPreference::Meter;
+            }
             Some(crate::energy::select_sampler_detailed(pref).map(|(_, backend)| backend))
         } else {
             None

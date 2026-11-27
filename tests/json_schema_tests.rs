@@ -187,6 +187,16 @@ const CASES: &[(&str, &[&str])] = &[
         &["--runs=3", "--energy", "--energy-domains", "sleep 0.1"],
     ),
     (
+        "energy attribution",
+        &[
+            "--runs=3",
+            "--energy",
+            "--energy-attribution",
+            "cpu-time",
+            "sleep 0.1 0.2 0.05",
+        ],
+    ),
+    (
         "energy baseline",
         &["--runs=3", "--energy", "--energy-baseline=1s", "sleep 0.1"],
     ),

@@ -464,7 +464,25 @@ fn command_line(args: impl IntoIterator<Item = std::ffi::OsString>) -> Vec<Strin
             *program = name.to_string_lossy().into_owned();
         }
     }
+    redact_power_meter(&mut args);
     args
+}
+
+/// The `--power-meter` command may carry credentials (a token in a URL, a password), so
+/// the export keeps the option but not its value.
+fn redact_power_meter(args: &mut [String]) {
+    const REDACTED: &str = "<redacted>";
+    let mut previous_is_option = false;
+    for arg in args.iter_mut().skip(1) {
+        if previous_is_option {
+            *arg = REDACTED.into();
+            previous_is_option = false;
+        } else if arg == "--power-meter" {
+            previous_is_option = true;
+        } else if arg.starts_with("--power-meter=") {
+            *arg = format!("--power-meter={REDACTED}");
+        }
+    }
 }
 
 /// Parse `--label KEY=VALUE` arguments. Keys may contain letters, digits,
@@ -528,6 +546,38 @@ mod tests {
         let args =
             ["/home/alice/.cargo/bin/perfratio", "-N", "sleep 0.1"].map(std::ffi::OsString::from);
         assert_eq!(command_line(args), vec!["perfratio", "-N", "sleep 0.1"]);
+    }
+
+    #[test]
+    fn command_line_hides_the_power_meter_command() {
+        let args = [
+            "perfratio",
+            "--power-meter",
+            "curl http://m/?token=abc",
+            "--energy",
+            "true",
+        ]
+        .map(std::ffi::OsString::from);
+        assert_eq!(
+            command_line(args),
+            vec![
+                "perfratio",
+                "--power-meter",
+                "<redacted>",
+                "--energy",
+                "true"
+            ]
+        );
+        let args = [
+            "perfratio",
+            "--power-meter=curl http://m/?token=abc",
+            "true",
+        ]
+        .map(std::ffi::OsString::from);
+        assert_eq!(
+            command_line(args),
+            vec!["perfratio", "--power-meter=<redacted>", "true"]
+        );
     }
 
     #[test]

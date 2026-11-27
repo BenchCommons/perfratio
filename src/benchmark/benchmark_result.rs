@@ -116,6 +116,11 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub energy_domains_joules: Option<std::collections::BTreeMap<String, Vec<f64>>>,
 
+    /// Estimated energy of the command or its cgroup (`--energy-attribution`, new in 1.37).
+    /// A model output labelled `kind: estimated`; `mean_energy_joules` stays the measurement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub energy_attribution: Option<crate::energy::attribution::EnergyAttribution>,
+
     /// Exit codes of all command invocations
     #[serde(default)]
     pub exit_codes: Vec<Option<i32>>,
