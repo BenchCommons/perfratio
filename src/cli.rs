@@ -1791,32 +1791,10 @@ fn verify_app() {
     build_command().debug_assert();
 }
 
+include!("roofline_peaks.rs");
+
 /// Validates `--metric`. Mirrors `Metric::from_str` (`src/metric.rs`), which this
 /// file cannot use because `build.rs` compiles it standalone.
-/// `--roofline-peaks`: `None` for `observed`, else `(GFLOP/s, GB/s)`, both finite and above zero.
-/// Lives here because `build.rs` includes this file and cannot reach the library modules.
-pub fn parse_roofline_peaks(value: &str) -> Result<Option<(f64, f64)>, String> {
-    if value == "observed" {
-        return Ok(None);
-    }
-    let bad = || {
-        format!(
-            "'{value}' is not valid for '--roofline-peaks': use 'GFLOPS,GBPS' (e.g. '48,20') or 'observed'"
-        )
-    };
-    let (flops, bytes) = value.split_once(',').ok_or_else(bad)?;
-    let number = |t: &str| {
-        t.trim()
-            .parse::<f64>()
-            .ok()
-            .filter(|v| v.is_finite() && *v > 0.0)
-    };
-    Ok(Some((
-        number(flops).ok_or_else(bad)?,
-        number(bytes).ok_or_else(bad)?,
-    )))
-}
-
 fn parse_metric_arg(s: &str) -> Result<String, String> {
     const BUILTIN: [&str; 13] = [
         "wall",

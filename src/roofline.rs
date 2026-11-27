@@ -66,6 +66,8 @@ impl Precision {
     }
 }
 
+include!("roofline_peaks.rs");
+
 /// The roofs of `--roofline-peaks`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PeaksSetting {
@@ -80,7 +82,7 @@ pub enum PeaksSetting {
 impl PeaksSetting {
     /// `observed` or `GFLOPS,GBPS` (both finite and above zero).
     pub fn parse(value: &str) -> Result<Self, String> {
-        Ok(match crate::cli::parse_roofline_peaks(value)? {
+        Ok(match parse_roofline_peaks(value)? {
             None => Self::Observed,
             Some((gflops, gbytes_per_s)) => Self::Configured {
                 gflops,
