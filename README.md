@@ -193,7 +193,7 @@ Every benchmark also gets a measurement quality report (`results[].quality` in t
 
 `--export-json <FILE>` (or `-e results.json`) writes the summary statistics and every run's
 timings. perfratio owns this output, and consumers such as `tools-benchmark` read it.
-The current version is `"1.32"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested. The legacy top-level `joulex` key was removed in `schemaVersion` 1.0: read `perfratio` instead ([docs/MIGRATION.md](docs/MIGRATION.md)).
+The current version is `"1.33"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested. The legacy top-level `joulex` key was removed in `schemaVersion` 1.0: read `perfratio` instead ([docs/MIGRATION.md](docs/MIGRATION.md)).
 
 The contract is a top-level `"schemaVersion": "MAJOR.MINOR"` string. Consumers must ignore
 unknown keys and accept any MINOR version of the MAJOR version they support. A removed or

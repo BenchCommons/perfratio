@@ -93,6 +93,8 @@ struct ProcessSettings<'a> {
     regions: &'a [String],
     /// --counters
     counters: Option<&'a crate::perf_counters::CounterConfig>,
+    /// --region-scope
+    region_scope: Option<crate::region_scope::ScopeSettings<'a>>,
     /// --topdown
     topdown: Option<&'a crate::topdown::TopdownConfig>,
     /// --artifact-dir
@@ -113,6 +115,12 @@ impl<'a> ProcessSettings<'a> {
             output_metrics_stderr: options.output_metrics_stderr,
             regions: &options.regions,
             counters: options.counters.as_ref(),
+            region_scope: options
+                .region_scope
+                .then(|| crate::region_scope::ScopeSettings {
+                    energy: options.measure_energy.then_some(options.energy_backend),
+                    counters: options.counters.as_ref(),
+                }),
             topdown: options.topdown.as_ref(),
             artifact_dir: options.artifact_dir.as_deref(),
             validation: options.validation.as_ref(),
@@ -139,6 +147,7 @@ fn run_command_and_measure_common(
         output_metrics_stderr,
         regions,
         counters,
+        region_scope,
         topdown,
         artifact_dir,
         validation,
@@ -184,6 +193,18 @@ fn run_command_and_measure_common(
                 .context("Could not create the temporary file for '--region'")?;
             file.apply(&mut command);
             Some(file)
+        }
+        _ => None,
+    };
+
+    // `--region-scope`: the SDK writes every marker at once and a watcher samples the child
+    let scope_watcher = match (&region_file, region_scope) {
+        (Some(file), Some(settings)) => {
+            command.env(crate::region_scope::ENV_LIVE, "1");
+            Some(crate::region_scope::install(
+                file.path().to_path_buf(),
+                settings,
+            ))
         }
         _ => None,
     };
@@ -248,7 +269,7 @@ fn run_command_and_measure_common(
     let open_counters = counting
         .then(|| crate::perf_counters::open_run(counters, topdown))
         .flatten();
-    let mut result = execute_and_measure(
+    let measured = execute_and_measure(
         command,
         affinity,
         priority,
@@ -257,22 +278,27 @@ fn run_command_and_measure_common(
         until,
         stdout_capture_limit,
         stderr_capture_limit,
-    )
-    .map_err(|error| {
-        // A priority that needs privileges fails in the child: explain how
-        // to get them
-        let denied = error
-            .downcast_ref::<std::io::Error>()
-            .is_some_and(|e| e.kind() == std::io::ErrorKind::PermissionDenied);
-        match crate::util::priority::permission_hint(priority) {
-            Some(hint) if denied => error.context(format!(
-                "could not set '--priority {}': {hint}",
-                priority.as_str()
-            )),
-            _ => error,
-        }
-    })
-    .with_context(|| format!("Failed to run command '{command_name}'"))?;
+    );
+    crate::timer::clear_spawn_observer();
+    let scope_outcome = scope_watcher
+        .and_then(|slot| slot.borrow_mut().take())
+        .map(|watcher| watcher.finish());
+    let mut result = measured
+        .map_err(|error| {
+            // A priority that needs privileges fails in the child: explain how
+            // to get them
+            let denied = error
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|e| e.kind() == std::io::ErrorKind::PermissionDenied);
+            match crate::util::priority::permission_hint(priority) {
+                Some(hint) if denied => error.context(format!(
+                    "could not set '--priority {}': {hint}",
+                    priority.as_str()
+                )),
+                _ => error,
+            }
+        })
+        .with_context(|| format!("Failed to run command '{command_name}'"))?;
     // A timed-out run keeps no counters (its time is the timeout, not a run)
     result.hw_counters = open_counters
         .map(|open| open.read())
@@ -396,6 +422,18 @@ fn run_command_and_measure_common(
 
     if let Some(file) = &region_file {
         collect_regions(file, regions, &mut result, command_name)?;
+        if let Some(outcome) = &scope_outcome {
+            let names = crate::region_scope::counter_names(counters);
+            for (name, delta) in crate::region_scope::totals(&outcome.markers) {
+                if let Some(delta) = delta.filter(|_| regions.contains(&name)) {
+                    for (metric, value) in crate::region_scope::series(&delta, &names) {
+                        result
+                            .custom_metrics
+                            .insert(crate::region_scope::key(&name, &metric), value);
+                    }
+                }
+            }
+        }
     }
 
     Ok(result)
@@ -1063,6 +1101,8 @@ pub struct MockExecutor {
     topdown: Option<crate::topdown::TopdownConfig>,
     concurrency: usize,
     regions: Vec<String>,
+    /// `--region-scope`: metrics simulated inside each region
+    scoped: Vec<String>,
     validation: Option<crate::validation::ValidationConfig>,
 }
 
@@ -1075,8 +1115,16 @@ impl MockExecutor {
             topdown: None,
             concurrency: 1,
             regions: Vec::new(),
+            scoped: Vec::new(),
             validation: None,
         }
+    }
+
+    /// Simulate `--region-scope`: inside a region the CPU time is 60% user and 20% system
+    /// of the region time, energy is 10 J/s and a counter counts 1e9 per second.
+    pub fn with_region_scope(mut self, metrics: Vec<String>) -> Self {
+        self.scoped = metrics;
+        self
     }
 
     /// Simulate `--region`: every region takes half of the run time, in one
@@ -1262,10 +1310,22 @@ impl Executor for MockExecutor {
                     .iter()
                     .filter(|_| !timed_out)
                     .flat_map(|name| {
+                        let region = time_real / 2.0;
+                        let scoped = self.scoped.iter().map(move |metric| {
+                            let value = match metric.as_str() {
+                                crate::region_scope::CPU_USER => region * 0.6,
+                                crate::region_scope::CPU_SYSTEM => region * 0.2,
+                                crate::region_scope::ENERGY => region * 10.0,
+                                _ => (region * 1e9).round(),
+                            };
+                            (crate::region_scope::key(name, metric), value)
+                        });
                         [
-                            (crate::region::time_key(name), time_real / 2.0),
+                            (crate::region::time_key(name), region),
                             (crate::region::count_key(name), 1.0),
                         ]
+                        .into_iter()
+                        .chain(scoped)
                     })
                     .collect(),
                 region_sdk: None,

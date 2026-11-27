@@ -381,6 +381,53 @@ pub struct RegionResult {
     /// Identifier of the SDK that reported, when it sent one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sdk: Option<String>,
+    /// `--region-scope`: CPU time, energy and counters inside the region. Absent
+    /// without the flag.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub metrics: Vec<RegionMetric>,
+}
+
+/// One value measured inside a region (`--region-scope`): CPU time in seconds, energy in
+/// joules or a counter, summed over the region's start/stop pairs of a run. The reads
+/// happen when the SDK reports the markers, so they lag the markers by the marker
+/// latency (`docs/specs/region-scope.md`). The whole-process values stay under
+/// `results[]` and have no `scope`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RegionMetric {
+    /// `cpu_user`, `cpu_system`, `energy` or a counter name (`instructions`, ...)
+    pub name: String,
+    /// `s`, `J` or `count`
+    pub unit: String,
+    /// Always `region`
+    pub scope: String,
+    pub mean: f64,
+    pub stddev: Option<f64>,
+    pub min: f64,
+    pub max: f64,
+    /// Value of every run, `null` where it could not be read.
+    pub values: Vec<Option<f64>>,
+}
+
+impl RegionMetric {
+    /// `None` when no run has a value.
+    pub fn from_runs(name: &str, values: &[Option<f64>]) -> Option<Self> {
+        let present: Vec<f64> = values.iter().flatten().copied().collect();
+        if present.is_empty() {
+            return None;
+        }
+        let mean = crate::stats::basic::mean(&present);
+        Some(RegionMetric {
+            name: name.to_string(),
+            unit: crate::region_scope::unit(name).to_string(),
+            scope: crate::region_scope::SCOPE.to_string(),
+            mean,
+            stddev: (present.len() > 1)
+                .then(|| crate::stats::basic::standard_deviation(&present, Some(mean))),
+            min: present.iter().copied().fold(f64::INFINITY, f64::min),
+            max: present.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+            values: values.to_vec(),
+        })
+    }
 }
 
 impl RegionResult {
@@ -414,6 +461,7 @@ impl RegionResult {
                 .unwrap_or_else(|| vec![None; times.len()]),
             times: times.to_vec(),
             sdk,
+            metrics: Vec::new(),
         })
     }
 }
