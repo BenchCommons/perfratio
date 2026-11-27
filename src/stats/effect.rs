@@ -90,6 +90,7 @@ pub struct Verdict {
 }
 
 /// Standard normal quantile (Acklam's rational approximation, relative error < 1.2e-9).
+#[allow(clippy::excessive_precision)] // the published coefficients, kept verbatim
 pub fn normal_quantile(p: f64) -> f64 {
     if !(p > 0.0 && p < 1.0) {
         return f64::NAN;
