@@ -13,8 +13,8 @@ Legend: **Master** = shipped on `master`. **Open PR** = only in an open PR. **Op
 
 ## Contract
 Documentation only. The JSON export (`schemaVersion`, `docs/schema/perfratio-export.schema.json`)
-is not changed by this document. Open PRs #393 to #400 and #402 to #405 each bump
-`schemaVersion` to 1.37. The second to merge must renumber (see their descriptions), so consumers
+is not changed by this document. Open PRs #394 and #396 to #405 each bump
+`schemaVersion` to 1.37 (#393 adds no bump; #401 does). The second to merge must renumber (see their descriptions), so consumers
 must read `schemaVersion` and accept any 1.x, as `docs/CROSS_LANGUAGE.md` says.
 
 ## Status per requirement
@@ -51,7 +51,7 @@ None of #393 to #407 closes an item of #240. Relevant ones:
 
 ## Requirements found without an issue
 - The `.product` `CONTRACTS.md` link: now #408.
-- `docs/CROSS_LANGUAGE.md` links `region-sdk.md`, but the file is `docs/specs/region-sdks.md` (and the guide sits in `docs/`, so the link is broken). A one-line docs fix, not a requirement, so no issue. Fix it with the next edit of that file.
+- `docs/CROSS_LANGUAGE.md` links `region-sdk.md`, which does not exist on `master` (it would resolve to `docs/region-sdk.md`; `docs/specs/` has only `region-sdks.md`). Open PR #399 creates `docs/region-sdk.md`, which fixes the link, so no separate fix is needed once it merges. Not a requirement, so no issue.
 - `docs/specs/output-schema-contract.md` says energy was tested only against a fake powercap tree. This is the open validation in #337, not a new item.
 
 ## Still open
