@@ -4,7 +4,7 @@
 Shipped except the `.product` link (schemaVersion 1.32; 1.32 adds `perfratio.statistics.correction` and `results[].p_value_adjusted` from #321 (`multiple-comparison-correction.md`); 1.31 adds `results[].interference` from #315 (`cgroup-thermal.md`); 1.30 declares the unit and direction of `custom.<name>` descriptors with `--output-metric NAME[unit,higher]=REGEX` and reads them from `--import-json` (#317, `metric-descriptors.md`); 1.29 adds `perfratio.compare` from #325 (`budgets.md`); 1.28 adds `perfratio.environment`, `perfratio.environment_fingerprint` and `perfratio.meta` from #314 (`environment-fingerprint.md`); 1.27 adds `perfratio.calibration` and `results[].quality.below_resolution` from #313 (`measurement-floor.md`); 1.26 adds `results[].precision.stopping_rule` and `achieved_half_width` from #322 (`sequential-stopping.md`); 1.25 adds `perfratio.schedule` from #324 (`schedule-randomized.md`); 1.24 adds `perfratio.execution.cpu_partition` (#307, `worker-cpu-partition.md`); 1.23 adds `results[].regions[]`, `perfratio.region_protocol`, `measurements.region` and `region:<name>` metric values from #310 (`region-protocol.md`); 1.22 adds `perfratio.execution` and `results[].workers_used` / `contended` for `--jobs` (#306, `worker-pool.md`); 1.21 adds `perfratio.statistics` and `results[].relative_speed_ci` from #320 (`statistics-settings.md`); 1.20 adds `perfratio.metrics[]`, the metric descriptors of #317 (`metric-descriptors.md`); 1.19 adds `results[].run_ids`, `instance_run_ids`, `leftover_processes` and `energy_scope` from #308 and #309 (`run-identity.md`, `process-tree.md`) and stops writing `energy_per_instance_joules`; 1.18 adds `results[].quality` from #318 (`measurement-quality.md`); 1.17 adds `results[].validation` from #316 (`workload-validation.md`); 1.16 adds the optional `pareto` object from #326 (`pareto.md`); 1.15 adds `optimize.reevaluated` and fractional `optimize` values with `-D` (#98); 1.14 adds `--simd` fields from #211 (`simd-breakdown.md`); 1.13 adds the software events and the effective frequency fields of #220 and #222; 1.12 adds `--topdown` fields from #221 (`topdown-tma.md`); 1.11 adds `results[].energy_samples` (#240) and the JSON Schema file `docs/schema/perfratio-export.schema.json`, validated by `tests/json_schema_tests.rs`; 1.10 adds `results[].counters_coverage` (#219); 1.9 adds the `:u`/`:k` counter key suffixes, `counters_scope` values `kernel` and `perfratio.measurements.counters_requested_scope` from #218 (`counter-scope-modifiers.md`); 1.8 adds `--counters` fields from #49; 1.7 adds `results[].energy_domains_joules` (#59, `rapl-domains.md`); 1.6 adds the optional `optimize` object from #98; 1.5 adds the `--concurrency` fields from #53; 1.4 adds the macOS/Windows energy backends and reasons of `energy-macos-windows.md` (#291); 1.3 is 1.2 plus per-column `resources` availability from #291; 1.1 plus `custom:<name>` metric values from #90; 1.0 plus `metric`/`primary_metric` from #48 made 1.1): `schemaVersion` first key (`SCHEMA_VERSION` in
 `src/export/json.rs`), `perfratio.measurements` (`src/export/metadata.rs`, reasons from
 `src/energy/mod.rs::probe`; `memory` is always `measured`, `time` always `measured`),
-`joulex` removed (§4), layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
+layout snapshot and contract tests in `tests/export_metadata_tests.rs`.
 Not yet done: the `.product` `CONTRACTS.md` link (a change in that repository). `doc/understanding-output.md` has the
 section "The JSON export". Energy status
 was tested only through the probe against a fake powercap tree and on a host without RAPL
@@ -22,14 +22,11 @@ contract: benchmark-tool and the catalogs consume it and never redefine it.
 The current export is not yet a contract:
 1. **No version.** Nothing in the file tells a consumer which shape it has. A consumer pinned
    to one perfratio release cannot tell an additive change from a breaking one.
-2. **Duplicate metadata key.** The run metadata is written twice, under `"perfratio"` and
-   under the legacy `"joulex"` alias (`src/export/json.rs`, `PerfratioSummary::joulex`).
-   #225 tracks its removal.
-3. **Unavailable is silent.** When `--energy` is set but RAPL cannot be read (non-Linux,
+2. **Unavailable is silent.** When `--energy` is set but RAPL cannot be read (non-Linux,
    containers without `/sys/class/powercap`, root-only `energy_uj`), the energy fields are
    simply omitted (`skip_serializing_if = "Option::is_none"`). A consumer cannot tell
    "not requested" from "requested but unavailable" from "partially measured".
-4. **No documented guarantees.** Which fields are always present, which are optional, and
+3. **No documented guarantees.** Which fields are always present, which are optional, and
    which units they use is only discoverable by reading `BenchmarkResult`.
 
 ## Current Shape (as of `master`, 2b8be84)
@@ -41,7 +38,6 @@ Serializer: `src/export/json.rs` (`PerfratioSummary`, `ResultEntry`). Metadata:
 ```jsonc
 {
   "perfratio": { /* ExportMetadata */ },
-  "joulex":    { /* identical copy, legacy alias (#225) */ },
   "interrupted": true,          // only when Ctrl-C stopped the run
   "results": [ { /* BenchmarkResult + relative_speed[_stddev] */ } ]
 }
@@ -69,7 +65,7 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
 - `schemaVersion` is the only camelCase key in the document. The name is fixed by
   `CONTRACTS.md` and #240 so consumers can find it without knowing the rest of the layout.
 - A file **without** `schemaVersion` is the legacy shape (perfratio ≤ the release that
-  introduces this spec, and joulex/hyperfine exports). `--import-json` keeps reading it.
+  introduces this spec, and hyperfine exports). `--import-json` keeps reading it.
 - Compatibility rules:
 
 | Change | Version bump |
@@ -79,8 +75,7 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
 | Field removed or renamed; unit or type changed; optional field that was guaranteed; meaning of a value changed; closed enum gains a value | MAJOR |
 
 - Consumers must ignore unknown keys and must accept any `MINOR` of the `MAJOR` they support.
-- perfratio never emits a `MAJOR` change without one release that emits a deprecation for it
-  (§4 shows the pattern).
+- perfratio never emits a `MAJOR` change without one release that emits a deprecation for it.
 
 ### 2. Top-level layout (`schemaVersion` 1.1)
 ```jsonc
@@ -264,19 +259,7 @@ Rules:
   (`target_duration_seconds`, `total_sampling_seconds`) are MINOR additions to this schema
   and must be added to this table in the same PR.
 
-### 4. Removing the legacy `joulex` key (#225)
-**BREAKING for consumers:** the key is dropped in one step with no deprecation window, as
-issue #240 requires. Tools reading `json["joulex"]` must switch to `json["perfratio"]`
-(identical content). See `docs/MIGRATION.md`.
-
-Shipped as a single step (decision of the #240 implementation, replacing the earlier
-two-step plan): `schemaVersion` `"1.0"` is the first schema and it never documented
-`"joulex"`, so the key is **not written** from the first release that emits `schemaVersion`.
-Consumers of 1.x read only `"perfratio"`. Files that only have `"joulex"` (old exports)
-remain importable via `--import-json` (covered by a test). `tests/export_metadata_tests.rs`
-and `tests/check_system_tests.rs` assert the absence of `"joulex"`.
-
-### 5. Recommended flags for cross-language runs
+### 4. Recommended flags for cross-language runs
 Documented in `doc/understanding-output.md` (new section "Comparing implementations across
 languages") and referenced from the benchmark-tool catalog contract:
 
@@ -322,8 +305,6 @@ perfratio -N --warmup auto --first-run=separate \
   value or newly required key (those are MAJOR changes). The release workflow uploads
   `perfratio-export-<MAJOR.MINOR>.schema.json` to the GitHub release and includes it in
   `SHA256SUMS`. Not done: a `$schema` field in the export and `--print-schema`.
-- The deprecation steps of §4, which cover only the JSON key of #225. The other #225
-  items are not part of this spec.
 
 ## Acceptance Criteria
 - [x] Every `--export-json` file starts with `"schemaVersion"` (currently `"1.11"`).
@@ -335,8 +316,6 @@ perfratio -N --warmup auto --first-run=separate \
       `--energy`.
 - [x] No result contains `0` in place of an unmeasured value (fields are omitted; the schema has no default values).
 - [x] `energy_samples` makes partial energy coverage visible (1.11).
-- [x] `"joulex"` is removed in one step (§4); old exports with only `"joulex"`
-      still import.
 - [x] `doc/understanding-output.md` documents the schema, units, compatibility rules and
       the recommended cross-language flags (section "The JSON export").
 - [ ] `BenchCommons/.product` `CONTRACTS.md` row "Measurement output" links this spec.
@@ -353,7 +332,7 @@ perfratio -N --warmup auto --first-run=separate \
 ## Verification Plan
 - Unit: `SCHEMA_VERSION` is serialized first; `Measurements` from options × sampler
   availability; `energy_samples` with full, partial and no samples.
-- Integration (`tests/export_metadata_tests.rs`): `schemaVersion`, `measurements`, absence
-  of `"joulex"` after step 2; import of a legacy file with only `"joulex"`.
+- Integration (`tests/export_metadata_tests.rs`): `schemaVersion`, `measurements`, and
+  the layout snapshot.
 - Schema: the exports of `tests/json_schema_tests.rs` validate against
   `docs/schema/perfratio-export.schema.json`.

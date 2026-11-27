@@ -2,7 +2,7 @@
 
 **Author:** Matheus Breguêz <matbrgz@gmail.com>  
 **Status:** In Progress  
-**Issue:** [UnitedOpen-Source/joulex#19](https://github.com/UnitedOpen-Source/joulex/issues/19)  
+**Issue:** [BenchCommons/perfratio#19](https://github.com/BenchCommons/perfratio/issues/19)  
 **Upstream References:** `sharkdp/hyperfine#811`, `sharkdp/hyperfine#879`
 
 ---

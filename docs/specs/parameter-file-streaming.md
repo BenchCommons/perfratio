@@ -2,7 +2,7 @@
 
 **Author:** Matheus Breguêz <matbrgz@gmail.com>  
 **Status:** Approved  
-**Issue:** [UnitedOpen-Source/joulex#5](https://github.com/UnitedOpen-Source/joulex/issues/5)  
+**Issue:** [BenchCommons/perfratio#5](https://github.com/BenchCommons/perfratio/issues/5)  
 **Upstream References:** `sharkdp/hyperfine#813`, PR `sharkdp/hyperfine#908`, PR `sharkdp/hyperfine#910`
 
 ---
@@ -11,7 +11,7 @@
 
 When benchmarking systems over large input dimensions (such as thousands of URLs, test vectors, or files), specifying parameters via `--parameter-list <VAR> <VAL1>,<VAL2>...` is constrained by OS command line length limits (`ARG_MAX`) and quoting complexity.
 
-This specification defines the architecture, CLI interface, and error handling for `--parameter-file <VAR> <FILE>` in `joulex`.
+This specification defines the architecture, CLI interface, and error handling for `--parameter-file <VAR> <FILE>` in `perfratio`.
 
 ## 2. Interface Contract
 

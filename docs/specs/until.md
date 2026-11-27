@@ -22,7 +22,7 @@ Currently, benchmarking startup latency requires custom, fragile shell scripts i
 ### 1. CLI Validation & Conflicts
 - `--until <TEXT>` takes a non-empty string argument. An empty string is rejected with `OptionsError::EmptyUntilPattern`.
 - `--until-stderr` is a boolean flag that requires `--until`.
-- `--until` conflicts with `--show-output` (`-d`), `--output` (`-O`), and `--show-output-on-failure` because stdout and stderr must be managed and monitored by joulex's stream listener.
+- `--until` conflicts with `--show-output` (`-d`), `--output` (`-O`), and `--show-output-on-failure` because stdout and stderr must be managed and monitored by perfratio's stream listener.
 
 ### 2. Streaming Matching & Boundary Safety
 - Output is read in 64 KiB chunks from the monitored stream (`stdout` by default, `stderr` with `--until-stderr`).

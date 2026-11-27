@@ -1,8 +1,8 @@
 # Changelog
 
-perfratio is a fork of [hyperfine](https://github.com/sharkdp/hyperfine) (via joulex). This file covers perfratio first; the unchanged upstream hyperfine history is kept at the bottom.
+perfratio is a fork of [hyperfine](https://github.com/sharkdp/hyperfine). This file covers perfratio first; the unchanged upstream hyperfine history is kept at the bottom.
 
-Migrating from hyperfine or joulex: see [docs/MIGRATION.md](docs/MIGRATION.md). Measuring one algorithm in several languages: see [docs/CROSS_LANGUAGE.md](docs/CROSS_LANGUAGE.md).
+Migrating from hyperfine: see [docs/MIGRATION.md](docs/MIGRATION.md). Measuring one algorithm in several languages: see [docs/CROSS_LANGUAGE.md](docs/CROSS_LANGUAGE.md).
 
 ## 1.0.0 - 2026-11-26
 
@@ -11,9 +11,8 @@ Generated from the merged pull requests (#1 to #338). Pull requests that bump de
 ### Breaking changes
 
 - Ambiguous alias dropped in round-robin mode when computing the common run count ([#145](https://github.com/BenchCommons/perfratio/pull/145), issue [#102](https://github.com/BenchCommons/perfratio/issues/102), [#111](https://github.com/BenchCommons/perfratio/issues/111))
-- Project renamed from joulex to perfratio (crate, binary, man page, `$PERFRATIO_ITERATION`); see docs/MIGRATION.md ([#224](https://github.com/BenchCommons/perfratio/pull/224))
-- Removed the `joulex` shell completions, the `joulex.1` man page and the `joulex_eta` progress key; renamed `$HYPERFINE_RANDOMIZED_ENVIRONMENT_OFFSET` to `$PERFRATIO_RANDOMIZED_ENVIRONMENT_OFFSET` ([#263](https://github.com/BenchCommons/perfratio/pull/263)). The `$JOULEX_ITERATION`, `$HYPERFINE_ITERATION` and `$JOULEX_SYSTEM_CHECK_ROOT` aliases are removed; use the `PERFRATIO_` names ([#302](https://github.com/BenchCommons/perfratio/pull/302), issue [#225](https://github.com/BenchCommons/perfratio/issues/225))
-- The JSON export no longer has the top-level `joulex` key; read `perfratio` instead. Exports start with `"schemaVersion"` ([#262](https://github.com/BenchCommons/perfratio/pull/262), issue [#240](https://github.com/BenchCommons/perfratio/issues/240))
+- Renamed `$HYPERFINE_RANDOMIZED_ENVIRONMENT_OFFSET` to `$PERFRATIO_RANDOMIZED_ENVIRONMENT_OFFSET`; `$HYPERFINE_ITERATION` is no longer exported, use `$PERFRATIO_ITERATION` ([#263](https://github.com/BenchCommons/perfratio/pull/263), [#302](https://github.com/BenchCommons/perfratio/pull/302))
+- Exports carry run metadata under the top-level `perfratio` key and start with `"schemaVersion"` ([#262](https://github.com/BenchCommons/perfratio/pull/262), issue [#240](https://github.com/BenchCommons/perfratio/issues/240))
 
 ### Features
 
@@ -141,7 +140,7 @@ Generated from the merged pull requests (#1 to #338). Pull requests that bump de
 - Bump clap_complete from 4.5.60 to 4.6.9 ([#3](https://github.com/BenchCommons/perfratio/pull/3))
 - Bump clap from 4.5.52 to 4.6.1 ([#4](https://github.com/BenchCommons/perfratio/pull/4))
 - Migrate from deprecated cargo_bin to cargo::cargo_bin! ([#8](https://github.com/BenchCommons/perfratio/pull/8), issue [#7](https://github.com/BenchCommons/perfratio/issues/7))
-- Rebrand leftovers, update metadata, canonical URLs, and add doc/joulex.1 ([#114](https://github.com/BenchCommons/perfratio/pull/114), issue [#86](https://github.com/BenchCommons/perfratio/issues/86))
+- Update metadata and canonical URLs ([#114](https://github.com/BenchCommons/perfratio/pull/114), issue [#86](https://github.com/BenchCommons/perfratio/issues/86))
 - Add a 7-day cooldown for updates ([#121](https://github.com/BenchCommons/perfratio/pull/121), issue [#43](https://github.com/BenchCommons/perfratio/issues/43))
 - Update crates with RustSec advisories ([#124](https://github.com/BenchCommons/perfratio/pull/124), issue [#28](https://github.com/BenchCommons/perfratio/issues/28))
 - Restrict GITHUB_TOKEN to least-privilege permissions ([#129](https://github.com/BenchCommons/perfratio/pull/129), issue [#38](https://github.com/BenchCommons/perfratio/issues/38))

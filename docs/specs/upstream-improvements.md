@@ -1,8 +1,8 @@
-# Joulex: Upstream Improvements Specification (from Hyperfine & Bench)
+# Perfratio: Upstream Improvements Specification (from Hyperfine & Bench)
 
 **Author:** Matheus Breguêz <matbrgz@gmail.com>  
 **Status:** Approved  
-**Target:** `joulex` v0.2.0  
+**Target:** `perfratio` v0.2.0  
 **References:**
 - `sharkdp/hyperfine` issues and PRs: #920, #921, #923, #915, #926, #882, #781, #902, #852, #881, #919, #861, #823, #523, #711.
 - `Gabriella439/bench` issues and PRs: #39, #45, #14, #25, #3.
@@ -11,9 +11,9 @@
 
 ## 1. Executive Summary
 
-`joulex` was established as a hard fork of `sharkdp/hyperfine` and `Gabriella439/bench` to deliver **Performance per Watt (Energy)** and **Academic Deep Statistics (Criterion-rs)**.
+`perfratio` was established as a hard fork of `sharkdp/hyperfine` and `Gabriella439/bench` to deliver **Performance per Watt (Energy)** and **Academic Deep Statistics (Criterion-rs)**.
 
-A systematic audit of all open issues and pull requests from both upstream repositories reveals critical safety vulnerabilities, runtime panics, environment ergonomics deficits, and missing statistical features. This specification defines the architecture, contracts, and test plan for integrating these upstream solutions directly into `joulex`.
+A systematic audit of all open issues and pull requests from both upstream repositories reveals critical safety vulnerabilities, runtime panics, environment ergonomics deficits, and missing statistical features. This specification defines the architecture, contracts, and test plan for integrating these upstream solutions directly into `perfratio`.
 
 ---
 
@@ -36,7 +36,7 @@ A systematic audit of all open issues and pull requests from both upstream repos
 ### 2.2 Environment Ergonomics & Tooling
 5. **Pass Iteration Variables to Preparation & Conclusion Commands (`#781`, `#882`)**:
    - Users need to set up iteration-specific state in `--prepare` and `--conclude`.
-   - Solution: Forward `BenchmarkIteration` into `run_preparation_command` and `run_conclusion_command`, exporting both `JOULEX_ITERATION` and `HYPERFINE_ITERATION`.
+   - Solution: Forward `BenchmarkIteration` into `run_preparation_command` and `run_conclusion_command`, exporting both `PERFRATIO_ITERATION` and `HYPERFINE_ITERATION`.
 6. **Add `--filter-failed` Option (`#861`)**:
    - When using `--ignore-failure`, failed benchmark runs distort relative speed comparisons.
    - Solution: Add `--filter-failed` flag in CLI to filter out results that encountered non-zero exit codes.
@@ -47,7 +47,7 @@ A systematic audit of all open issues and pull requests from both upstream repos
 
 ### 2.3 System Metrics & Statistical Analysis
 9. **Display Peak Memory Usage (`Gabriella439/bench#45`, `sharkdp/hyperfine#711`)**:
-   - `joulex` already collects `memory_usage_byte` via OS resource usage APIs.
+   - `perfratio` already collects `memory_usage_byte` via OS resource usage APIs.
    - Solution: Format and print peak memory usage in terminal output alongside User and System time (e.g. `[User: 1.2 ms, System: 1.4 ms, Peak Memory: 12.4 MB]`).
 10. **Statistical Hypothesis Testing (Welch's t-test / p-value) (`sharkdp/hyperfine#523`, `Gabriella439/bench#39`)**:
     - Under `--deep-stats`, when comparing multiple commands, evaluate the statistical significance of speed differences using two-sample hypothesis testing from `criterion-stats` (reporting whether differences are statistically significant at $p < 0.01$ or $p < 0.05$).

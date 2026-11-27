@@ -1,6 +1,6 @@
 # Specification: Omit Failed Runs from Summary Statistics (`--omit-failed-runs`)
 
-**Issue:** [#76](https://github.com/UnitedOpen-Source/joulex/issues/76)  
+**Issue:** [#76](https://github.com/BenchCommons/perfratio/issues/76)  
 **Author:** Matheus Breguêz <matbrgz@gmail.com>  
 **Status:** Completed  
 **Upstream Reference:** `sharkdp/hyperfine#891` (fixes `sharkdp/hyperfine#827`)
@@ -36,7 +36,7 @@ When benchmarking commands that are flaky or occasionally fail (e.g. distributed
 - If `options.omit_failed_runs` is set while `options.command_failure_action == CmdFailureAction::RaiseError`:
   Return `Err(OptionsError::OmitFailedRunsRequiresIgnoreFailure.into())`.
 - Add `OptionsError::OmitFailedRunsRequiresIgnoreFailure` variant with user-friendly message:
-  `"The '--omit-failed-runs' option requires '--ignore-failure' to be set, otherwise joulex aborts on the first failed run"`.
+  `"The '--omit-failed-runs' option requires '--ignore-failure' to be set, otherwise perfratio aborts on the first failed run"`.
 
 ### 2.3 Warning Variant (`src/output/warnings.rs`)
 - Add `Warnings::FailedRunsOmitted { omitted: usize, total: usize }`.
