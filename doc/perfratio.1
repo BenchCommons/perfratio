@@ -222,6 +222,12 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR PCT ]
 .RB [ \-\-target\-precision\-method
 .IR METHOD ]
+.RB [ \-\-target\-precision\-metrics
+.IR METRICS ]
+.RB [ \-\-power
+.IR P ]
+.RB [ \-\-target\-effect
+.IR PCT ]
 .RB [ \-\-max\-benchmarking\-time
 .IR SECONDS ]
 .RB [ \-\-duration
@@ -601,9 +607,21 @@ Instead of a fixed number of runs, keep running each command until the 95% confi
 .IP
 How \fB\-\-target\-precision\fR decides that the interval is narrow enough: \fBfixed\fR (default) re-checks the Student-t interval of the mean after every run, which stops too early more often than the confidence level says; \fBsequential\fR uses an anytime-valid confidence sequence of the mean, valid however the run count was chosen, at the cost of about 2.5x the runs. Assumes independent runs with finite variance. Not with \fB\-\-subtract\fR or an \fB\-\-estimator\fR other than the mean.
 .HP
+\fB\-\-target\-precision\-metrics\fR \fIMETRICS\fP
+.IP
+Metrics that \fB\-\-target\-precision\fR waits for, comma\-separated from \fBwall\fR, \fBmemory\fR and \fBenergy\fR (default: wall). Each command runs until every listed metric has the precision of \fB\-\-target\-precision\fR, by \fB\-\-target\-precision\-method\fR. A metric without samples (energy without a sensor) is not waited for and is reported as not reached.
+.HP
+\fB\-\-power\fR \fIP\fP
+.IP
+Statistical power for the power report and \fB\-\-target\-effect\fR (default: 0.8; a fraction between 0 and 1). Adds a Power line with the smallest change of the mean that a two\-sided t\-test at \fB\-\-significance\-level\fR detects with this probability when the command is compared with an identical one that has the same number of runs. Assumes independent runs and approximately normal means.
+.HP
+\fB\-\-target\-effect\fR \fIPCT\fP
+.IP
+The smallest change of the mean to detect, as a percentage of the mean (e.g. 3%), with \fB\-\-power\fR. Reports the runs needed. Without \fB\-\-runs\fR and \fB\-\-duration\fR it is also a stopping rule: each command runs until that many runs have been made, within \fB\-\-min\-runs\fR, \fB\-\-max\-runs\fR and \fB\-\-max\-benchmarking\-time\fR. The runs needed are computed from the standard deviation seen so far.
+.HP
 \fB\-\-max\-benchmarking\-time\fR \fISECONDS\fP
 .IP
-Time budget per command for \fB\-\-target\-precision\fR (default: 60). If the target is not reached within it, a warning shows the precision that was reached.
+Time budget per command for \fB\-\-target\-precision\fR and \fB\-\-target\-effect\fR (default: 60). If the target is not reached within it, a warning shows what was reached.
 .HP
 \fB\-\-duration\fR \fIDURATION\fP
 .IP

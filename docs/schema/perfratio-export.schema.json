@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.36 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.37 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.36",
+      "const": "1.37",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -944,6 +944,36 @@
       ],
       "description": "--target-precision outcome."
     },
+    "precision_metrics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "metric": { "type": "string", "description": "wall, memory or energy (open enum)." },
+          "target": { "type": "number", "description": "Target half-width relative to the mean (--target-precision)." },
+          "reached": { "type": ["number", "null"], "description": "Half-width reached, relative to the mean; null without 2 samples or a positive mean." },
+          "runs": { "type": "integer", "minimum": 0, "description": "Samples of the metric that count." },
+          "met": { "type": "boolean" }
+        },
+        "required": ["metric", "target", "reached", "runs", "met"]
+      },
+      "description": "New in 1.37 (#369, docs/specs/multi-metric-stopping.md): --target-precision-metrics, one entry per listed metric."
+    },
+    "power": {
+      "type": "object",
+      "properties": {
+        "significance_level": { "type": "number" },
+        "power": { "type": "number", "description": "Probability of detecting the effect (--power, default 0.8)." },
+        "runs": { "type": "integer", "minimum": 0, "description": "Runs that count (without an excluded first run)." },
+        "minimum_detectable_effect": { "type": ["number", "null"], "description": "Smallest change of the mean detected with `power` by the runs made, relative to the mean (0.05 = 5%). Two-sided two-sample t-test against an identical command." },
+        "target_effect": { "type": "number", "description": "--target-effect as a fraction of the mean." },
+        "runs_needed": { "type": "integer", "minimum": 2, "description": "Runs per command that detect target_effect with `power`, for the standard deviation seen." },
+        "met": { "type": "boolean", "description": "runs >= runs_needed." },
+        "stopping_rule": { "type": "boolean", "description": "Whether --target-effect decided when the runs stopped." }
+      },
+      "required": ["significance_level", "power", "runs", "minimum_detectable_effect", "stopping_rule"],
+      "description": "New in 1.37 (#367, docs/specs/statistical-power.md): --power / --target-effect analysis."
+    },
     "baseline": {
       "type": "object",
       "properties": {
@@ -1571,6 +1601,12 @@
         },
         "precision": {
           "$ref": "#/$defs/precision"
+        },
+        "power": {
+          "$ref": "#/$defs/power"
+        },
+        "precision_metrics": {
+          "$ref": "#/$defs/precision_metrics"
         },
         "baseline": {
           "$ref": "#/$defs/baseline"

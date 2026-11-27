@@ -254,3 +254,62 @@ fn the_sequential_method_needs_more_runs_on_noisy_commands() {
     );
     assert!(sequential > fixed, "{sequential} vs {fixed}");
 }
+
+#[test]
+fn metrics_are_reported_and_a_metric_that_cannot_be_measured_is_not_waited_for() {
+    // --debug-mode: constant wall time and memory, no energy sensor
+    let r = result(&[
+        "--debug-mode",
+        "--target-precision=1%",
+        "--target-precision-metrics=wall,memory,energy",
+        "sleep 0.1",
+    ]);
+    let metrics = r["precision_metrics"].as_array().unwrap();
+    assert_eq!(metrics.len(), 3);
+    assert_eq!(metrics[0]["metric"], "wall");
+    assert_eq!(metrics[0]["met"], true);
+    assert_eq!(metrics[0]["reached"], 0.0);
+    assert_eq!(metrics[1]["metric"], "memory");
+    assert_eq!(metrics[1]["runs"], 10);
+    assert_eq!(metrics[2]["metric"], "energy");
+    assert_eq!(metrics[2]["runs"], 0);
+    assert_eq!(metrics[2]["met"], false);
+    // stops at --min-runs instead of waiting for energy until the time budget
+    assert_eq!(r["times"].as_array().unwrap().len(), 10);
+    // the single-metric field is unchanged
+    assert_eq!(r["precision"]["met"], true);
+}
+
+#[test]
+fn metrics_are_only_reported_when_requested() {
+    assert!(
+        result(&["--debug-mode", "--target-precision=1%", "sleep 0.1"])
+            .get("precision_metrics")
+            .is_none()
+    );
+}
+
+#[test]
+fn metrics_dedupe_and_reject_unknown_names() {
+    let r = result(&[
+        "--debug-mode",
+        "--target-precision=1%",
+        "--target-precision-metrics=memory,memory",
+        "sleep 0.1",
+    ]);
+    assert_eq!(r["precision_metrics"].as_array().unwrap().len(), 1);
+
+    perfratio()
+        .args([
+            "--target-precision=1%",
+            "--target-precision-metrics=wall,cpu",
+            "true",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--target-precision-metrics"));
+    perfratio()
+        .args(["--target-precision-metrics=wall", "true"])
+        .assert()
+        .failure();
+}

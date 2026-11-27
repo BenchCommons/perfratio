@@ -307,6 +307,22 @@ impl ExecutorKind {
 }
 
 impl Options {
+    /// Whether the number of runs depends on the data: `--target-precision`,
+    /// `--duration` or `--target-effect` as a stopping rule.
+    pub fn adaptive_runs(&self) -> bool {
+        self.target_precision.is_some() || self.duration.is_some() || self.target_effect_stops
+    }
+
+    /// `--power` (default 0.8)
+    pub fn power_level(&self) -> f64 {
+        self.power.unwrap_or(DEFAULT_POWER)
+    }
+
+    /// Whether the power analysis is reported (`--power` or `--target-effect`)
+    pub fn reports_power(&self) -> bool {
+        self.power.is_some() || self.target_effect.is_some()
+    }
+
     /// The executor kind of command `number` (the reference, if any, is 0).
     pub fn executor_kind_for(&self, number: usize) -> &ExecutorKind {
         match self.executor_kinds.as_slice() {
@@ -358,6 +374,15 @@ pub struct Options {
     pub target_precision: Option<f64>,
     /// `--target-precision-method`: the rule that decides the interval is narrow enough
     pub target_precision_method: crate::stats::sequential::StoppingRule,
+    /// `--target-precision-metrics`: metrics that must each reach the target
+    /// (empty: the wall-clock time only) (#369)
+    pub target_precision_metrics: Vec<PrecisionMetric>,
+    /// `--power`: probability of detecting the effect (#367)
+    pub power: Option<f64>,
+    /// `--target-effect`: smallest relative change of the mean to detect (#367)
+    pub target_effect: Option<f64>,
+    /// `--target-effect` also stops the runs (no `--runs`, no `--duration`)
+    pub target_effect_stops: bool,
 
     /// `--estimator`, `--confidence-level`, `--significance-level`,
     /// `--bootstrap-resamples` and `--seed` (#320)
@@ -559,6 +584,10 @@ impl Default for Options {
             min_benchmarking_time: 3.0,
             target_precision: None,
             target_precision_method: Default::default(),
+            target_precision_metrics: Vec::new(),
+            power: None,
+            target_effect: None,
+            target_effect_stops: false,
             stat_settings: Default::default(),
             duration: None,
             max_benchmarking_time: 60.0,
@@ -625,6 +654,18 @@ impl Default for Options {
         }
     }
 }
+
+/// A metric that `--target-precision-metrics` waits for (#369)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PrecisionMetric {
+    Wall,
+    Memory,
+    Energy,
+}
+
+/// `--power` when only `--target-effect` is given
+pub const DEFAULT_POWER: f64 = 0.8;
 
 impl Options {
     #[cfg(feature = "cli")]
@@ -870,6 +911,55 @@ impl Options {
                 .filter(|pct| pct.is_finite() && *pct > 0.0)
                 .ok_or_else(|| OptionsError::InvalidTargetPrecision(value.clone()))?;
             options.target_precision = Some(pct / 100.0);
+        }
+        if let Some(value) = matches.get_one::<String>("target-precision-metrics") {
+            let mut metrics = Vec::new();
+            for name in value.split(',').map(str::trim) {
+                let metric = match name {
+                    "wall" => PrecisionMetric::Wall,
+                    "memory" => PrecisionMetric::Memory,
+                    "energy" => PrecisionMetric::Energy,
+                    _ => {
+                        return Err(OptionsError::InvalidStatistics(format!(
+                            "Invalid '--target-precision-metrics' entry '{name}': expected a comma-separated list of wall, memory, energy"
+                        )))
+                    }
+                };
+                if !metrics.contains(&metric) {
+                    metrics.push(metric);
+                }
+            }
+            options.target_precision_metrics = metrics;
+        }
+        if let Some(value) = matches.get_one::<String>("power") {
+            let power = value
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|p| *p > 0.0 && *p < 1.0)
+                .ok_or_else(|| {
+                    OptionsError::InvalidStatistics(format!(
+                        "Invalid '--power' '{value}': expected a number between 0 and 1, such as 0.8"
+                    ))
+                })?;
+            options.power = Some(power);
+        }
+        if let Some(value) = matches.get_one::<String>("target-effect") {
+            let pct = value
+                .trim()
+                .trim_end_matches('%')
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|pct| pct.is_finite() && *pct > 0.0)
+                .ok_or_else(|| {
+                    OptionsError::InvalidStatistics(format!(
+                        "Invalid '--target-effect' '{value}': expected a positive percentage such as '3%'"
+                    ))
+                })?;
+            options.target_effect = Some(pct / 100.0);
+            options.target_effect_stops =
+                options.duration.is_none() && matches.get_one::<String>("runs").is_none();
         }
         options.stat_settings = parse_stat_settings(matches)?;
         if matches

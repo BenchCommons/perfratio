@@ -16,7 +16,7 @@ use crate::energy::{
 use crate::metric::Metric;
 use crate::options::{
     CmdFailureAction, CommandOutputPolicy, ExecutorKind, FirstRunPolicy, Options,
-    OutputStyleOption, RunBounds,
+    OutputStyleOption, PrecisionMetric, RunBounds,
 };
 use crate::outlier_detection::{
     detect_outliers, modified_zscores, outlier_indices, OutlierReport, MAX_DISCARD_FRACTION,
@@ -575,9 +575,10 @@ impl<'a> BenchmarkRunner<'a> {
                 || !whole_cycles
                 || self.times_real.iter().sum::<Second>() < duration - 1e-9; // float sum slack
         }
-        let Some(target) = self.options.target_precision else {
+        let precision_target = self.options.target_precision;
+        if precision_target.is_none() && !self.options.target_effect_stops {
             return false;
-        };
+        }
         let runs = self.measured_times().len() as u64;
         if self.options.run_bounds.max.is_some_and(|max| runs >= max) {
             return false;
@@ -589,8 +590,160 @@ impl<'a> BenchmarkRunner<'a> {
         if started.elapsed().as_secs_f64() >= budget {
             return false;
         }
-        self.precision_half_width(self.measured_times())
-            .is_none_or(|width| width > target)
+        if let Some(target) = precision_target {
+            if self.options.target_precision_metrics.is_empty() {
+                if self
+                    .precision_half_width(self.measured_times())
+                    .is_none_or(|width| width > target)
+                {
+                    return true;
+                }
+            } else if self.options.target_precision_metrics.iter().any(|&metric| {
+                // a metric without samples (no energy sensor) or without a positive
+                // mean (nothing to be relative to) cannot be waited for
+                self.metric_precision(metric)
+                    .is_some_and(|(n, width)| width.map_or(n < 2, |w| w > target))
+            }) {
+                return true;
+            }
+        }
+        self.options.target_effect_stops && !self.effect_runs_enough()
+    }
+
+    /// `--target-effect`: whether the runs made so far are enough to detect the
+    /// effect with `--power`, for the standard deviation seen so far.
+    fn effect_runs_enough(&self) -> bool {
+        let Some(effect) = self.options.target_effect else {
+            return true;
+        };
+        let times = self.measured_times();
+        let Some((mean, sd)) = mean_and_sd(times) else {
+            return false;
+        };
+        if mean <= 0.0 {
+            return false;
+        }
+        if sd == 0.0 {
+            return true;
+        }
+        crate::stats::power::enough_runs(
+            effect * mean / sd,
+            times.len() as f64,
+            crate::stats::settings::current().significance_level,
+            self.options.power_level(),
+        )
+    }
+
+    /// `--power` / `--target-effect`: the power analysis of the runs made.
+    fn power_analysis(&self) -> Option<benchmark_result::PowerAnalysis> {
+        if !self.options.reports_power() {
+            return None;
+        }
+        let times = self.measured_times();
+        let alpha = crate::stats::settings::current().significance_level;
+        let power = self.options.power_level();
+        let (mean, sd) = mean_and_sd(times).unwrap_or((f64::NAN, f64::NAN));
+        let usable = mean > 0.0 && sd.is_finite();
+        let minimum_detectable_effect = if usable && sd == 0.0 {
+            Some(0.0)
+        } else if usable {
+            crate::stats::power::minimum_detectable_d(times.len() as f64, alpha, power)
+                .map(|d| d * sd / mean)
+        } else {
+            None
+        };
+        let runs_needed = self.options.target_effect.and_then(|effect| {
+            if !usable {
+                None
+            } else if sd == 0.0 {
+                Some(2)
+            } else {
+                crate::stats::power::runs_needed(effect * mean / sd, alpha, power)
+            }
+        });
+        Some(benchmark_result::PowerAnalysis {
+            significance_level: alpha,
+            power,
+            runs: times.len(),
+            minimum_detectable_effect,
+            target_effect: self.options.target_effect,
+            runs_needed,
+            met: runs_needed.map(|needed| times.len() as u64 >= needed),
+            stopping_rule: self.options.target_effect_stops,
+        })
+    }
+
+    /// `--target-precision-metrics`: the values of `metric` that count (without
+    /// an excluded first run) and the half-width of the interval of their mean,
+    /// relative to the mean. `None` if the metric has no sample at all.
+    fn metric_precision(&self, metric: PrecisionMetric) -> Option<(usize, Option<f64>)> {
+        let skip = self.times_real.len() - self.measured_times().len();
+        let values: Vec<f64> = match metric {
+            PrecisionMetric::Wall => {
+                return Some((
+                    self.measured_times().len(),
+                    self.precision_half_width(self.measured_times()),
+                ))
+            }
+            PrecisionMetric::Memory => self
+                .memory_usage_byte
+                .iter()
+                .skip(skip)
+                .map(|&b| b as f64)
+                .collect(),
+            PrecisionMetric::Energy => self
+                .energy_measurements
+                .iter()
+                .skip(skip)
+                .flatten()
+                .copied()
+                .collect(),
+        };
+        if values.is_empty() {
+            return None;
+        }
+        let width = match self.options.target_precision_method {
+            crate::stats::sequential::StoppingRule::FixedCi => {
+                crate::stats::precision::relative_ci_half_width_with_baseline(&values, None, 0)
+            }
+            crate::stats::sequential::StoppingRule::ConfidenceSequence => {
+                crate::stats::sequential::relative_half_width(
+                    &values,
+                    crate::stats::settings::current().confidence_level,
+                )
+            }
+        };
+        Some((values.len(), width))
+    }
+
+    /// `--target-precision-metrics`: the precision reached by each listed metric
+    fn precision_metrics(&self) -> Option<Vec<benchmark_result::MetricPrecision>> {
+        let target = self.options.target_precision?;
+        if self.options.target_precision_metrics.is_empty() {
+            return None;
+        }
+        Some(
+            self.options
+                .target_precision_metrics
+                .iter()
+                .map(|&metric| {
+                    let (runs, reached) = match metric {
+                        PrecisionMetric::Wall => (
+                            self.times_real.len(),
+                            self.precision_half_width(&self.times_real),
+                        ),
+                        _ => self.metric_precision(metric).unwrap_or((0, None)),
+                    };
+                    benchmark_result::MetricPrecision {
+                        metric,
+                        target,
+                        reached,
+                        runs,
+                        met: reached.is_some_and(|r| r <= target),
+                    }
+                })
+                .collect(),
+        )
     }
 
     /// Relative half-width of the interval that `--target-precision-method` stops on:
@@ -1354,6 +1507,8 @@ impl<'a> BenchmarkRunner<'a> {
             .options
             .target_precision
             .map(|target| (target, self.precision_half_width(&self.times_real)));
+        let power_analysis = self.power_analysis();
+        let precision_metrics = self.precision_metrics();
         if let Some((target, reached)) = precision_reached {
             excluded.push(format!(
                 "±{} @{}%{}, target {}",
@@ -1806,6 +1961,10 @@ impl<'a> BenchmarkRunner<'a> {
 
                 if let Some(line) = hw_export.as_ref().and_then(|e| e.line.as_ref()) {
                     crate::outln!("  Counters (mean):    {}", line.dimmed());
+                }
+
+                if let Some(analysis) = &power_analysis {
+                    crate::outln!("  Power:              {}", analysis.summary().dimmed());
                 }
 
                 if let Some(export) = topdown_export.as_ref() {
@@ -2319,6 +2478,8 @@ impl<'a> BenchmarkRunner<'a> {
                 .options
                 .has_per_command_shells()
                 .then(|| self.options.executor_kind_for(self.number).name()),
+            power: power_analysis.clone(),
+            precision_metrics,
             precision: precision_reached.map(|(target, reached)| {
                 benchmark_result::PrecisionReached {
                     target,
@@ -2722,7 +2883,7 @@ impl<'a> Benchmark<'a> {
         // Gather statistics (perform the actual benchmark). With
         // --target-precision, the runs continue until the mean is precise
         // enough instead of stopping after the planned count.
-        let adaptive = self.options.target_precision.is_some() || self.options.duration.is_some();
+        let adaptive = self.options.adaptive_runs();
         let started = std::time::Instant::now();
         let mut i = 0;
         loop {
@@ -2866,6 +3027,15 @@ fn relative_spread(times: &[f64]) -> f64 {
         return 0.0;
     }
     (max(times) - min(times)) / median
+}
+
+/// Mean and sample standard deviation; `None` for fewer than 2 values.
+fn mean_and_sd(values: &[Second]) -> Option<(f64, f64)> {
+    if values.len() < 2 {
+        return None;
+    }
+    let m = mean(values);
+    Some((m, standard_deviation(values, Some(m))))
 }
 
 #[cfg(test)]
