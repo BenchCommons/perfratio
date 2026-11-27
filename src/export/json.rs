@@ -25,7 +25,7 @@ pub struct PrimaryMetricStats {
 }
 
 /// Version of the JSON output contract (`docs/specs/output-schema-contract.md`).
-pub const SCHEMA_VERSION: &str = "1.34";
+pub const SCHEMA_VERSION: &str = "1.35";
 
 #[derive(Serialize, Debug)]
 struct PerfratioSummary<'a> {
@@ -42,6 +42,9 @@ struct PerfratioSummary<'a> {
     /// Result of `--optimize` (object, or array with one entry per search)
     #[serde(skip_serializing_if = "Option::is_none")]
     optimize: Option<serde_json::Value>,
+    /// Empirical complexity fits of `--complexity` (new in 1.33, #374)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    complexity: Option<serde_json::Value>,
     /// Pareto analysis of `--pareto` (new in 1.16, #326)
     #[serde(skip_serializing_if = "Option::is_none")]
     pareto: Option<Analysis>,
@@ -141,6 +144,8 @@ pub struct JsonExporter {
     pub metadata: Option<ExportMetadata>,
     /// Result of `--optimize`, set once the search is done
     pub optimize: std::sync::Mutex<Option<serde_json::Value>>,
+    /// Result of `--complexity`
+    pub complexity: std::sync::Mutex<Option<serde_json::Value>>,
     /// Pareto analysis of the results being serialized
     pub pareto: std::sync::Mutex<Option<Analysis>>,
     /// Runner floor measured by `--calibrate`
@@ -253,6 +258,11 @@ impl Exporter for JsonExporter {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .clone(),
+            complexity: self
+                .complexity
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone(),
             pareto: self
                 .pareto
                 .lock()
@@ -269,6 +279,10 @@ impl Exporter for JsonExporter {
 
     fn set_optimize(&self, value: Option<&serde_json::Value>) {
         *self.optimize.lock().unwrap_or_else(|e| e.into_inner()) = value.cloned();
+    }
+
+    fn set_complexity(&self, value: Option<&serde_json::Value>) {
+        *self.complexity.lock().unwrap_or_else(|e| e.into_inner()) = value.cloned();
     }
 
     fn set_compare(&self, value: Option<&serde_json::Value>) {

@@ -86,6 +86,9 @@ trait Exporter {
     /// The `perfratio.compare` object (`--budget`); only the JSON export has a place for it
     fn set_compare(&self, _value: Option<&serde_json::Value>) {}
 
+    /// The `complexity` array (`--complexity`); only the JSON export has a place for it
+    fn set_complexity(&self, _value: Option<&serde_json::Value>) {}
+
     /// The Pareto analysis (`--pareto`) of the results about to be serialized
     fn set_pareto(&self, _analysis: Option<(&ParetoConfig, &Analysis)>) {}
 
@@ -316,6 +319,13 @@ impl ExportManager {
     pub fn set_optimize(&self, value: Option<serde_json::Value>) {
         for e in &self.exporters {
             e.exporter.set_optimize(value.as_ref());
+        }
+    }
+
+    /// Hand the result of `--complexity` to the exporters that include it.
+    pub fn set_complexity(&self, value: Option<serde_json::Value>) {
+        for e in &self.exporters {
+            e.exporter.set_complexity(value.as_ref());
         }
     }
 

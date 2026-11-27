@@ -104,6 +104,17 @@ const CASES: &[(&str, &[&str])] = &[
         "balanced order",
         &["--runs=3", "--schedule=balanced", "sleep 0.1", "sleep 0.2"],
     ),
+    (
+        "complexity",
+        &[
+            "--runs=2",
+            "--complexity=n",
+            "-L",
+            "n",
+            "1,2,4,8",
+            "sleep {n}",
+        ],
+    ),
     ("single run", &["--runs=1", "sleep 0.1"]),
     ("several commands", &["--runs=3", "sleep 0.1", "sleep 0.2"]),
     ("labels", &["--runs=2", "--label", "lang=rust", "sleep 0.1"]),
