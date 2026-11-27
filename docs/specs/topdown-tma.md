@@ -21,8 +21,8 @@ the bottleneck class. Level 1 only; deeper levels are a follow-up.
 --topdown     Collect Top-down Microarchitecture Analysis level 1 (Linux, x86_64 only).
 ```
 Honors `--scope` (not `split`). Not an implicit part of `--counters`. Non-Linux, or a non-x86_64
-host: error `--topdown is only supported on Linux x86_64`. Unsupported CPU/kernel/VM: warn once,
-continue, `measurements.topdown = "unavailable"`.
+host (#411): warn once, continue, `measurements.topdown = "unavailable"` with reason
+`unsupported_platform` (no longer an error). Unsupported CPU/kernel/VM: same, with the matching reason.
 
 ### Support matrix (corrections to the issue text)
 | CPU | Method | Status |
@@ -161,8 +161,8 @@ aligned with `times`. `schemaVersion`: MINOR. Import round-trips the keys.
 - Delta table: one row per class. A significant change gets the marker `Δ`, never improvement or
   regression, because a class moving is not better or worse by itself. The `-> (-34.2 pp)` line
   is not implemented; the table shows relative change.
-- `--topdown` outside Linux x86_64 is an error (`--topdown is only supported on Linux x86_64`),
-  except with `--debug-mode`, which simulates 25 / 12.5 / 12.5 / 50 percent.
+- `--topdown` outside Linux x86_64 warns and reports `unavailable` / `unsupported_platform`
+  (#411; it was an error before). `--debug-mode` simulates 25 / 12.5 / 12.5 / 50 percent.
 
 ## Edge cases
 - VM: `slots` is typically not exposed to guests; reported `no_pmu`/`unsupported_kernel`. The
