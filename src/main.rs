@@ -227,6 +227,7 @@ fn run() -> Result<()> {
     scheduler.add_imported_results(imported_results);
     scheduler.run_benchmarks()?;
     scheduler.print_relative_speed_comparison();
+    scheduler.print_paired_analysis();
     scheduler.print_below_floor_warning();
     scheduler.print_raw_ratios();
     if cli_arguments.get_flag("delta-table") {
