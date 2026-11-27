@@ -177,6 +177,8 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR VAR
 .IR MIN
 .IR MAX ]
+.RB [ \-\-complexity
+.IR VAR ]
 .RB [ \-\-optimize
 .IR VAR
 .IR MIN
@@ -424,6 +426,10 @@ Execute CMD after the completion of all benchmarking runs for each individual co
 \fB\-P\fR, \fB\-\-parameter\-scan\fR \fIVAR\fP \fIMIN\fP \fIMAX\fP
 .IP
 Perform benchmark runs for each value in the range MIN..MAX. Replaces the string '{VAR}' in each command by the current parameter value. The option can be specified multiple times and combined with \fB\-\-parameter\-list\fR or \fB\-\-parameter\-file\fR to run benchmarks for all possible parameter combinations.
+.HP
+\fB\-\-complexity\fR \fIVAR\fP
+.IP
+Fit O(1), O(log n), O(n), O(n log n), O(n^2) and O(n^3) by least squares to the results over the values of the parameter VAR (at least 3 positive numeric values per command) and report the best model with coefficient, RMS and R\(u2 for wall time, and for memory, energy and instructions when available. An empirical fit, not a proof of the complexity. Exported as \fBcomplexity\fR in the JSON file. Conflicts with \fB\-\-optimize\fR.
 .HP
 \fB\-\-optimize\fR \fIVAR\fP \fIMIN\fP \fIMAX\fP
 .IP

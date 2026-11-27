@@ -60,6 +60,8 @@ pub mod command;
 #[doc(hidden)]
 pub mod compare;
 #[doc(hidden)]
+pub mod complexity;
+#[doc(hidden)]
 pub mod cooldown;
 #[doc(hidden)]
 pub mod counters;
@@ -84,7 +86,6 @@ pub mod import;
 pub mod metric;
 #[doc(hidden)]
 pub mod metric_registry;
-#[doc(hidden)]
 pub mod optimize;
 #[doc(hidden)]
 pub mod options;

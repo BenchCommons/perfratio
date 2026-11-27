@@ -6,7 +6,7 @@
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.32",
+      "const": "1.33",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -41,6 +41,13 @@
       "items": {
         "$ref": "#/$defs/result"
       }
+    },
+    "complexity": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/complexity"
+      },
+      "description": "Present with --complexity: one empirical growth-model fit per command template (docs/specs/complexity-fit.md)."
     }
   },
   "required": [
@@ -501,12 +508,38 @@
               "type": "object",
               "description": "New in 1.32 (#321): the multiple-comparison correction behind p_value_adjusted and significance. Present only with --correction other than none.",
               "properties": {
-                "method": { "type": "string", "enum": ["bonferroni", "holm", "bh"] },
-                "family": { "type": "string", "enum": ["reference", "all-pairs"] },
-                "family_size": { "type": "integer", "minimum": 0, "description": "Number of comparisons with a defined p-value in the family." },
-                "alpha": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 }
+                "method": {
+                  "type": "string",
+                  "enum": [
+                    "bonferroni",
+                    "holm",
+                    "bh"
+                  ]
+                },
+                "family": {
+                  "type": "string",
+                  "enum": [
+                    "reference",
+                    "all-pairs"
+                  ]
+                },
+                "family_size": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Number of comparisons with a defined p-value in the family."
+                },
+                "alpha": {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "exclusiveMaximum": 1
+                }
               },
-              "required": ["method", "family", "family_size", "alpha"]
+              "required": [
+                "method",
+                "family",
+                "family_size",
+                "alpha"
+              ]
             }
           },
           "required": [
@@ -2096,6 +2129,123 @@
         "kind",
         "status",
         "fields"
+      ]
+    },
+    "complexity": {
+      "type": "object",
+      "properties": {
+        "parameter": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string",
+          "description": "The command with {VAR} in place of the value."
+        },
+        "fixed": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "description": "Keyed by wall, memory, energy, instructions.",
+          "additionalProperties": {
+            "$ref": "#/$defs/complexity_metric"
+          }
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "parameter",
+        "command",
+        "values",
+        "metrics",
+        "note"
+      ]
+    },
+    "complexity_metric": {
+      "type": "object",
+      "properties": {
+        "unit": {
+          "type": "string"
+        },
+        "best": {
+          "enum": [
+            "O(1)",
+            "O(log n)",
+            "O(n)",
+            "O(n log n)",
+            "O(n^2)",
+            "O(n^3)"
+          ]
+        },
+        "coefficient": {
+          "type": "number"
+        },
+        "rms": {
+          "type": "number"
+        },
+        "rms_relative": {
+          "type": "number"
+        },
+        "r2": {
+          "type": "number"
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "model": {
+                "enum": [
+                  "O(1)",
+                  "O(log n)",
+                  "O(n)",
+                  "O(n log n)",
+                  "O(n^2)",
+                  "O(n^3)"
+                ]
+              },
+              "coefficient": {
+                "type": "number"
+              },
+              "rms": {
+                "type": "number"
+              },
+              "rms_relative": {
+                "type": "number"
+              },
+              "r2": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "model",
+              "coefficient",
+              "rms",
+              "rms_relative",
+              "r2"
+            ]
+          }
+        }
+      },
+      "required": [
+        "unit",
+        "best",
+        "coefficient",
+        "rms",
+        "rms_relative",
+        "r2",
+        "models"
       ]
     }
   }

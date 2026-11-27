@@ -778,6 +778,28 @@ impl<'a> Scheduler<'a> {
         }
     }
 
+    /// `--complexity`: fit and print the growth models, and hand them to the JSON export.
+    pub fn print_complexity(&self) {
+        let Some(var) = &self.options.complexity else {
+            return;
+        };
+        let (reports, warnings) = crate::complexity::analyze(var, &self.results);
+        for warning in warnings {
+            eprintln!("{} {warning}", colors::yellow("Warning:"));
+        }
+        self.export_manager.set_complexity(
+            (!reports.is_empty())
+                .then(|| serde_json::to_value(&reports).ok())
+                .flatten(),
+        );
+        if self.options.output_style != OutputStyleOption::Disabled {
+            let text = crate::complexity::terminal(&reports);
+            if !text.is_empty() {
+                crate::out!("{text}");
+            }
+        }
+    }
+
     pub fn print_relative_speed_comparison(&self) {
         if self.options.output_style == OutputStyleOption::Disabled {
             return;
