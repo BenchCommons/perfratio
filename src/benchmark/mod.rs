@@ -924,6 +924,33 @@ impl<'a> BenchmarkRunner<'a> {
                 self.custom_metrics.entry(key).or_default().push(value);
             }
         }
+        self.push_derived_metrics();
+    }
+
+    /// Efficiency metrics (#373) of the run that was just recorded
+    fn push_derived_metrics(&mut self) {
+        let Some(&time) = self.times_real.last() else {
+            return;
+        };
+        let counter = |metric: crate::metric::Metric| -> Option<f64> {
+            let i = self.counter_index(metric)?;
+            let reading = self.hw_counters.last()?.as_ref()?;
+            reading.get(i).copied().flatten().map(|c| c.value as f64)
+        };
+        let run = crate::efficiency::RunInputs {
+            time,
+            energy: self.energy_measurements.last().copied().flatten(),
+            instructions: counter(crate::metric::Metric::Instructions),
+            cycles: counter(crate::metric::Metric::Cycles),
+        };
+        crate::efficiency::declare_all(self.options.work.as_ref());
+        let runs = self.times_real.len();
+        for (name, value) in crate::efficiency::derive_run(&run, self.options.work.as_ref()) {
+            let series = self.custom_metrics.entry(name.to_string()).or_default();
+            // a run lacking inputs of an earlier one keeps the series aligned with `times`
+            series.resize(runs - 1, None);
+            series.push(value);
+        }
     }
 
     /// Names of the region-scoped metrics collected under `--region-scope`.
@@ -1119,6 +1146,13 @@ impl<'a> BenchmarkRunner<'a> {
             let values = self.custom_metrics.get(name).map(Vec::as_slice);
             let values = values.unwrap_or_default();
             let missing = values.iter().filter(|v| v.is_none()).count();
+            if (values.is_empty() || missing == values.len()) && crate::efficiency::is_derived(name)
+            {
+                bail!(
+                    "'--metric custom:{name}' could not be computed: {}",
+                    crate::efficiency::requirement(name)
+                );
+            }
             if values.is_empty() || missing == values.len() {
                 bail!(
                     "'--metric custom:{name}' requires a value for every run, but no run produced \

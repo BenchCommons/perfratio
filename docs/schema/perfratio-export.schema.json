@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.35 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.36 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.35",
+      "const": "1.36",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -507,13 +507,13 @@
             "noise_threshold": {
               "type": "number",
               "minimum": 0,
-              "description": "New in 1.35 (#323): --noise-threshold as a fraction (0.05 = 5%). Present only when set."
+              "description": "New in 1.36 (#323): --noise-threshold as a fraction (0.05 = 5%). Present only when set."
             },
             "equivalence_margin": {
               "type": "number",
               "exclusiveMinimum": 0,
               "exclusiveMaximum": 1,
-              "description": "New in 1.35 (#323): --equivalence-margin as a fraction. Present only when set."
+              "description": "New in 1.36 (#323): --equivalence-margin as a fraction. Present only when set."
             },
             "correction": {
               "type": "object",
@@ -1280,7 +1280,7 @@
         },
         "effect": {
           "type": "object",
-          "description": "New in 1.35 (#323): the change relative to the reference with its interval at statistics.confidence_level. Present only with --noise-threshold or --equivalence-margin, and when the comparison has per-run times.",
+          "description": "New in 1.36 (#323): the change relative to the reference with its interval at statistics.confidence_level. Present only with --noise-threshold or --equivalence-margin, and when the comparison has per-run times.",
           "properties": {
             "relative_change": { "type": "number", "description": "other / reference - 1 of the estimator (0.05 = 5% slower)." },
             "ci_low": { "type": "number" },
@@ -1301,13 +1301,13 @@
         "classification": {
           "type": "string",
           "enum": ["faster", "slower", "equivalent", "inconclusive", "within_noise"],
-          "description": "New in 1.35 (#323): closed enum; present together with effect."
+          "description": "New in 1.36 (#323): closed enum; present together with effect."
         },
         "equivalence_p_value": {
           "type": "number",
           "minimum": 0,
           "maximum": 1,
-          "description": "New in 1.35 (#323): p-value of the equivalence test (TOST); only with --equivalence-margin and the mean estimator."
+          "description": "New in 1.36 (#323): p-value of the equivalence test (TOST); only with --equivalence-margin and the mean estimator."
         },
         "p_value_adjusted": {
           "type": "number",
