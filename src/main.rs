@@ -255,6 +255,9 @@ fn run() -> Result<()> {
 
     // `--collector` and `--collector-plugin`: fail before the first run if one cannot start
     if let Some(tool) = options.valgrind {
+        if let Some(notice) = perfratio::valgrind::binary_override_notice() {
+            eprintln!("{} {notice}", output::colors::yellow("Note:"));
+        }
         perfratio::valgrind::check_available()?;
         if options
             .executor_kinds

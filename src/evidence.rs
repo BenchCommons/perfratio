@@ -175,12 +175,28 @@ pub fn prepare(dir: &Path) -> Result<()> {
             );
         }
     }
-    fs::create_dir_all(dir).with_context(|| {
+    create_private_dir(dir).with_context(|| {
         format!(
             "Could not create the evidence directory '{}'",
             dir.display()
         )
     })
+}
+
+/// Creates `dir` (and missing parents with the default mode). A new `dir` is private (0700 on
+/// Unix) because the bundle holds the command line and the environment. An existing empty
+/// directory keeps its mode.
+fn create_private_dir(dir: &Path) -> std::io::Result<()> {
+    if dir.is_dir() {
+        return Ok(());
+    }
+    if let Some(parent) = dir.parent().filter(|p| !p.as_os_str().is_empty()) {
+        fs::create_dir_all(parent)?;
+    }
+    let mut builder = fs::DirBuilder::new();
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+    builder.create(dir)
 }
 
 /// Write the bundle for the JSON export `results_json` into `dir`
@@ -446,6 +462,17 @@ fn verify_raw(dir: &Path) -> Verification {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn new_evidence_directory_is_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("a").join("bundle");
+        prepare(&dir).unwrap();
+        let mode = fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o700);
+    }
 
     #[test]
     fn samples_have_one_line_per_run() {
