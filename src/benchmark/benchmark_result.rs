@@ -210,6 +210,19 @@ pub struct BenchmarkResult {
     /// Mean and spread of the topdown classes and the largest stall class
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub topdown_summary: Option<crate::topdown::TopdownSummary>,
+    /// Memory bandwidth per run (`--membw`), aligned with `times`; see
+    /// `docs/specs/membw-numa.md`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub membw: Option<crate::membw::BandwidthSeries>,
+
+    /// Summary of read, write and total bandwidth in bytes per second
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub membw_summary: Option<BTreeMap<String, MetricSummary>>,
+
+    /// NUMA placement per run (`--membw`): resident bytes per node
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub numa: Option<crate::membw::NumaSeries>,
+
     /// Per-run floating-point breakdown (`--simd`), aligned with `times`; see
     /// `docs/specs/simd-breakdown.md`
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -310,6 +323,15 @@ pub struct BenchmarkResult {
     /// keep measuring the whole process.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub regions: Option<Vec<RegionResult>>,
+
+    /// `--persistent`: `persistent` when the command ran as one long-lived process
+    /// (`docs/specs/persistent-mode.md`). Absent otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+
+    /// `--persistent`: warm-up phase and steady-state statistics of the iterations
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iterations: Option<crate::persistent::IterationsReport>,
 
     /// `--concurrency N` (only when N > 1): instances started simultaneously per
     /// run. With it present, `times` holds the makespan of each run.

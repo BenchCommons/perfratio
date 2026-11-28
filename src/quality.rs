@@ -587,6 +587,16 @@ fn environment_stability(result: &BenchmarkResult) -> Check {
                 facts.push(format!("temperature {:.0} to {:.0} °C", t.start_c, t.end_c));
             }
         }
+        if let Some(p) = &i.thermal_pressure {
+            if p.max > crate::thermal::PressureLevel::Nominal {
+                warnings.push(format!(
+                    "the OS reported '{}' thermal pressure during the benchmark",
+                    p.max.as_str()
+                ));
+            } else {
+                facts.push("thermal pressure nominal".to_string());
+            }
+        }
     }
 
     let frequencies: Vec<f64> = result

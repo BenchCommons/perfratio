@@ -79,7 +79,7 @@ const MAX_ECHO: usize = 64;
 
 /// Escape control characters (CWE-150) and cut text from the measured program
 /// to [`MAX_ECHO`] characters, for use in error messages.
-fn shorten(s: &str) -> String {
+pub(crate) fn shorten(s: &str) -> String {
     let escaped = escape_control_chars(s);
     let mut it = escaped.chars();
     let head: String = it.by_ref().take(MAX_ECHO).collect();

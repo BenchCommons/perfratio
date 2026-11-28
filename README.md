@@ -85,6 +85,7 @@ Common options:
 | `-s, --setup <CMD>` / `-c, --cleanup <CMD>` | Run CMD once before or after all runs of a command. |
 | `-P`, `-L`, `-F` | Parameter scans over a range, a list or a file. |
 | `--optimize <VAR> <MIN> <MAX>` | Search a parameter for the value that minimizes `--metric` (golden-section search, assumes a unimodal metric; `--optimize-budget <N>` caps the evaluations; `-D <DELTA>` allows fractional values; the best candidates are re-run once and pooled, `--optimize-confirm <N>`; the HTML report marks the best value). |
+| `--optimize-algorithm golden\|random\|halving\|bayes`, `--optimize-validate` | Give `--optimize` several times to search several integer variables at once (default `random`), or pick successive halving or Bayesian optimization. `--optimize-validate` benchmarks the winner and runner-up again in a fresh round (`docs/specs/optimize-search.md`). |
 | `-e, --export <FILE>` | Export results. The format follows the file extension. |
 | `--deep-stats` | Bootstrapped confidence intervals and hypothesis tests. |
 | `--estimator <mean\|median\|pNN>`, `--confidence-level`, `--significance-level`, `--bootstrap-resamples`, `--seed` | Choose the central value behind ranking, ratios and tests (default `mean`), and the levels and bootstrap settings of intervals and tests (see `docs/specs/statistics-settings.md`). |
@@ -106,6 +107,8 @@ page faults and I/O operation counts only; the other counters show as `n/a` ([sp
 `scripts/perf_parity.py` checks the counters against `perf stat` on bare-metal Linux ([spec](docs/specs/perf-parity-harness.md)).
 `--topdown` (Linux x86_64; Intel Ice Lake or later, AMD Zen 4 or later) adds Top-down level 1: the share of pipeline slots that retire work or are lost to bad speculation, frontend stalls or backend stalls. The largest stall class is a hypothesis about the bottleneck, not a diagnosis; see `docs/specs/topdown-tma.md`.
 `--simd` (Linux, Intel and AMD Zen 4/5) adds a floating-point breakdown (scalar, 128-, 256- and 512-bit) and a vectorization ratio per run; see `docs/specs/simd-breakdown.md`.
+
+`--membw` (Linux) adds memory bandwidth (Intel uncore IMC, bare metal) and the resident bytes per NUMA node of the benchmarked process; the NUMA topology is always in `perfratio.environment`. See `docs/specs/membw-numa.md`.
 
 **Energy.** `-E, --energy` measures energy in joules and average power in watts. It reads RAPL
 counters through Linux powercap sysfs, so it needs **bare-metal Linux with a readable
@@ -194,13 +197,24 @@ request comment. A GitHub Actions example is in [doc/ci.md](doc/ci.md).
 
 `--verdict-json <FILE>` writes a compact verdict for scripts and agents: per command and metric `improved`, `regressed`, `unchanged`, `equivalent` or `inconclusive` with the change, its confidence interval and the p-value, an overall `improved`, `regressed`, `trade_off`, `unchanged` or `inconclusive`, and the result of `--budget` ([spec](docs/specs/verdict-json.md), schema `docs/schema/verdict.schema.json`). An MCP server is not built yet; the open questions are in the spec.
 
-Every benchmark also gets a measurement quality report (`results[].quality` in the JSON, a summary in the terminal when a check warns or fails): sample sufficiency, CI precision, outliers, trend, clusters, counter and energy coverage, workload validation. `--fail-on-quality with_caveats` exits with code 5 if a measurement is `unreliable`, next to `--fail-if-regressed` ([spec](docs/specs/measurement-quality.md)). Exports carry an environment block and a fingerprint (`perfratio.environment_fingerprint`); `--compare` and `--import-json` warn when the hardware class differs, `--meta git` records the commit ([spec](docs/specs/environment-fingerprint.md)). A command within the runner floor (measured at start with a trivial command, `--calibrate`) is flagged as below resolution, `--below-floor fail` exits with code 6 ([spec](docs/specs/measurement-floor.md)). `--evidence DIR` writes a hashed bundle (results, every sample, environment, calibration, validation, quality, command line) and `perfratio --verify-evidence DIR` checks it ([spec](docs/specs/evidence-bundle.md)). Cgroup throttling and thermal readings during the runs are reported as `interference` and a quality check; `--cooldown` waits before every run ([spec](docs/specs/cgroup-thermal.md)).
+Every benchmark also gets a measurement quality report (`results[].quality` in the JSON, a summary in the terminal when a check warns or fails): sample sufficiency, CI precision, outliers, trend, clusters, counter and energy coverage, workload validation. `--fail-on-quality with_caveats` exits with code 5 if a measurement is `unreliable`, next to `--fail-if-regressed` ([spec](docs/specs/measurement-quality.md)). Exports carry an environment block and a fingerprint (`perfratio.environment_fingerprint`); `--compare` and `--import-json` warn when the hardware class differs, `--meta git` records the commit ([spec](docs/specs/environment-fingerprint.md)). A command within the runner floor (measured at start with a trivial command, `--calibrate`) is flagged as below resolution, `--below-floor fail` exits with code 6 ([spec](docs/specs/measurement-floor.md)). `--evidence DIR` writes a hashed bundle (results, every sample, environment, calibration, validation, quality, command line) and `perfratio --verify-evidence DIR` checks it ([spec](docs/specs/evidence-bundle.md)). Cgroup throttling and thermal readings during the runs (on macOS the thermal pressure level, [spec](docs/specs/thermal-macos-windows.md)) are reported as `interference` and a quality check; `--cooldown` waits before every run ([spec](docs/specs/cgroup-thermal.md)).
+
+Statistics and analysis flags, one line each:
+
+- `--paired` pairs the runs of one round of an interleaved schedule and reports the mean difference against the reference with a paired t-test; `--ci-method hierarchical` handles runs that share a process or worker ([spec](docs/specs/hierarchical-paired.md)).
+- `--roofline` places each command on the roofline (arithmetic intensity against compute and memory roofs), Linux x86_64 only ([spec](docs/specs/roofline.md)).
+- `--pareto-significance` and `--pareto-probability` make the `--pareto` frontier count only significant differences, and report per command the bootstrap probability of not being dominated ([spec](docs/specs/pareto.md)).
+- `--power` and `--target-effect` report the smallest change the runs can detect and the runs needed for a target effect; with `--target-effect` and no `--runs`, it also decides when to stop ([spec](docs/specs/statistical-power.md)).
+- `--list-events` lists the built-in and PMU events that `--counters` accepts, including raw `raw:rXXXX` and `pmu/event=.../` syntax, Linux only ([spec](docs/specs/raw-pmu-events.md)).
+- `--region-scope` reports CPU time, energy and counters for the code inside `--region` regions only ([spec](docs/specs/region-scope.md)).
+
+The second binary `perfratio-mcp` is a Model Context Protocol server over stdio for agents. It offers the tools `capabilities`, `run_benchmark` and `compare`, and `compare` returns the `--verdict-json` document, so an agent needs no shell or terminal parsing. See [docs/specs/mcp-server.md](docs/specs/mcp-server.md) for the trust model and limits.
 
 ## JSON export and the `schemaVersion` contract
 
 `--export-json <FILE>` (or `-e results.json`) writes the summary statistics and every run's
 timings. perfratio owns this output, and consumers such as `tools-benchmark` read it.
-The current version is `"1.44"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested.
+The current version is `"1.48"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested.
 
 **Secrets.** The export records the commands and the full command line exactly as typed
 (`results[].command`, `perfratio.command_line`), plus an environment block, and `--evidence`

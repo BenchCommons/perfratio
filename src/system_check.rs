@@ -458,8 +458,23 @@ fn macos_checks(cpus: usize) -> Vec<Check> {
             .with_hint("let the machine cool down, or improve cooling"),
         );
     }
+    if let Some(level) = crate::thermal::pressure_level(Path::new("/")) {
+        checks.push(pressure_check(level));
+    }
 
     checks
+}
+
+/// The coarse macOS thermal pressure level (no temperature without root)
+#[cfg(any(target_os = "macos", test))]
+fn pressure_check(level: crate::thermal::PressureLevel) -> Check {
+    let nominal = level == crate::thermal::PressureLevel::Nominal;
+    Check::new(
+        "Thermal pressure",
+        if nominal { Status::Ok } else { Status::Warn },
+        level.as_str(),
+    )
+    .with_hint("let the machine cool down, or improve cooling")
 }
 
 /// `pmset -g batt`: "Now drawing from 'Battery Power'" / "'AC Power'".
@@ -818,6 +833,15 @@ mod tests {
         assert_eq!((ac.status, ac.detail.as_str()), (Status::Ok, "AC"));
         let battery = power_check_linux(&[supply("Mains", "0")]).unwrap();
         assert_eq!(battery.status, Status::Warn);
+    }
+
+    #[test]
+    fn thermal_pressure() {
+        use crate::thermal::PressureLevel;
+        let ok = pressure_check(PressureLevel::Nominal);
+        assert_eq!(ok.status, Status::Ok);
+        assert_eq!(ok.detail, "nominal");
+        assert_eq!(pressure_check(PressureLevel::Heavy).status, Status::Warn);
     }
 
     #[test]

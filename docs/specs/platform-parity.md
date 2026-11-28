@@ -1,8 +1,7 @@
 # Spec: Platform parity matrix (#291)
 
 ## Status
-Documentation plus three small fixes (see "Gaps fixed here"). No change to the JSON export,
-so `SCHEMA_VERSION` stays at 1.36.
+Documentation plus three small fixes (see "Gaps fixed here"). No change to the JSON export.
 
 ## Problem / Motivation
 References: #291, #240, #295, #293, #298.
@@ -14,7 +13,7 @@ issue is out of date: the energy, `--resource-usage`, `--affinity`, `--priority 
 reason in the JSON), and lists what is still missing.
 
 ## How this was derived
-- Code: `cfg(target_os)` modules and `src/cli.rs` help on `master` (ef49a5e).
+- Code: `cfg(target_os)` modules and `src/cli.rs` help on `master`.
 - **macOS column: verified by running the binary** on an Apple M4, macOS 27.2.1, as a
   non-root user. Commands and results are in the matrix.
 - **Linux and Windows columns: read from the code only.** Not run for this spec. The Windows
@@ -32,11 +31,16 @@ rejected or ignored. "Warning" is a line on stderr; "reason" is
 |---|---|---|---|
 | Wall time, user/system CPU time | yes | yes | yes |
 | Peak memory | yes | yes | partial: main process only (`GetProcessMemoryInfo`), not children of an intermediate shell |
-| `--resource-usage` | yes | yes (ctx switches, faults, block I/O) | partial: page faults and I/O operation counts; context switches and major faults omitted from JSON (schema 1.3), shown as `n/a` |
+| `--resource-usage` | yes | yes (ctx switches, faults, block I/O) | partial: page faults and I/O operation counts; context switches and major faults omitted from JSON, shown as `n/a` |
 | `--energy` | yes: `sysfs_powercap`, else `perf_pmu`; bare metal only | partial: `ioreport`, Apple Silicon only. On the test machine: `energy: unavailable`, reason `ioreport_frozen` (CPU channels read 0 on macOS 27); warning and `Energy:` line name the cause | partial: `windows_emi`; needs an EMI device. Reasons `emi_not_found`, `emi_unreadable`. Not run on hardware |
 | `--energy-backend` of another OS | reason `unsupported_platform` | reason `unsupported_platform` (verified with `sysfs`) | reason `unsupported_platform` |
-| `--counters`, `--simd` | yes (PMU) | no: warning, JSON `counters: unavailable`, reason `unsupported_platform` (verified for `--counters`; `--simd` warns the same way) | no: same as macOS |
-| `--topdown` | yes, x86_64 only | no: **error**, `--topdown is only supported on Linux x86_64`; no JSON reason exists (verified) | no: same error |
+| `--counters` | yes (PMU) | partial (#420): `instructions` and `cycles` with `-N` on Apple Silicon (`proc_pid_rusage`); with a shell they are dropped with a warning that suggests `-N`; other events: no | no: warning, `counters: unavailable`, reason `unsupported_platform` |
+| `--simd` | yes (PMU) | no: warning, `simd: unavailable`, reason `unsupported_platform` | no: same as macOS |
+| `--topdown` | yes, x86_64 only | no: warning, `topdown: unavailable`, reason `unsupported_platform` (`counters-macos-windows.md`) | no: same as macOS |
+| Raw PMU events, `--list-events` (#394) | yes (sysfs `event_source`, `perf_event_open`) | no: `--list-events` prints the built-in names and "No PMUs found ... (only available on Linux)"; raw events warn as `--counters` does elsewhere | no: same as macOS |
+| `--gpu` NVML / AMD SMI (#401) | yes, via `dlopen`; not run on GPU hardware | no (from code): the loader is `cfg(unix)` but NVML and AMD SMI do not exist on macOS, so warning with reason `gpu_library_not_found` | no: `nvml.dll` loader not implemented, reason `unsupported_platform` |
+| `--energy-attribution cpu-time\|cgroup` (#402) | yes (`/proc/stat`, cgroup `cpu.stat`) | no: warning once, no estimate; measured energy unaffected | no: same as macOS |
+| `--power-meter COMMAND` (#402) | yes (`sh -c`) | yes (`sh -c`; from code) | yes (`cmd /C`; from code) |
 | `--thermal` (temperature sampling) | yes (sysfs) | no: warning (added here); `interference.thermal` absent | no: same |
 | `--cooldown until-temp=C` | yes | no: warning "no temperature sensor can be read on this host; not waiting" (verified) | no: same |
 | cgroup quota/throttle counters | yes (automatic, no flag) | no: nothing is read, no warning | no: same |
@@ -49,34 +53,32 @@ rejected or ignored. "Warning" is a line on stderr; "reason" is
 | `--affinity p-cores` / `e-cores` | no: error "only supported on macOS" | partial: scheduling preference via `PRIO_DARWIN_BG` and the foreground task role; recorded as `affinity` in the export (verified). Apple Silicon only | no: same error as Linux |
 | `--jobs N` with `--pin-workers`, `--reserve-cpus` | yes | no: warning "workers cannot be pinned ... ignored", run continues (verified) | yes |
 | `--priority high` / `idle` | nice -20 / `SCHED_IDLE` | nice -20 / nice 19; non-root `high` fails with "raising the priority requires root" (verified) | `HIGH_` / `IDLE_PRIORITY_CLASS` |
-| `--priority realtime` | `SCHED_FIFO` at max priority | partial: nice -20 plus foreground task role, not a real-time policy; needs root (error as non-root, verified) | `REALTIME_PRIORITY_CLASS`; without administrator rights Windows lowers it to high **silently** (gap, #414) |
+| `--priority realtime` | `SCHED_FIFO` at max priority | partial: nice -20 plus foreground task role, not a real-time policy; needs root (error as non-root, verified) | `REALTIME_PRIORITY_CLASS`; without administrator rights Windows lowers it to high, and perfratio now warns after reading the class back (#418; from code, needs Windows to run) |
 | `--check-system` | governor, turbo, load, power source, temperature | load, power source, Low Power Mode, thermal speed limit (`pmset`) (verified) | power source, power plan, CPU load, CPU frequency limit; no turbo check |
 
 ### Exit and reporting behaviour common to all
 - A requested measurement that cannot work never changes the exit code, except where the
-  table says "error" (`--topdown`, CPU-list `--affinity` on macOS, `--priority` without
+  table says "error" (CPU-list `--affinity` on macOS, `--priority` without
   privileges). Where it degrades, `measurements.<group>` is `unavailable` and the reason is an
   open enum (new values are a MINOR change, see `output-schema-contract.md`).
 - Energy reasons: `unsupported_platform`, `rapl_not_found`, `rapl_unreadable`,
   `unsupported_cpu`, `ioreport_not_found`, `ioreport_frozen`, `emi_not_found`,
   `emi_unreadable` (`energy::Unavailable`). Counter reasons: see `src/perf_counters.rs`.
 
-### Rows added by open pull requests (pending merge)
-These PRs are open and not part of `master`. Cells follow each PR description and have not
-been checked here. Each adds a row to the matrix once merged.
+### Rows from pull requests still open
+These PRs are not part of `master`. Cells follow each PR description and have not been checked
+here. Each adds a row to the matrix once merged. #399 (`--persistent`, region SDKs) and #405
+(`--optimize` search) state no platform differences.
 
 | Feature (PR) | Linux | macOS | Windows |
 |---|---|---|---|
-| Raw PMU events, `--list-events` (#394) | yes (sysfs `event_source`, `perf_event_open`) | no, same as `--counters` | no, same as `--counters` |
-| `--gpu` NVML / AMD SMI (#401) | yes, via `dlopen`; not run on GPU hardware | not stated in the PR | no: `nvml.dll` loader not implemented, reason `unsupported_platform` |
-| `--energy-attribution cpu-time\|cgroup` (#402) | yes (`/proc/stat`, cgroup `cpu.stat`) | not stated; needs `/proc/stat` | not stated; needs `/proc/stat` |
-| `--power-meter COMMAND` (#402) | yes | yes (any OS per PR) | yes (any OS per PR) |
+| `--thermal` and `--check-system` thermal pressure level (#419) | unchanged (sysfs) | yes: thermal pressure level | not stated |
 | `--collector-plugin` (#403) | yes | yes (JSON-lines over pipes; not stated per OS) | not stated |
 | `--collector cachegrind\|callgrind` (#403) | yes, needs Valgrind | no: Valgrind unsupported on Apple Silicon | no |
 | `--membw` memory bandwidth and NUMA (#404) | yes (uncore IMC, `numa_maps`) | no: warning, reason `unsupported_platform` | no: same |
 
-Merge order matters: open PRs that add JSON fields each pick the next `schemaVersion`, so
-they renumber it in the order they merge. Update this table when they land.
+Open PRs that add JSON fields pick the next `schemaVersion` in the order they merge. Update this
+table when they land.
 
 ## Gaps
 Fixed in this change (small, no JSON change):
@@ -89,10 +91,13 @@ Fixed in this change (small, no JSON change):
    say it is Linux only.
 
 Open, tracked as issues (large, or need hardware or a design decision):
-- #411 Hardware counters on macOS and Windows; make `--topdown` degrade like `--counters`.
+- #411 Hardware counters on macOS and Windows. #420 delivered `instructions` and `cycles` on
+  macOS with `-N`, and `--topdown` now degrades like `--counters`. Missing: Windows, other
+  events on macOS, Intel Macs (`counters-macos-windows.md`).
 - #412 Temperature sampling and `--cooldown until-temp` on macOS and Windows.
 - #413 Validate IOReport and EMI energy on real hardware; macOS 27 via CLPC.
-- #414 Detect Windows lowering `--priority realtime` to high.
+- #414 Detect Windows lowering `--priority realtime` to high. #418 added the warning. Missing:
+  a run on Windows, since the check is not exercised in CI.
 
 Accepted limits, no issue:
 - macOS cannot pin processes to CPUs with public APIs; `p-cores`/`e-cores` is the closest

@@ -1,6 +1,8 @@
-//! CPU temperature and thermal throttling counters from Linux sysfs. One
-//! reader serves `--check-system`, the in-run monitoring of `interference.thermal`
-//! and `--cooldown`. See `docs/specs/cgroup-thermal.md`.
+//! CPU temperature and thermal throttling counters from Linux sysfs, and the
+//! coarse thermal pressure level on macOS. One reader serves `--check-system`,
+//! the in-run monitoring of `interference.thermal` / `interference.thermal_pressure`
+//! and `--cooldown`. See `docs/specs/cgroup-thermal.md` and
+//! `docs/specs/thermal-macos-windows.md`.
 //!
 //! Every function takes the `/` to read below, so tests use fixture trees
 //! (`system_check::FAKE_ROOT_ENV` selects one for the whole binary). A source
@@ -170,6 +172,145 @@ impl ThermalMonitor {
     }
 }
 
+/// Coarse thermal state of the whole machine, as the OS reports it. macOS: the
+/// `com.apple.system.thermalpressurelevel` notification state (the levels of
+/// `<libkern/OSThermalNotification.h>`, what `ProcessInfo.thermalState` maps
+/// from). It is not a temperature: it rises when the OS starts limiting
+/// performance for thermal reasons.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PressureLevel {
+    Nominal,
+    Moderate,
+    Heavy,
+    Trapping,
+    Sleeping,
+}
+
+impl PressureLevel {
+    /// `kOSThermalPressureLevel*` value -> level; `None` for an unknown value
+    pub fn from_raw(raw: u64) -> Option<Self> {
+        Some(match raw {
+            0 => PressureLevel::Nominal,
+            1 => PressureLevel::Moderate,
+            2 => PressureLevel::Heavy,
+            3 => PressureLevel::Trapping,
+            4 => PressureLevel::Sleeping,
+            _ => return None,
+        })
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PressureLevel::Nominal => "nominal",
+            PressureLevel::Moderate => "moderate",
+            PressureLevel::Heavy => "heavy",
+            PressureLevel::Trapping => "trapping",
+            PressureLevel::Sleeping => "sleeping",
+        }
+    }
+}
+
+/// The current thermal pressure level of the host. Only the real host has one:
+/// a fixture `root` (tests) and platforms without a source give `None`.
+pub fn pressure_level(root: &Path) -> Option<PressureLevel> {
+    if root != Path::new("/") {
+        return None;
+    }
+    read_pressure_level()
+}
+
+#[cfg(target_os = "macos")]
+fn read_pressure_level() -> Option<PressureLevel> {
+    use std::sync::OnceLock;
+
+    // libSystem, <notify.h>: no root needed
+    extern "C" {
+        fn notify_register_check(name: *const libc::c_char, token: *mut libc::c_int) -> u32;
+        fn notify_get_state(token: libc::c_int, state: *mut u64) -> u32;
+    }
+    const NOTIFY_STATUS_OK: u32 = 0;
+    static TOKEN: OnceLock<Option<libc::c_int>> = OnceLock::new();
+
+    let token = (*TOKEN.get_or_init(|| {
+        let mut token: libc::c_int = 0;
+        // SAFETY: a NUL-terminated name and a valid out-pointer; the token is
+        // kept for the life of the process (never cancelled).
+        let status = unsafe {
+            notify_register_check(
+                c"com.apple.system.thermalpressurelevel".as_ptr(),
+                &mut token,
+            )
+        };
+        (status == NOTIFY_STATUS_OK).then_some(token)
+    }))?;
+    let mut state: u64 = 0;
+    // SAFETY: a token registered above and a valid out-pointer.
+    let status = unsafe { notify_get_state(token, &mut state) };
+    if status != NOTIFY_STATUS_OK {
+        return None;
+    }
+    PressureLevel::from_raw(state)
+}
+
+/// No coarse thermal state is read on Linux (it has temperatures) nor, for now,
+/// on Windows (see `docs/specs/thermal-macos-windows.md`).
+#[cfg(not(target_os = "macos"))]
+fn read_pressure_level() -> Option<PressureLevel> {
+    None
+}
+
+/// `interference.thermal_pressure` of a result (macOS)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PressureTrace {
+    /// Level before the first run
+    pub start: PressureLevel,
+    /// Level after the last run
+    pub end: PressureLevel,
+    /// Highest level in between
+    pub max: PressureLevel,
+}
+
+/// Samples the thermal pressure level around a benchmark
+#[derive(Debug)]
+pub struct PressureMonitor {
+    root: PathBuf,
+    trace: PressureTrace,
+}
+
+impl PressureMonitor {
+    /// `None` when the host reports no pressure level
+    pub fn start(root: &Path) -> Option<Self> {
+        Self::starting_at(root, pressure_level(root)?)
+    }
+
+    fn starting_at(root: &Path, now: PressureLevel) -> Option<Self> {
+        Some(PressureMonitor {
+            root: root.to_path_buf(),
+            trace: PressureTrace {
+                start: now,
+                end: now,
+                max: now,
+            },
+        })
+    }
+
+    pub fn sample(&mut self) {
+        if let Some(now) = pressure_level(&self.root) {
+            self.record(now);
+        }
+    }
+
+    fn record(&mut self, now: PressureLevel) {
+        self.trace.end = now;
+        self.trace.max = self.trace.max.max(now);
+    }
+
+    pub fn trace(&self) -> PressureTrace {
+        self.trace
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -179,6 +320,52 @@ mod tests {
         let full = root.join(path);
         fs::create_dir_all(full.parent().unwrap()).unwrap();
         fs::write(full, content).unwrap();
+    }
+
+    #[test]
+    fn pressure_levels_map_the_os_values_in_order() {
+        assert_eq!(PressureLevel::from_raw(0), Some(PressureLevel::Nominal));
+        assert_eq!(PressureLevel::from_raw(4), Some(PressureLevel::Sleeping));
+        assert_eq!(PressureLevel::from_raw(5), None);
+        assert!(PressureLevel::Nominal < PressureLevel::Heavy);
+        assert_eq!(
+            serde_json::to_string(&PressureLevel::Moderate).unwrap(),
+            "\"moderate\""
+        );
+        for raw in 0..5 {
+            let level = PressureLevel::from_raw(raw).unwrap();
+            assert_eq!(serde_json::to_value(level).unwrap(), level.as_str());
+        }
+    }
+
+    #[test]
+    fn a_fixture_root_has_no_pressure_level() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(pressure_level(dir.path()), None);
+        assert!(PressureMonitor::start(dir.path()).is_none());
+    }
+
+    #[test]
+    fn the_pressure_monitor_keeps_start_end_and_max() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut m = PressureMonitor::starting_at(dir.path(), PressureLevel::Nominal).unwrap();
+        m.record(PressureLevel::Heavy);
+        m.record(PressureLevel::Moderate);
+        assert_eq!(
+            m.trace(),
+            PressureTrace {
+                start: PressureLevel::Nominal,
+                end: PressureLevel::Moderate,
+                max: PressureLevel::Heavy
+            }
+        );
+    }
+
+    /// macOS reports a level without root (checked on macOS 27.2, M4)
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_reports_a_pressure_level() {
+        assert!(pressure_level(Path::new("/")).is_some());
     }
 
     #[test]
