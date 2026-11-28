@@ -245,6 +245,13 @@ fn open_regular(path: &Path) -> std::io::Result<(File, u64)> {
     let mut options = OpenOptions::new();
     options.read(true);
     nofollow(&mut options);
+    // O_NONBLOCK: opening a FIFO must not wait for a writer. The type is checked on the
+    // handle below, and regular files never block, so the flag can stay set
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
     let file = options.open(path)?;
     let meta = file.metadata()?;
     if !meta.is_file() {

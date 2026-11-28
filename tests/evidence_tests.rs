@@ -347,3 +347,28 @@ fn a_planted_symlink_is_not_followed() {
     assert!(perfratio::evidence::write(&dir2, b"{}").is_err());
     assert_eq!(fs::read_to_string(&victim).unwrap(), "keep");
 }
+
+#[cfg(unix)]
+#[test]
+fn a_fifo_in_place_of_a_file_fails_fast() {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    use std::time::Duration;
+
+    let (_tmp, dir) = fresh();
+    let target = dir.join("results.json");
+    fs::remove_file(&target).unwrap();
+    let c = CString::new(target.as_os_str().as_bytes()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o600) }, 0);
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let d = dir.clone();
+    std::thread::spawn(move || {
+        let _ = tx.send(failure_text(&d));
+    });
+    let text = rx
+        .recv_timeout(Duration::from_secs(10))
+        .expect("--verify-evidence hung on a FIFO");
+    assert!(text.contains("results.json"), "{text}");
+    assert!(text.contains("not a regular file"), "{text}");
+}

@@ -93,9 +93,11 @@ check a signature.
 The bundle is untrusted input. Every text in the report that comes from it (names, `format`,
 `format_version`) is printed with control characters escaped as `\u{..}`. Files are opened
 without following symlinks (`O_NOFOLLOW` on Unix), the type and size are checked on the open
-handle, and hashing reads in a stream, at most `bytes + 1` bytes per file. `--evidence` creates
+handle (opened with `O_NONBLOCK`, so a FIFO is rejected instead of blocking), and hashing reads in a stream, at most `bytes + 1` bytes per file. `--evidence` creates
 each file with `create_new` and never follows a symlink. The bundle format and the JSON export
 are unchanged.
+On Windows there is no `O_NOFOLLOW`: the symlink check is `symlink_metadata` followed by the
+open, so a symlink planted between the two calls is a TOCTOU window that is not closed.
 
 ## 3. Tests
 
@@ -105,4 +107,4 @@ against the schema, tamper cases (edited, deleted, added file, size change, bad 
 wrong format and version, path traversal, listed-twice), non-empty directory refused, no host
 name or environment variable in the bundle.
 Hardening tests: escape sequences in names, oversized manifest, symlink planted in place of a
-file and at write time.
+file and at write time, FIFO in place of a file (fails fast, no hang).
