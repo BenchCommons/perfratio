@@ -181,6 +181,10 @@ impl Unavailable {
             Self::EmiUnreadable => {
                 "Windows EMI energy meter devices cannot be read (try an administrator shell)"
             }
+            Self::MeterNotConfigured => "no external power meter command configured",
+            Self::MeterUnreadable => {
+                "the external power meter command failed, timed out or printed no reading"
+            }
         }
     }
 }
