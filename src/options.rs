@@ -1283,6 +1283,18 @@ impl Options {
             }
         };
         options.schedule = resolve_schedule(explicit, options.jobs)?;
+        if options.stat_settings.paired
+            && !matches!(
+                options.schedule,
+                ScheduleMode::RoundRobin | ScheduleMode::Randomized | ScheduleMode::Balanced
+            )
+        {
+            return Err(OptionsError::InvalidStatistics(
+                "'--paired' needs an interleaved schedule ('--schedule round-robin', \
+                 'randomized' or 'balanced'): the runs of the commands are paired by round"
+                    .into(),
+            ));
+        }
 
         options.allow_setup_with_round_robin = matches.get_flag("allow-setup-with-round-robin");
 
@@ -1856,6 +1868,10 @@ fn parse_stat_settings<'a>(
     };
     settings.noise_threshold = percent("noise-threshold")?;
     settings.equivalence_margin = percent("equivalence-margin")?;
+    if let Some(value) = matches.get_one::<String>("ci-method") {
+        settings.ci_method = value.parse().map_err(OptionsError::InvalidStatistics)?;
+    }
+    settings.paired = matches.get_flag("paired");
     settings
         .validate()
         .map_err(OptionsError::InvalidStatistics)?;

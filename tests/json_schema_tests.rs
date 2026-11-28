@@ -346,6 +346,17 @@ const CASES: &[(&str, &[&str])] = &[
     ),
     ("timeout", &["--runs=2", "--timeout=2s", "-i", "sleep 3"]),
     (
+        "paired rounds",
+        &[
+            "--runs=4",
+            "--schedule=balanced",
+            "--paired",
+            "--ci-method=hierarchical",
+            "sleep 0.1",
+            "sleep 0.2",
+        ],
+    ),
+    (
         "ignored failures",
         &["--runs=3", "-i", "--omit-failed-runs", "sleep 0.1"],
     ),

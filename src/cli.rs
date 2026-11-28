@@ -1404,6 +1404,33 @@ pub fn build_command() -> Command {
                 ),
         )
         .arg(
+            Arg::new("ci-method")
+                .long("ci-method")
+                .value_name("METHOD")
+                .value_parser(["flat", "hierarchical"])
+                .help(
+                    "Interval of the mean when the runs have a hierarchy ('--jobs' workers, \
+                     '--concurrency' instances): 'flat' treats every run as independent (default), \
+                     'hierarchical' resamples the clusters and then the runs inside them \
+                     (Kalibera & Jones 2013), which is wider when the clusters differ. Shown in \
+                     the summary of the run and in 'results[].hierarchy' of the JSON export, \
+                     together with the variance at each level. It does not change \
+                     '--target-precision' or the tests.",
+                ),
+        )
+        .arg(
+            Arg::new("paired")
+                .long("paired")
+                .action(ArgAction::SetTrue)
+                .help(
+                    "Paired analysis of every command against the reference: the runs of one \
+                     round of an interleaved schedule ('--schedule round-robin', 'randomized', \
+                     'balanced') are paired, and the mean difference, its interval and a \
+                     paired t-test are reported. Pairing removes the drift the commands share \
+                     in a round.",
+                ),
+        )
+        .arg(
             Arg::new("equivalence-margin")
                 .long("equivalence-margin")
                 .value_name("PERCENT")

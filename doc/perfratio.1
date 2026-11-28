@@ -272,6 +272,9 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR DIRECTION:METRIC ]
 .RB [ \-\-noise\-threshold
 .IR PERCENT ]
+.RB [ \-\-ci\-method
+.IR METHOD ]
+.RB [ \-\-paired ]
 .RB [ \-\-show\-output\-on\-failure ]
 .RB [ \-\-generate\-completions
 .IR SHELL ]
@@ -738,6 +741,14 @@ Print a table comparing every measured dimension (wall time, peak memory, energy
 \fB\-\-pareto\fR \fIMETRICS\fR
 .IP
 Mark the commands on the Pareto frontier of the comma\-separated metrics, e.g. \fIwall,energy,memory\fR: the commands that no other command beats in one metric without being worse in another. A metric takes an optional statistic (\fIwall.p95\fR, \fImemory.max\fR). Commands without data for a metric are excluded, never counted as 0. Printed after the summary, and added to the JSON, Markdown and HTML exports.
+.HP
+\fB\-\-ci\-method\fR \fIMETHOD\fR
+.IP
+Interval of the mean when the runs have a hierarchy (\fB\-\-jobs\fR workers, \fB\-\-concurrency\fR instances): \fIflat\fR treats every run as independent (default), \fIhierarchical\fR resamples the clusters and then the runs inside them (Kalibera and Jones, 2013), which is wider when the clusters differ. Shown in the summary and in results[].hierarchy of the JSON export together with the variance per level. Does not change \fB\-\-target\-precision\fR or the tests.
+.HP
+\fB\-\-paired\fR
+.IP
+Paired analysis of every command against the reference: the runs of one round of an interleaved schedule (\fB\-\-schedule\fR round\-robin, randomized or balanced) are paired, and the mean difference, its interval and a paired t\-test are reported (results[].paired in the JSON export).
 .HP
 \fB\-\-constraint\fR \fIEXPR\fR
 .IP
