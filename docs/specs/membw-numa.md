@@ -52,6 +52,11 @@ block on every Linux export. `--import-json` ignores the flag.
   "local" or "remote": that needs the CPU the process ran on (use `--affinity` and
   `numa_topology.cpus`).
 
+### Overflow (#22, L5)
+`kernelpagesize_kB * 1024` and `pages * page size` use `checked_mul`, and node sums saturate. A
+sample with an overflowing value is dropped, with one warning on stderr per sampler; the run
+degrades like a too-short run (`numa` unavailable if no valid sample remains). No export change.
+
 ### Topology
 `perfratio.environment.numa_topology`: from `/sys/devices/system/node/node<N>/`:
 `cpulist`, `meminfo` (`MemTotal`), `distance` (ACPI SLIT). Each field is omitted when its file

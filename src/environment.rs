@@ -504,10 +504,38 @@ pub fn git_provenance() -> Option<(String, bool)> {
     )
 }
 
+/// Value written instead of a secret in `perfratio.meta`.
+pub const REDACTED: &str = "[redacted]";
+
+/// `true` if a `--meta` key looks like it names a secret (case-insensitive: TOKEN, SECRET,
+/// PASSWORD, PASSWD or KEY anywhere in the key).
+pub fn is_secret_key(key: &str) -> bool {
+    let key = key.to_ascii_uppercase();
+    ["TOKEN", "SECRET", "PASSWORD", "PASSWD", "KEY"]
+        .iter()
+        .any(|p| key.contains(p))
+}
+
 /// The `perfratio.meta` object for a request. Warns on stderr when `git` was
 /// asked for and the working directory is not a repository.
 pub fn resolve_meta(request: &MetaRequest) -> BTreeMap<String, String> {
     let mut meta = request.pairs.clone();
+    let hidden: Vec<String> = meta
+        .iter_mut()
+        .filter(|(k, _)| is_secret_key(k))
+        .map(|(k, v)| {
+            *v = REDACTED.to_string();
+            k.clone()
+        })
+        .collect();
+    if !hidden.is_empty() {
+        eprintln!(
+            "{} the value of '--meta' key(s) {} looks like a secret and is exported as \
+             \"{REDACTED}\". Rename the key if this is not a secret.",
+            crate::output::colors::yellow("Warning:"),
+            crate::util::sanitize::escape_control_chars(&hidden.join(", "))
+        );
+    }
     if request.git {
         match git_provenance() {
             Some((commit, dirty)) => {
@@ -556,6 +584,25 @@ pub fn mismatch_message(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn secret_looking_meta_keys_are_redacted() {
+        let request = parse_meta([
+            "api_token=abc",
+            "DB_Password=x",
+            "ssh-key=k",
+            "compiler=gcc-14",
+        ])
+        .unwrap();
+        let meta = resolve_meta(&request);
+        assert_eq!(meta["api_token"], REDACTED);
+        assert_eq!(meta["DB_Password"], REDACTED);
+        assert_eq!(meta["ssh-key"], REDACTED);
+        assert_eq!(meta["compiler"], "gcc-14");
+        assert!(is_secret_key("client_SECRET"));
+        assert!(!is_secret_key("flags"));
+    }
+
     use std::fs;
 
     fn write(root: &Path, path: &str, content: &str) {

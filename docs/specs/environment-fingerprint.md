@@ -39,7 +39,11 @@ Nothing is guessed.
 
 Privacy: never exported by default are the host name, user name, environment variables, the working
 directory and the full command line (`perfratio.command_line` keeps only the program's file name).
-Values of `--meta` and `--label` are what the user types: no secrets in them.
+Values of `--meta` and `--label` are what the user types: no secrets in them. As a safety net
+(#22, M3), the value of a `--meta` key that contains TOKEN, SECRET, PASSWORD, PASSWD or KEY
+(case-insensitive) is exported as the string `"[redacted]"` and a warning names the key. The type
+of `perfratio.meta` does not change (string to string), so the schema version stays the same.
+Values of other fields, `--label` and the command line are not redacted.
 
 ### 2.2 `perfratio.environment_fingerprint`
 

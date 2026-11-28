@@ -39,6 +39,10 @@ perfratio sets `PERFRATIO_PERSISTENT_PROTOCOL=1` and `PERFRATIO_REGION_PROTOCOL=
 | `run <n>` | Run iteration `n` (0, 1, 2, ... including warm-up) and answer. |
 | `quit` | Exit. Closing stdin has the same meaning. After `quit`, perfratio waits up to 2 s; whether the program exits by itself or not, its process group (grandchildren) is then killed (Unix). |
 
+Input limit (#22, M4): a protocol line (starting with `@perfratio `) is at most 64 KiB (`MAX_LINE`,
+as in the collector protocol). A longer one ends the run with `persistent protocol: a line is longer
+than 65536 bytes`. A longer line that is not a protocol line is skipped without being stored.
+
 The program answers on **stdout**. Only lines that start with `@perfratio ` belong to the
 protocol; every other line is the program's own output and is ignored. After the prefix the
 text is the wire format of the region protocol (`hello`, `start`, `stop`, monotonic `t_ns`):

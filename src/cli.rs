@@ -1417,7 +1417,8 @@ pub fn build_command() -> Command {
                      git        'git_commit' and 'git_dirty' (uncommitted changes) of the git \
                                 repository in the current directory\n\n\
                      Nothing else about the host is exported by default: no host name, user name, \
-                     environment variables or working directory. Do not put secrets in values.",
+                     environment variables or working directory. Do not put secrets in values: values of keys containing TOKEN, SECRET, \
+                     PASSWORD or KEY are exported as \"[redacted]\".",
                 ),
         )
         .arg(

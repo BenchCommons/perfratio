@@ -16,7 +16,7 @@
 //! Stdout lines without the `@perfratio ` prefix are the program's own output
 //! and are discarded.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::sync::Mutex;
@@ -249,11 +249,61 @@ pub fn parse_response(lines: &[String], expected: u64) -> Result<Outcome> {
     }
 }
 
+/// Longest protocol line accepted from the program (bytes, newline included).
+pub const MAX_LINE: usize = 64 * 1024;
+
+/// Reads the lines of the program's stdout and sends the protocol messages (the lines with
+/// [`LINE_PREFIX`]). Memory stays bounded: a protocol line longer than [`MAX_LINE`] is
+/// reported as an error and ends the reading, and any other long line (ordinary program
+/// output) is skipped without being kept.
+fn read_protocol_lines<R: BufRead>(mut reader: R, tx: &mpsc::Sender<Result<String, String>>) {
+    let mut buffer = Vec::new();
+    loop {
+        buffer.clear();
+        let Ok(read) = (&mut reader)
+            .take(MAX_LINE as u64 + 1)
+            .read_until(b'\n', &mut buffer)
+        else {
+            return;
+        };
+        if read == 0 {
+            return;
+        }
+        if buffer.len() > MAX_LINE && buffer.last() != Some(&b'\n') {
+            if buffer.starts_with(LINE_PREFIX.as_bytes()) {
+                let _ = tx.send(Err(format!("a line is longer than {MAX_LINE} bytes")));
+                return;
+            }
+            // not ours: drop the rest of the line
+            loop {
+                let (skip, found) = match reader.fill_buf() {
+                    Ok([]) | Err(_) => return,
+                    Ok(chunk) => match chunk.iter().position(|&b| b == b'\n') {
+                        Some(i) => (i + 1, true),
+                        None => (chunk.len(), false),
+                    },
+                };
+                reader.consume(skip);
+                if found {
+                    break;
+                }
+            }
+            continue;
+        }
+        let line = String::from_utf8_lossy(&buffer);
+        if let Some(message) = line.trim_end().strip_prefix(LINE_PREFIX) {
+            if tx.send(Ok(message.to_string())).is_err() {
+                return;
+            }
+        }
+    }
+}
+
 /// The started program.
 struct Process {
     child: Child,
     stdin: Option<ChildStdin>,
-    lines: Receiver<String>,
+    lines: Receiver<Result<String, String>>,
     sdk: Option<String>,
     next: u64,
 }
@@ -279,15 +329,7 @@ impl Process {
         let stdin = child.stdin.take();
         let stdout = child.stdout.take().expect("stdout is piped");
         let (tx, lines) = mpsc::channel();
-        std::thread::spawn(move || {
-            for line in BufReader::new(stdout).lines().map_while(|l| l.ok()) {
-                if let Some(message) = line.trim_end().strip_prefix(LINE_PREFIX) {
-                    if tx.send(message.to_string()).is_err() {
-                        break;
-                    }
-                }
-            }
-        });
+        std::thread::spawn(move || read_protocol_lines(BufReader::new(stdout), &tx));
         let mut process = Process {
             child,
             stdin,
@@ -312,7 +354,11 @@ impl Process {
     fn next_line(&mut self, deadline: Option<Instant>) -> Result<String> {
         loop {
             match self.lines.recv_timeout(Duration::from_millis(50)) {
-                Ok(line) => return Ok(line),
+                Ok(Ok(line)) => return Ok(line),
+                Ok(Err(reason)) => {
+                    self.kill();
+                    bail!("persistent protocol: {reason}");
+                }
                 Err(RecvTimeoutError::Timeout) => {
                     if deadline.is_some_and(|d| Instant::now() >= d) {
                         self.kill();
@@ -529,6 +575,44 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(e.contains("...") && e.len() < 200, "{e}");
+    }
+
+    fn read_all(input: &[u8]) -> Vec<Result<String, String>> {
+        let (tx, rx) = mpsc::channel();
+        read_protocol_lines(std::io::Cursor::new(input.to_vec()), &tx);
+        drop(tx);
+        rx.iter().collect()
+    }
+
+    #[test]
+    fn an_oversized_protocol_line_is_an_error() {
+        let mut input = format!("{LINE_PREFIX}hello 1\n").into_bytes();
+        input.extend(LINE_PREFIX.bytes());
+        input.extend(std::iter::repeat_n(b'a', MAX_LINE * 3));
+        input.extend(b"\n");
+        let got = read_all(&input);
+        assert_eq!(got.len(), 2);
+        assert!(got[0].is_ok());
+        assert!(got[1].as_ref().unwrap_err().contains("longer than"));
+    }
+
+    #[test]
+    fn an_oversized_foreign_line_is_skipped() {
+        let mut input = Vec::new();
+        input.extend(std::iter::repeat_n(b'x', MAX_LINE * 3 + 5));
+        input.extend(format!("\n{LINE_PREFIX}hello 1\n").bytes());
+        let got = read_all(&input);
+        assert_eq!(got.len(), 1);
+        assert!(got[0].is_ok());
+    }
+
+    #[test]
+    fn a_line_of_exactly_the_limit_is_accepted() {
+        let mut line = LINE_PREFIX.as_bytes().to_vec();
+        line.resize(MAX_LINE - 1, b'a');
+        line.push(b'\n');
+        assert_eq!(line.len(), MAX_LINE);
+        assert!(read_all(&line)[0].is_ok());
     }
 
     #[test]
