@@ -4,10 +4,65 @@ perfratio is a fork of [hyperfine](https://github.com/sharkdp/hyperfine). This f
 
 Migrating from hyperfine: see [docs/MIGRATION.md](docs/MIGRATION.md). Measuring one algorithm in several languages: see [docs/CROSS_LANGUAGE.md](docs/CROSS_LANGUAGE.md).
 
-## Unreleased
+## 1.1.0 - 2026-11-28
 
-- `--persistent` runs the command once and drives the runs through a versioned stdin/stdout protocol, with per-iteration times, warm-up detection and steady-state statistics; JSON 1.46 adds `results[].mode` and `results[].iterations`; Rust and Python SDKs gain `serve` (issue [#370](https://github.com/BenchCommons/perfratio/issues/370))
-- Region SDKs for JavaScript/TypeScript, Go, Java and Kotlin under `sdk/`, with `serve` for `--persistent` and the shared protocol test; the protocol and the JSON export do not change (issue [#372](https://github.com/BenchCommons/perfratio/issues/372))
+Generated from the 59 pull requests merged after v1.0.0 (#340 to #429). Pull requests that bump dependencies or GitHub Actions are listed under Internal. The JSON export goes from `schemaVersion` 1.15 to 1.48; every change is additive (MINOR), see [docs/specs/output-schema-contract.md](docs/specs/output-schema-contract.md).
+
+### Features
+
+- `--pareto`: Pareto frontier and constraint-aware comparison ([#340](https://github.com/BenchCommons/perfratio/pull/340), issue [#326](https://github.com/BenchCommons/perfratio/issues/326))
+- `--pareto-significance` and `--pareto-probability`: a frontier that accounts for measurement uncertainty ([#398](https://github.com/BenchCommons/perfratio/pull/398), issue [#376](https://github.com/BenchCommons/perfratio/issues/376))
+- `--expect-output-sha256` and `--validate` check that the benchmarked workload produces the expected output ([#342](https://github.com/BenchCommons/perfratio/pull/342), issue [#316](https://github.com/BenchCommons/perfratio/issues/316))
+- `--quality` measurement quality report and `--fail-on-quality` ([#346](https://github.com/BenchCommons/perfratio/pull/346), issue [#318](https://github.com/BenchCommons/perfratio/issues/318))
+- Logarithmic parameter scans, commands from stdin (`perfratio -`), `--raw-ratios` and automatic command names ([#345](https://github.com/BenchCommons/perfratio/pull/345), issue [#327](https://github.com/BenchCommons/perfratio/issues/327))
+- Unique run identity and process-tree cancellation, with a `leftover_processes` report ([#344](https://github.com/BenchCommons/perfratio/pull/344), issues [#308](https://github.com/BenchCommons/perfratio/issues/308), [#309](https://github.com/BenchCommons/perfratio/issues/309))
+- Metric descriptors (`perfratio.metrics`), custom metric unit and direction, direction-aware ranking, descriptor import ([#351](https://github.com/BenchCommons/perfratio/pull/351), [#359](https://github.com/BenchCommons/perfratio/pull/359); issue [#317](https://github.com/BenchCommons/perfratio/issues/317))
+- Selectable estimator, confidence and significance levels and bootstrap settings ([#349](https://github.com/BenchCommons/perfratio/pull/349), issue [#320](https://github.com/BenchCommons/perfratio/issues/320))
+- `--jobs N`: independent parallel worker pool with scheduling policies; `--pin-workers` and `--reserve-cpus` partition the CPUs of the workers ([#341](https://github.com/BenchCommons/perfratio/pull/341), [#355](https://github.com/BenchCommons/perfratio/pull/355); issues [#306](https://github.com/BenchCommons/perfratio/issues/306), [#307](https://github.com/BenchCommons/perfratio/issues/307))
+- `--region` timing protocol and `--metric region:NAME`; reference region SDKs for C/C++, Rust and Python and a client guide ([#343](https://github.com/BenchCommons/perfratio/pull/343), [#358](https://github.com/BenchCommons/perfratio/pull/358); issues [#310](https://github.com/BenchCommons/perfratio/issues/310), [#311](https://github.com/BenchCommons/perfratio/issues/311))
+- `--schedule randomized|balanced`: seeded randomized and balanced run order ([#353](https://github.com/BenchCommons/perfratio/pull/353), issue [#324](https://github.com/BenchCommons/perfratio/issues/324))
+- `--target-precision-method sequential` (confidence sequence), with a coverage study ([#356](https://github.com/BenchCommons/perfratio/pull/356), issue [#322](https://github.com/BenchCommons/perfratio/issues/322))
+- Measurement floor, `--calibrate` and `--below-floor` ([#347](https://github.com/BenchCommons/perfratio/pull/347), issue [#313](https://github.com/BenchCommons/perfratio/issues/313))
+- Environment block, fingerprint, `--meta` and `--require-compatible-env` ([#348](https://github.com/BenchCommons/perfratio/pull/348), issue [#314](https://github.com/BenchCommons/perfratio/issues/314))
+- Per-metric regression budgets: `--budget`, `--budget-file`, `--on-unavailable` ([#357](https://github.com/BenchCommons/perfratio/pull/357), issue [#325](https://github.com/BenchCommons/perfratio/issues/325))
+- cgroup and thermal interference diagnostics and `--cooldown`; `--thermal` turns temperature sampling on ([#360](https://github.com/BenchCommons/perfratio/pull/360), [#363](https://github.com/BenchCommons/perfratio/pull/363); issue [#315](https://github.com/BenchCommons/perfratio/issues/315))
+- Multiple-comparison correction (Bonferroni, Holm, Benjamini-Hochberg) ([#354](https://github.com/BenchCommons/perfratio/pull/354), issue [#321](https://github.com/BenchCommons/perfratio/issues/321))
+- `--region-scope`: region-scoped CPU time, energy and counters ([#388](https://github.com/BenchCommons/perfratio/pull/388), issue [#371](https://github.com/BenchCommons/perfratio/issues/371))
+- `--complexity VAR`: empirical complexity fit ([#391](https://github.com/BenchCommons/perfratio/pull/391), issue [#374](https://github.com/BenchCommons/perfratio/issues/374))
+- `--work N[unit]`: per-operation metrics, EDP and ED²P ([#392](https://github.com/BenchCommons/perfratio/pull/392), issue [#373](https://github.com/BenchCommons/perfratio/issues/373))
+- Effect size, `--noise-threshold` and `--equivalence-margin` (TOST) with a `classification` per comparison ([#389](https://github.com/BenchCommons/perfratio/pull/389), issue [#323](https://github.com/BenchCommons/perfratio/issues/323))
+- `--verdict-json`: machine-readable verdict of a `--compare` run, and `perfratio-mcp`, an MCP server for agents ([#406](https://github.com/BenchCommons/perfratio/pull/406), [#422](https://github.com/BenchCommons/perfratio/pull/422); issue [#386](https://github.com/BenchCommons/perfratio/issues/386))
+- `--priority realtime` warns when Windows lowers it to high ([#418](https://github.com/BenchCommons/perfratio/pull/418), issue [#414](https://github.com/BenchCommons/perfratio/issues/414))
+- `--counters` reads `instructions` and `cycles` on macOS with `-N` ([#420](https://github.com/BenchCommons/perfratio/pull/420), issue [#411](https://github.com/BenchCommons/perfratio/issues/411))
+- `--evidence DIR` bundle and `--verify-evidence` ([#393](https://github.com/BenchCommons/perfratio/pull/393), issue [#375](https://github.com/BenchCommons/perfratio/issues/375))
+- Hierarchical and paired experiments ([#396](https://github.com/BenchCommons/perfratio/pull/396), issue [#368](https://github.com/BenchCommons/perfratio/issues/368))
+- `--roofline`: arithmetic intensity and placement ([#397](https://github.com/BenchCommons/perfratio/pull/397), issue [#379](https://github.com/BenchCommons/perfratio/issues/379))
+- Raw PMU events and `--list-events` ([#394](https://github.com/BenchCommons/perfratio/pull/394), issue [#377](https://github.com/BenchCommons/perfratio/issues/377))
+- Statistical power, minimum detectable effect and multi-metric adaptive stopping ([#400](https://github.com/BenchCommons/perfratio/pull/400), issues [#367](https://github.com/BenchCommons/perfratio/issues/367), [#369](https://github.com/BenchCommons/perfratio/issues/369))
+- `--gpu`: GPU energy and utilization with NVML and AMD SMI, loaded at run time ([#401](https://github.com/BenchCommons/perfratio/pull/401), issue [#380](https://github.com/BenchCommons/perfratio/issues/380))
+- Estimated energy attribution (`--energy-attribution`) and external power meter (`--power-meter`) ([#402](https://github.com/BenchCommons/perfratio/pull/402), issues [#381](https://github.com/BenchCommons/perfratio/issues/381), [#382](https://github.com/BenchCommons/perfratio/issues/382))
+- Collector plugin protocol (`--collector-plugin`) and the Cachegrind/Callgrind adapter (`--collector`) ([#403](https://github.com/BenchCommons/perfratio/pull/403), issues [#383](https://github.com/BenchCommons/perfratio/issues/383), [#384](https://github.com/BenchCommons/perfratio/issues/384))
+- `--optimize`: multi-dimensional, successive-halving and Bayesian search ([#405](https://github.com/BenchCommons/perfratio/pull/405), issue [#385](https://github.com/BenchCommons/perfratio/issues/385))
+- `--persistent` runs the command once and drives the runs through a versioned stdin/stdout protocol, with per-iteration times, warm-up detection and steady-state statistics; Rust and Python SDKs gain `serve`; region SDKs for JavaScript/TypeScript, Go, Java and Kotlin under `sdk/` ([#399](https://github.com/BenchCommons/perfratio/pull/399), issues [#370](https://github.com/BenchCommons/perfratio/issues/370), [#372](https://github.com/BenchCommons/perfratio/issues/372))
+- `--membw`: memory bandwidth (uncore IMC) and NUMA placement, Linux only ([#404](https://github.com/BenchCommons/perfratio/pull/404), issue [#378](https://github.com/BenchCommons/perfratio/issues/378))
+- `--thermal` and `--check-system` report the thermal pressure level on macOS ([#419](https://github.com/BenchCommons/perfratio/pull/419), issue [#412](https://github.com/BenchCommons/perfratio/issues/412))
+
+### Bug fixes
+
+- Settle the Windows job before reporting leftover processes, which reported a false positive for a plain command ([#361](https://github.com/BenchCommons/perfratio/pull/361))
+- Security hardening of `--verify-evidence` and evidence writing ([#428](https://github.com/BenchCommons/perfratio/pull/428), issue [#22](https://github.com/BenchCommons/perfratio/issues/22))
+- GPU loader errors, power meter read timeout and a size limit for `--import-json` ([#427](https://github.com/BenchCommons/perfratio/pull/427), issue [#22](https://github.com/BenchCommons/perfratio/issues/22))
+- Escape text provided by the benchmarked program, warn about secrets, restrict the check-system test root to tests ([#426](https://github.com/BenchCommons/perfratio/pull/426), issue [#22](https://github.com/BenchCommons/perfratio/issues/22))
+- `--persistent -i`: a failed iteration no longer enters the statistics as 0.0; a process group is killed when the program exits alone during shutdown (Unix); a Windows failure to read the priority class is a warning; roofline schema description fix ([#429](https://github.com/BenchCommons/perfratio/pull/429))
+
+### Internal
+
+- Test that the documented `schemaVersion` matches `SCHEMA_VERSION`, and `scripts/check-schema-version.sh` with a `Schema version` workflow ([#387](https://github.com/BenchCommons/perfratio/pull/387), [#415](https://github.com/BenchCommons/perfratio/pull/415); issue [#366](https://github.com/BenchCommons/perfratio/issues/366))
+- Remove every reference to the former working name joulex ([#390](https://github.com/BenchCommons/perfratio/pull/390))
+- Make timing-sensitive and sequential tests deterministic ([#407](https://github.com/BenchCommons/perfratio/pull/407), [#421](https://github.com/BenchCommons/perfratio/pull/421))
+- Per-version JSON schema archive with a compatibility check and a release asset; perf-stat parity harness and child-tree accounting checks ([#350](https://github.com/BenchCommons/perfratio/pull/350), [#352](https://github.com/BenchCommons/perfratio/pull/352); issues [#319](https://github.com/BenchCommons/perfratio/issues/319), [#312](https://github.com/BenchCommons/perfratio/issues/312))
+- Bump cargo-deny-action from 2.1.2 to 2.1.3 ([#395](https://github.com/BenchCommons/perfratio/pull/395))
+- Documentation: distribution status, cross-language requirements status, platform parity matrix, security audit 2026, status after the November merges ([#409](https://github.com/BenchCommons/perfratio/pull/409), [#410](https://github.com/BenchCommons/perfratio/pull/410), [#416](https://github.com/BenchCommons/perfratio/pull/416), [#417](https://github.com/BenchCommons/perfratio/pull/417), [#423](https://github.com/BenchCommons/perfratio/pull/423); issues [#93](https://github.com/BenchCommons/perfratio/issues/93), [#240](https://github.com/BenchCommons/perfratio/issues/240), [#291](https://github.com/BenchCommons/perfratio/issues/291), [#22](https://github.com/BenchCommons/perfratio/issues/22))
 
 ## 1.0.0 - 2026-11-26
 
