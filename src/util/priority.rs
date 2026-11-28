@@ -261,6 +261,33 @@ mod tests {
         assert!(w.contains("class 0x20") && !w.contains("administrator"));
     }
 
+    /// Set and read back the class of the test process itself, as
+    /// `warn_if_downgraded` does for a child. HIGH needs no privileges.
+    #[cfg(windows)]
+    #[test]
+    fn set_and_get_priority_class_round_trip_on_own_process() {
+        use windows_sys::Win32::System::Threading::{
+            GetCurrentProcess, GetPriorityClass, SetPriorityClass,
+        };
+        // SAFETY: the pseudo handle of the current process is always valid.
+        let process = unsafe { GetCurrentProcess() };
+        // SAFETY: as above.
+        let original = unsafe { GetPriorityClass(process) };
+        assert_ne!(original, 0, "{}", std::io::Error::last_os_error());
+
+        // SAFETY: as above.
+        let set = unsafe { SetPriorityClass(process, WIN_HIGH) };
+        let set_error = std::io::Error::last_os_error();
+        // SAFETY: as above.
+        let read = unsafe { GetPriorityClass(process) };
+        // Restore before asserting, so a failure does not leave the class raised.
+        // SAFETY: as above.
+        unsafe { SetPriorityClass(process, original) };
+        assert_ne!(set, 0, "SetPriorityClass: {set_error}");
+        assert_eq!(read, WIN_HIGH);
+        assert!(priority_downgrade_warning(Priority::High, WIN_HIGH, read).is_none());
+    }
+
     #[cfg(windows)]
     #[test]
     fn class_constants_match_windows_sys() {
