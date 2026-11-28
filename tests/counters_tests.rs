@@ -214,7 +214,7 @@ fn imported_results_keep_counters() {
     );
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 #[test]
 fn unsupported_platform_warns_once_and_continues() {
     let dir = tempfile::tempdir().unwrap();
@@ -286,6 +286,74 @@ fn macos_with_a_shell_is_unavailable_and_suggests_no_shell() {
     let m = &v["perfratio"]["measurements"];
     assert_eq!(m["counters"], "unavailable");
     assert_eq!(m["counters_unavailable_reason"], "other");
+    assert!(v["results"][0].get("counters").is_none());
+}
+
+/// Windows (#411): `cycles` from `QueryProcessCycleTime`, no admin, only with `-N`.
+/// `instructions` has no source, so the result is partial.
+#[cfg(windows)]
+#[test]
+fn windows_counts_cycles_with_no_shell() {
+    let dir = tempfile::tempdir().unwrap();
+    let json = dir.path().join("out.json");
+    perfratio()
+        .args([
+            "--runs=2",
+            "--counters=cycles,instructions",
+            "-N",
+            "--export-json",
+        ])
+        .arg(&json)
+        .args(["--", "cmd", "/C", "exit", "0"])
+        .assert()
+        .success();
+    let v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&json).unwrap()).unwrap();
+    assert_eq!(v["perfratio"]["measurements"]["counters"], "partial");
+    let runs = v["results"][0]["counters"]["cycles"].as_array().unwrap();
+    assert_eq!(runs.len(), 2);
+    assert!(runs.iter().all(|x| x.as_u64().unwrap() > 0));
+    assert!(v["results"][0]["counters"].get("instructions").is_none());
+}
+
+/// Windows (#411): with a shell the counters would measure the shell, so they
+/// are dropped with a warning that points to `-N`.
+#[cfg(windows)]
+#[test]
+fn windows_with_a_shell_is_unavailable_and_suggests_no_shell() {
+    let dir = tempfile::tempdir().unwrap();
+    let json = dir.path().join("out.json");
+    perfratio()
+        .args(["--runs=2", "--counters=cycles", "--export-json"])
+        .arg(&json)
+        .arg("echo ok")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("Use '-N'"));
+    let v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&json).unwrap()).unwrap();
+    let m = &v["perfratio"]["measurements"];
+    assert_eq!(m["counters"], "unavailable");
+    assert_eq!(m["counters_unavailable_reason"], "other");
+    assert!(v["results"][0].get("counters").is_none());
+}
+
+/// Windows (#411): only `instructions` requested, which has no source.
+#[cfg(windows)]
+#[test]
+fn windows_instructions_alone_are_unavailable() {
+    let dir = tempfile::tempdir().unwrap();
+    let json = dir.path().join("out.json");
+    perfratio()
+        .args(["--runs=2", "--counters=instructions", "-N", "--export-json"])
+        .arg(&json)
+        .args(["--", "cmd", "/C", "exit", "0"])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("can only read cycles"));
+    let v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&json).unwrap()).unwrap();
+    assert_eq!(v["perfratio"]["measurements"]["counters"], "unavailable");
     assert!(v["results"][0].get("counters").is_none());
 }
 
