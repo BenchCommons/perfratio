@@ -205,10 +205,12 @@ pub fn parse_response(lines: &[String], expected: u64) -> Result<Outcome> {
         .ok_or_else(|| anyhow!("persistent protocol: empty response"))?;
     let mut parts = last.splitn(3, ' ');
     let kind = parts.next().unwrap_or_default();
-    let number: u64 = parts
-        .next()
-        .and_then(|n| n.parse().ok())
-        .ok_or_else(|| anyhow!("persistent protocol: '{last}' needs the iteration number"))?;
+    let number: u64 = parts.next().and_then(|n| n.parse().ok()).ok_or_else(|| {
+        anyhow!(
+            "persistent protocol: '{}' needs the iteration number",
+            crate::region::shorten(last)
+        )
+    })?;
     if number != expected {
         bail!("persistent protocol: the program answered iteration {number}, expected {expected}");
     }
@@ -240,7 +242,10 @@ pub fn parse_response(lines: &[String], expected: u64) -> Result<Outcome> {
             parts.next().unwrap_or("").to_string(),
             seconds().ok(),
         )),
-        other => bail!("persistent protocol: unexpected '{other}' instead of done/fail"),
+        other => bail!(
+            "persistent protocol: unexpected '{}' instead of done/fail",
+            crate::region::shorten(other)
+        ),
     }
 }
 
@@ -294,7 +299,10 @@ impl Process {
             .next_line(Some(Instant::now() + HANDSHAKE_TIMEOUT))
             .context("The persistent process did not say 'hello'. Does it use the perfratio persistent SDK (see docs/specs/persistent-mode.md)?")?;
         if !hello.starts_with("hello ") {
-            bail!("persistent protocol: expected 'hello {PROTOCOL_VERSION}' first, got '{hello}'");
+            bail!(
+                "persistent protocol: expected 'hello {PROTOCOL_VERSION}' first, got '{}'",
+                crate::region::shorten(&hello)
+            );
         }
         let report = crate::region::parse(&format!("{hello}\n"))?.expect("hello was parsed");
         process.sdk = report.sdk;
@@ -455,8 +463,9 @@ impl Executor for PersistentExecutor<'_> {
                 };
                 if !ignored {
                     bail!(
-                        "The persistent process reported a failed iteration: {message}. Use \
-                         '-i' to ignore failures."
+                        "The persistent process reported a failed iteration: {}. Use \
+                         '-i' to ignore failures.",
+                        crate::region::shorten(&message)
                     );
                 }
                 // A failed iteration was still measured: use the interval the program
@@ -503,6 +512,23 @@ mod tests {
 
     fn lines(items: &[&str]) -> Vec<String> {
         items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn program_text_in_protocol_errors_is_escaped_and_cut() {
+        let long = "x".repeat(500);
+        let e = parse_response(&lines(&[&format!("bad\x1b[31m {long}")]), 1)
+            .unwrap_err()
+            .to_string();
+        assert!(!e.contains('\x1b') && e.len() < 200, "{e}");
+        let e = parse_response(&lines(&["\x1b]0;pwned\x07 1"]), 1)
+            .unwrap_err()
+            .to_string();
+        assert!(!e.contains('\x1b') && !e.contains('\x07'), "{e}");
+        let e = parse_response(&lines(&[&format!("{long} 1")]), 1)
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("...") && e.len() < 200, "{e}");
     }
 
     #[test]

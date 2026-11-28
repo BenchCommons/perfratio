@@ -292,3 +292,83 @@ fn verify_evidence_does_not_take_commands() {
         .assert()
         .failure();
 }
+
+#[test]
+fn untrusted_names_are_escaped_in_the_report() {
+    let (_tmp, dir) = fresh();
+    let manifest_path = dir.join("manifest.json");
+    let mut manifest = json(&manifest_path);
+    manifest["format_version"] = "1.0\u{1b}[2J".into();
+    manifest["files"][0]["path"] = "a\u{1b}[31mb\n::error::x".into();
+    fs::write(&manifest_path, serde_json::to_vec(&manifest).unwrap()).unwrap();
+    let out = verify(&dir).failure().get_output().clone();
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!stderr.contains('\u{1b}'), "{stderr:?}");
+    assert!(stderr.contains("invalid file name 'a\\u{1b}[31mb\\u{a}::error::x'"));
+    // the format check has no control characters to print, so check the file-name path only
+    #[cfg(unix)]
+    {
+        fs::write(dir.join("x\u{1b}[2Jy"), "z").unwrap();
+        let out = verify(&dir).failure().get_output().clone();
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(!stderr.contains('\u{1b}'), "{stderr:?}");
+        assert!(stderr.contains("'x\\u{1b}[2Jy' is not listed"));
+    }
+}
+
+#[test]
+fn an_oversized_manifest_is_refused() {
+    let (_tmp, dir) = fresh();
+    let manifest_path = dir.join("manifest.json");
+    let file = fs::File::create(&manifest_path).unwrap();
+    file.set_len(2 * 1024 * 1024).unwrap();
+    assert!(failure_text(&dir).contains("larger than 1048576 bytes"));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_planted_symlink_is_not_followed() {
+    let (tmp, dir) = fresh();
+    let target = tmp.path().join("target.txt");
+    let original = fs::read(dir.join("results.json")).unwrap();
+    fs::write(&target, &original).unwrap();
+    fs::remove_file(dir.join("results.json")).unwrap();
+    std::os::unix::fs::symlink(&target, dir.join("results.json")).unwrap();
+    let stderr = failure_text(&dir);
+    assert!(stderr.contains("'results.json'"), "{stderr}");
+    assert!(!stderr.contains("ok       results.json"));
+
+    // writing a bundle over a planted symlink fails and leaves the target alone
+    let victim = tmp.path().join("victim.txt");
+    fs::write(&victim, "keep").unwrap();
+    let dir2 = tmp.path().join("b2");
+    fs::create_dir(&dir2).unwrap();
+    std::os::unix::fs::symlink(&victim, dir2.join("results.json")).unwrap();
+    assert!(perfratio::evidence::write(&dir2, b"{}").is_err());
+    assert_eq!(fs::read_to_string(&victim).unwrap(), "keep");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_fifo_in_place_of_a_file_fails_fast() {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    use std::time::Duration;
+
+    let (_tmp, dir) = fresh();
+    let target = dir.join("results.json");
+    fs::remove_file(&target).unwrap();
+    let c = CString::new(target.as_os_str().as_bytes()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o600) }, 0);
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    let d = dir.clone();
+    std::thread::spawn(move || {
+        let _ = tx.send(failure_text(&d));
+    });
+    let text = rx
+        .recv_timeout(Duration::from_secs(10))
+        .expect("--verify-evidence hung on a FIFO");
+    assert!(text.contains("results.json"), "{text}");
+    assert!(text.contains("not a regular file"), "{text}");
+}

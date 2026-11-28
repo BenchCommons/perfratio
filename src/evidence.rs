@@ -3,14 +3,19 @@
 //! See `docs/specs/evidence-bundle.md` (#375).
 
 use std::collections::BTreeSet;
-use std::fs;
+use std::fs::{self, File, OpenOptions};
+use std::io::{Read, Write};
 use std::path::Path;
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
-use crate::validation::sha256_hex;
+use crate::util::sanitize::escape_control_chars;
+use crate::validation::{sha256_hex, Sha256};
+
+/// Largest `manifest.json` that `--verify-evidence` reads
+pub const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
 
 /// Name of the format in `manifest.json` (`format`)
 pub const FORMAT: &str = "perfratio-evidence";
@@ -184,7 +189,7 @@ pub fn write(dir: &Path, results_json: &[u8]) -> Result<()> {
     let document: Value = serde_json::from_slice(results_json)?;
     let mut entries = Vec::new();
     for (name, content) in &files {
-        fs::write(dir.join(name), content)
+        write_new(&dir.join(name), content)
             .with_context(|| format!("Could not write '{}'", dir.join(name).display()))?;
         entries.push(FileEntry {
             path: (*name).to_string(),
@@ -208,8 +213,51 @@ pub fn write(dir: &Path, results_json: &[u8]) -> Result<()> {
     };
     let mut bytes = serde_json::to_vec_pretty(&manifest)?;
     bytes.push(b'\n');
-    fs::write(dir.join(MANIFEST), bytes)
+    write_new(&dir.join(MANIFEST), &bytes)
         .with_context(|| format!("Could not write '{}'", dir.join(MANIFEST).display()))
+}
+
+/// Create `path` (it must not exist, and a symlink in its place is never followed) and write
+/// `content` to it
+fn write_new(path: &Path, content: &[u8]) -> std::io::Result<()> {
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    nofollow(&mut options);
+    options.open(path)?.write_all(content)
+}
+
+#[cfg(unix)]
+fn nofollow(options: &mut OpenOptions) {
+    use std::os::unix::fs::OpenOptionsExt;
+    options.custom_flags(libc::O_NOFOLLOW);
+}
+
+#[cfg(not(unix))]
+fn nofollow(_options: &mut OpenOptions) {}
+
+/// Open `path` for reading without following a symlink (on Unix) and return the handle with
+/// the metadata of the opened file, which must be a regular file
+fn open_regular(path: &Path) -> std::io::Result<(File, u64)> {
+    #[cfg(not(unix))]
+    if fs::symlink_metadata(path)?.file_type().is_symlink() {
+        return Err(std::io::Error::other("is a symbolic link"));
+    }
+    let mut options = OpenOptions::new();
+    options.read(true);
+    nofollow(&mut options);
+    // O_NONBLOCK: opening a FIFO must not wait for a writer. The type is checked on the
+    // handle below, and regular files never block, so the flag can stay set
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    let file = options.open(path)?;
+    let meta = file.metadata()?;
+    if !meta.is_file() {
+        return Err(std::io::Error::other("not a regular file"));
+    }
+    Ok((file, meta.len()))
 }
 
 /// Outcome of `--verify-evidence`
@@ -234,15 +282,63 @@ fn is_plain_name(name: &str) -> bool {
     !name.is_empty()
         && name != "."
         && name != ".."
-        && !name.contains(['/', '\\', ':', '\0'])
+        && !name.contains(['/', '\\', ':'])
+        && !name.chars().any(char::is_control)
         && name != MANIFEST
 }
 
+fn read_manifest(path: &Path) -> std::io::Result<Vec<u8>> {
+    let (file, len) = open_regular(path)?;
+    if len > MAX_MANIFEST_BYTES {
+        return Err(std::io::Error::other(format!(
+            "larger than {MAX_MANIFEST_BYTES} bytes"
+        )));
+    }
+    let mut raw = Vec::new();
+    file.take(MAX_MANIFEST_BYTES + 1).read_to_end(&mut raw)?;
+    if raw.len() as u64 > MAX_MANIFEST_BYTES {
+        return Err(std::io::Error::other(format!(
+            "larger than {MAX_MANIFEST_BYTES} bytes"
+        )));
+    }
+    Ok(raw)
+}
+
+/// Size and SHA-256 of an open file, reading at most `limit + 1` bytes
+fn hash_stream(file: File, limit: u64) -> std::io::Result<(u64, String)> {
+    let mut reader = file.take(limit.saturating_add(1));
+    let mut hasher = Sha256::default();
+    let mut buf = [0u8; 64 * 1024];
+    let mut size = 0u64;
+    loop {
+        let n = reader.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+        size += n as u64;
+    }
+    Ok((size, hasher.finish_hex()))
+}
+
 /// Check every file of the bundle in `dir` against its manifest
+///
+/// The bundle is untrusted: every text in the report that comes from it is escaped.
 pub fn verify(dir: &Path) -> Verification {
+    let mut out = verify_raw(dir);
+    for text in out.verified.iter_mut().chain(out.problems.iter_mut()) {
+        if let std::borrow::Cow::Owned(escaped) = escape_control_chars(text) {
+            *text = escaped;
+        }
+    }
+    out.problems.sort();
+    out
+}
+
+fn verify_raw(dir: &Path) -> Verification {
     let mut out = Verification::default();
     let manifest_path = dir.join(MANIFEST);
-    let raw = match fs::read(&manifest_path) {
+    let raw = match read_manifest(&manifest_path) {
         Ok(raw) => raw,
         Err(e) => {
             out.problems
@@ -287,28 +383,33 @@ pub fn verify(dir: &Path) -> Verification {
             continue;
         }
         let path = dir.join(&entry.path);
-        match fs::symlink_metadata(&path) {
-            Ok(meta) if meta.is_file() => {}
-            Ok(_) => {
-                out.problems
-                    .push(format!("'{}' is not a regular file", entry.path));
-                continue;
-            }
-            Err(_) => {
+        let (file, len) = match open_regular(&path) {
+            Ok(opened) => opened,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 out.problems.push(format!("'{}' is missing", entry.path));
                 continue;
             }
+            Err(e) => {
+                out.problems
+                    .push(format!("cannot read '{}': {e}", entry.path));
+                continue;
+            }
+        };
+        if len != entry.bytes {
+            out.problems.push(format!(
+                "'{}' has {len} bytes, the manifest says {}",
+                entry.path, entry.bytes
+            ));
+            continue;
         }
-        match fs::read(&path) {
-            Ok(content) => {
-                if content.len() as u64 != entry.bytes {
+        match hash_stream(file, entry.bytes) {
+            Ok((size, hash)) => {
+                if size != entry.bytes {
                     out.problems.push(format!(
-                        "'{}' has {} bytes, the manifest says {}",
-                        entry.path,
-                        content.len(),
-                        entry.bytes
+                        "'{}' has {size} bytes, the manifest says {}",
+                        entry.path, entry.bytes
                     ));
-                } else if sha256_hex(&content) != entry.sha256 {
+                } else if hash != entry.sha256 {
                     out.problems
                         .push(format!("'{}' does not match its sha256", entry.path));
                 } else {
@@ -339,7 +440,6 @@ pub fn verify(dir: &Path) -> Verification {
         }
         Err(e) => out.problems.push(format!("cannot read the directory: {e}")),
     }
-    out.problems.sort();
     out
 }
 
@@ -371,7 +471,18 @@ mod tests {
     #[test]
     fn plain_names_only() {
         assert!(is_plain_name("results.json"));
-        for bad in ["", "..", "a/b", "..\\x", "C:x", MANIFEST] {
+        for bad in [
+            "",
+            "..",
+            "a/b",
+            "..\\x",
+            "C:x",
+            "a\0b",
+            "a\x1b[2Jb",
+            "a\nb",
+            "a\u{9b}b",
+            MANIFEST,
+        ] {
             assert!(!is_plain_name(bad), "{bad}");
         }
     }

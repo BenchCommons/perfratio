@@ -58,6 +58,10 @@ cli = ["dep:clap", "dep:clap_complete", "dep:indicatif"]
 # Use the nightly feature windows_process_extensions_main_thread_handle
 windows_process_extensions_main_thread_handle = []
 
+# Honors PERFRATIO_SYSTEM_CHECK_ROOT (a fake /proc and /sys tree). Test-only:
+# enabled for `cargo test` through the dev-dependency on this crate below.
+test-hooks = []
+
 [[bin]]
 name = "perfratio"
 path = "src/main.rs"
@@ -125,6 +129,8 @@ features = [
 
 [dev-dependencies]
 approx = "0.5"
+# Turns on the `test-hooks` feature for tests (the integration tests run the real binary)
+perfratio = { path = ".", features = ["test-hooks"] }
 assert_cmd = "2.0"
 insta = { version = "1.41.1", features = ["yaml"] }
 # Validates the JSON export against docs/schema (tests/json_schema_tests.rs)
