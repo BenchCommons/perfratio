@@ -301,6 +301,7 @@ fn create_result(name: &str, mean: Scalar) -> BenchmarkResult {
         idle_watts: None,
         mean_net_energy_joules: None,
         energy_domains_joules: None,
+        gpu_utilization_percent: None,
         exit_codes: Vec::new(),
         parameters: BTreeMap::new(),
         omitted_failed_runs: Vec::new(),
@@ -317,6 +318,7 @@ fn create_result(name: &str, mean: Scalar) -> BenchmarkResult {
         diagnostics: None,
         per_run_parameters: None,
         precision: None,
+        power: None,
         shell: None,
         baseline: None,
         ..Default::default()

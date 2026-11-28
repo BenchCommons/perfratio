@@ -6,7 +6,7 @@ Migrating from hyperfine: see [docs/MIGRATION.md](docs/MIGRATION.md). Measuring 
 
 ## Unreleased
 
-- `--persistent` runs the command once and drives the runs through a versioned stdin/stdout protocol, with per-iteration times, warm-up detection and steady-state statistics; JSON 1.37 adds `results[].mode` and `results[].iterations`; Rust and Python SDKs gain `serve` (issue [#370](https://github.com/BenchCommons/perfratio/issues/370))
+- `--persistent` runs the command once and drives the runs through a versioned stdin/stdout protocol, with per-iteration times, warm-up detection and steady-state statistics; JSON 1.46 adds `results[].mode` and `results[].iterations`; Rust and Python SDKs gain `serve` (issue [#370](https://github.com/BenchCommons/perfratio/issues/370))
 - Region SDKs for JavaScript/TypeScript, Go, Java and Kotlin under `sdk/`, with `serve` for `--persistent` and the shared protocol test; the protocol and the JSON export do not change (issue [#372](https://github.com/BenchCommons/perfratio/issues/372))
 
 ## 1.0.0 - 2026-11-26

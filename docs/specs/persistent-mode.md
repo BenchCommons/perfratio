@@ -1,6 +1,6 @@
 # Spec: Persistent process mode (`--persistent`) (#370)
 
-**Status:** Implemented (persistent protocol 1, schemaVersion 1.37). SDK support: Rust,
+**Status:** Implemented (persistent protocol 1, schemaVersion 1.46). SDK support: Rust,
 Python, JavaScript/TypeScript, Go, Java and Kotlin (`serve`, #372).
 
 ## Problem / Motivation
@@ -80,7 +80,7 @@ Applied to the measured iterations (`times`), needs at least 10 of them:
 This is a simple robust rule, not the changepoint analysis of Barrett et al.; the full
 series stays in `times` so a better analysis can be applied afterwards.
 
-### JSON (schemaVersion 1.37, additive)
+### JSON (schemaVersion 1.46, additive)
 ```jsonc
 "results": [{
   "mode": "persistent",

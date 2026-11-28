@@ -63,6 +63,11 @@ name = "perfratio"
 path = "src/main.rs"
 required-features = ["cli"]
 
+# MCP server for agents (#386): JSON-RPC over stdio, no extra dependencies
+[[bin]]
+name = "perfratio-mcp"
+path = "src/bin/perfratio-mcp.rs"
+
 [dependencies]
 colored = "2.1"
 indicatif = { version = "0.18", optional = true }
