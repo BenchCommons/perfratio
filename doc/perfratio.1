@@ -130,6 +130,10 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR KEY=VALUE|git ]
 .RB [ \-\-require\-compatible\-env ]
 .RB [ \-\-calibrate [ =auto|off ]]
+.RB [ \-\-evidence
+.IR DIR ]
+.RB [ \-\-verify\-evidence
+.IR DIR ]
 .RB [ \-\-below\-floor
 .IR ACTION ]
 .RB [ \-\-expect\-output\-sha256
@@ -174,6 +178,8 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .RB [ \-\-on\-unavailable
 .IR POLICY ]
 .RB [ \-\-export\-diff\-markdown
+.IR FILE ]
+.RB [ \-\-verdict\-json
 .IR FILE ]
 .RB [ \-\-parameter\-scan
 .IR VAR
@@ -266,6 +272,11 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR DIRECTION:METRIC ]
 .RB [ \-\-noise\-threshold
 .IR PERCENT ]
+.RB [ \-\-pareto\-significance ]
+.RB [ \-\-pareto\-probability ]
+.RB [ \-\-ci\-method
+.IR METHOD ]
+.RB [ \-\-paired ]
 .RB [ \-\-show\-output\-on\-failure ]
 .RB [ \-\-generate\-completions
 .IR SHELL ]
@@ -391,6 +402,10 @@ What to do with a budget that cannot be evaluated (the metric is missing in the 
 \fB\-\-export\-diff\-markdown\fR \fIFILE\fP
 .IP
 With \fB\-\-compare\fR: write the comparison as a Markdown table to FILE, e.g. for a pull request comment or a CI job summary.
+.HP
+\fB\-\-verdict\-json\fR \fIFILE\fP
+.IP
+With \fB\-\-compare\fR: write a compact JSON verdict to FILE. Per command and metric it says whether the metric improved, regressed, is unchanged or inconclusive, with the change, its confidence interval and the p-value, plus an overall verdict (improved, regressed, trade_off, unchanged, inconclusive) and the result of \fB\-\-budget\fR. Written also when a budget fails.
 .HP
 \fB\-w\fR, \fB\-\-warmup\fR \fINUM|auto\fP
 .IP
@@ -529,6 +544,14 @@ How long until\-temp waits before it gives up (default 5m). Requires \fB\-\-cool
 \fB\-\-meta\fR \fIKEY=VALUE|git\fP
 .IP
 Record provenance of the benchmarked program under perfratio.meta in the JSON export (repeatable). KEY=VALUE is a string; git adds git_commit and git_dirty of the git repository in the current directory. The export contains no host name, user name, environment variables or working directory.
+.HP
+\fB\-\-evidence\fR \fIDIR\fP
+.IP
+Write an evidence bundle to the new or empty directory DIR: manifest.json (SHA\-256 of every file), results.json (the JSON export), samples.jsonl (every run), environment.json, calibration.json, validation.json, quality.json and command.json (the exact command line). No host name, user name or environment variables. The commands are recorded as typed: keep secrets out of them. See docs/specs/evidence\-bundle.md.
+.HP
+\fB\-\-verify\-evidence\fR \fIDIR\fP
+.IP
+Check the hashes, sizes and file list of the evidence bundle in DIR and exit: 0 if it is intact, 1 otherwise. Prints the SHA\-256 of manifest.json.
 .HP
 \fB\-\-require\-compatible\-env\fR
 .IP
@@ -721,6 +744,14 @@ Print a table comparing every measured dimension (wall time, peak memory, energy
 .IP
 Mark the commands on the Pareto frontier of the comma\-separated metrics, e.g. \fIwall,energy,memory\fR: the commands that no other command beats in one metric without being worse in another. A metric takes an optional statistic (\fIwall.p95\fR, \fImemory.max\fR). Commands without data for a metric are excluded, never counted as 0. Printed after the summary, and added to the JSON, Markdown and HTML exports.
 .HP
+\fB\-\-ci\-method\fR \fIMETHOD\fR
+.IP
+Interval of the mean when the runs have a hierarchy (\fB\-\-jobs\fR workers, \fB\-\-concurrency\fR instances): \fIflat\fR treats every run as independent (default), \fIhierarchical\fR resamples the clusters and then the runs inside them (Kalibera and Jones, 2013), which is wider when the clusters differ. Shown in the summary and in results[].hierarchy of the JSON export together with the variance per level. Does not change \fB\-\-target\-precision\fR or the tests.
+.HP
+\fB\-\-paired\fR
+.IP
+Paired analysis of every command against the reference: the runs of one round of an interleaved schedule (\fB\-\-schedule\fR round\-robin, randomized or balanced) are paired, and the mean difference, its interval and a paired t\-test are reported (results[].paired in the JSON export).
+.HP
 \fB\-\-constraint\fR \fIEXPR\fR
 .IP
 Only commands that satisfy the constraint are candidates for \fB\-\-pareto\fR and \fB\-\-objective\fR. EXPR is \(aq<METRIC> <op> <VALUE>\(aq with <=, <, >= or >, e.g. \(aqmemory <= 256MiB\(aq or \(aqwall.p95 <= 20ms\(aq. Repeatable.
@@ -732,6 +763,14 @@ Pick the single best candidate under the constraints, e.g. \fIminimize:energy\fR
 \fB\-\-noise\-threshold\fR \fIPERCENT\fR
 .IP
 Differences smaller than PERCENT of the reference are classified as \fBwithin noise\fR whatever the p\-value, and replace the default 1% floor of the significance markers. \fB\-\-fail\-if\-regressed\fR ignores them. With \fB\-\-pareto\fR: a command counts as dominated only if another is better by more than PERCENT of the value on some metric and not worse beyond it on any. Default: off (strict comparison for \fB\-\-pareto\fR).
+.HP
+\fB\-\-pareto\-significance\fR
+.IP
+With \fB\-\-pareto\fR: a command is dominated only when the commands that are better in the estimates are significantly better on every such metric (per\-run samples, \fB\-\-estimator\fR, \fB\-\-significance\-level\fR, \fB\-\-correction\fR, \fB\-\-bootstrap\-resamples\fR, \fB\-\-noise\-threshold\fR). Otherwise it stays on the frontier as \fBnot dominated (difference not significant)\fR. Metrics without 3 runs of samples never show a difference.
+.HP
+\fB\-\-pareto\-probability\fR
+.IP
+With \fB\-\-pareto\fR: report, per command, the bootstrap probability of not being dominated (share of \fB\-\-bootstrap\-resamples\fR resamples of the runs in which no other command dominates it).
 .HP
 \fB\-\-show\-output\-on\-failure\fR
 .IP
@@ -787,6 +826,18 @@ Collect Top\-down Microarchitecture Analysis level 1 per run (Linux x86_64): the
 \fB\-\-simd\fR
 .IP
 Collect a floating\-point scalar/vector breakdown per run (Linux, x86_64): retired scalar, 128\-, 256\- and 512\-bit packed floating\-point arithmetic and the vectorization ratio ('simd' and 'simd_summary' in JSON, one terminal block). Intel counts instructions, AMD Zen 4/5 counts uops, so compare ratios only within one vendor. Integer SIMD is not counted. Works with or without \fB\-\-counters\fR and honors \fB\-\-scope\fR (except split). Unsupported CPUs (including AArch64), hybrid Intel CPUs, VMs without a PMU, permissions and other platforms give one warning and status 'unavailable' in perfratio.measurements.simd.
+.HP
+\fB\-\-roofline\fR
+.IP
+Place every command on the roofline (Linux, x86_64): arithmetic intensity (FLOP per byte), GFLOP/s and GB/s, and whether the run is memory\- or compute\-bound. Enables \fB\-\-simd\fR and cache\-misses. FLOPs come from the \fB\-\-simd\fR counts; the bytes are last\-level cache misses times 64, a lower bound of the real traffic (it misses prefetches and write\-backs), so the intensity is an upper bound. Exported as 'roofline' in the JSON file. See \fBdocs/specs/roofline.md\fR.
+.HP
+\fB\-\-roofline\-peaks\fR \fIGFLOPS,GBPS\fP
+.IP
+The roofs of \fB\-\-roofline\fR: peak GFLOP/s and peak memory bandwidth in GB/s, e.g. 48,20. Or observed (default): the best values over the benchmarked commands, which needs two commands and is only a lower bound of the real ceilings.
+.HP
+\fB\-\-roofline\-precision\fR \fIPRECISION\fP
+.IP
+Element size of the packed floating\-point counts: double (default) or single (twice the FLOPs per packed instruction).
 .HP
 \fB\-\-first\-run\fR \fIMODE\fP
 .IP

@@ -336,6 +336,15 @@ pub struct UntilSettings {
     pub match_stderr: bool,
 }
 
+/// `--thermal` reads Linux sysfs sensors; on other systems it cannot sample.
+#[cfg(feature = "cli")]
+fn thermal_warning(requested: bool, linux: bool) -> Option<&'static str> {
+    (requested && !linux).then_some(
+        "'--thermal' reads Linux sysfs temperature sensors; on this platform no temperature \
+         is sampled and 'interference.thermal' is absent from the export.",
+    )
+}
+
 /// The main settings for a perfratio benchmark session
 pub struct Options {
     /// Upper and lower bound for the number of benchmark runs
@@ -428,6 +437,8 @@ pub struct Options {
     pub work: Option<crate::efficiency::Work>,
     /// `--complexity VAR`: fit growth models over the values of the parameter VAR
     pub complexity: Option<String>,
+    /// `--roofline` (#379)
+    pub roofline: Option<crate::roofline::Config>,
 
     /// `--raw-ratios`: print only the relative values of the primary metric
     pub raw_ratios: bool,
@@ -581,6 +592,7 @@ impl Default for Options {
             optimize: None,
             work: None,
             complexity: None,
+            roofline: None,
             raw_ratios: false,
             pareto: None,
             measure_energy: false,
@@ -901,7 +913,7 @@ impl Options {
             );
         }
         options.energy_domains = matches.get_flag("energy-domains");
-        options.pareto = crate::pareto::ParetoConfig::parse(
+        options.pareto = crate::pareto::ParetoConfig::parse_with(
             matches.get_one::<String>("pareto").map(String::as_str),
             matches
                 .get_many::<String>("constraint")
@@ -912,6 +924,8 @@ impl Options {
             matches
                 .get_one::<String>("noise-threshold")
                 .map(String::as_str),
+            matches.get_flag("pareto-significance"),
+            matches.get_flag("pareto-probability"),
         )
         .map_err(OptionsError::InvalidPareto)?;
         if let Some(val) = matches.get_one::<String>("concurrency") {
@@ -1130,6 +1144,9 @@ impl Options {
             .get_one::<String>("fail-on-quality")
             .and_then(|value| crate::quality::Grade::parse(value));
         options.thermal = matches.get_flag("thermal");
+        if let Some(warning) = thermal_warning(options.thermal, cfg!(target_os = "linux")) {
+            eprintln!("Warning: {warning}");
+        }
         options.cooldown = matches
             .get_one::<String>("cooldown")
             .map(|value| {
@@ -1152,7 +1169,21 @@ impl Options {
             .and_then(|value| crate::calibration::BelowFloorAction::parse(value))
             .unwrap_or_default();
         options.show_resource_usage = matches.get_flag("resource-usage");
-        let simd = matches.get_flag("simd");
+        let roofline = matches.get_flag("roofline") && !importing;
+        if roofline {
+            options.roofline = Some(crate::roofline::Config {
+                peaks: matches
+                    .get_one::<String>("roofline-peaks")
+                    .and_then(|v| crate::roofline::PeaksSetting::parse(v).ok())
+                    .unwrap_or(crate::roofline::PeaksSetting::Observed),
+                precision: matches
+                    .get_one::<String>("roofline-precision")
+                    .and_then(|v| crate::roofline::Precision::parse(v))
+                    .unwrap_or_default(),
+            });
+        }
+        // `--roofline` needs the FP counts and the last-level misses
+        let simd = matches.get_flag("simd") || roofline;
         // `--metric instructions|cycles` collects its own counter
         let counters_list = matches.get_one::<String>("counters").cloned().or_else(|| {
             (!importing)
@@ -1177,7 +1208,11 @@ impl Options {
                     .map_err(OptionsError::InvalidCounters)?,
                 None => Vec::new(),
             };
-            if let Some(kind) = metric_counter.filter(|_| !importing) {
+            let needed = metric_counter
+                .filter(|_| !importing)
+                .into_iter()
+                .chain(roofline.then_some(crate::perf_counters::CounterKind::CacheMisses));
+            for kind in needed {
                 let spec = crate::perf_counters::CounterSpec {
                     kind,
                     scope: mode.default_scope(),
@@ -1193,6 +1228,16 @@ impl Options {
                 matches.get_flag("debug-mode"),
             )
             .map_err(OptionsError::InvalidCounters)?;
+            let mut config = config;
+            let mut warnings = warnings;
+            let uses_shell = options
+                .executor_kinds
+                .iter()
+                .any(|k| matches!(k, ExecutorKind::Shell(_)));
+            warnings.extend(crate::perf_counters::require_no_shell(
+                &mut config,
+                uses_shell,
+            ));
             for warning in warnings {
                 eprintln!("{} {warning}", crate::output::colors::yellow("Warning:"));
             }
@@ -1215,11 +1260,6 @@ impl Options {
         }
         if matches.get_flag("topdown") {
             let debug_mode = matches.get_flag("debug-mode");
-            if !debug_mode && !crate::topdown::platform_supported() {
-                return Err(OptionsError::InvalidTopdown(
-                    "--topdown is only supported on Linux x86_64".to_string(),
-                ));
-            }
             // On hybrid CPUs the events only count on one core type
             let pinned = options.affinity.is_some() || options.core_class.is_some();
             let (config, warnings) = crate::topdown::resolve(debug_mode, pinned);
@@ -1266,6 +1306,18 @@ impl Options {
             }
         };
         options.schedule = resolve_schedule(explicit, options.jobs)?;
+        if options.stat_settings.paired
+            && !matches!(
+                options.schedule,
+                ScheduleMode::RoundRobin | ScheduleMode::Randomized | ScheduleMode::Balanced
+            )
+        {
+            return Err(OptionsError::InvalidStatistics(
+                "'--paired' needs an interleaved schedule ('--schedule round-robin', \
+                 'randomized' or 'balanced'): the runs of the commands are paired by round"
+                    .into(),
+            ));
+        }
 
         options.allow_setup_with_round_robin = matches.get_flag("allow-setup-with-round-robin");
 
@@ -1839,8 +1891,24 @@ fn parse_stat_settings<'a>(
     };
     settings.noise_threshold = percent("noise-threshold")?;
     settings.equivalence_margin = percent("equivalence-margin")?;
+    if let Some(value) = matches.get_one::<String>("ci-method") {
+        settings.ci_method = value.parse().map_err(OptionsError::InvalidStatistics)?;
+    }
+    settings.paired = matches.get_flag("paired");
     settings
         .validate()
         .map_err(OptionsError::InvalidStatistics)?;
     Ok(settings)
+}
+
+#[cfg(all(test, feature = "cli"))]
+mod thermal_warning_tests {
+    use super::thermal_warning;
+
+    #[test]
+    fn warns_only_when_requested_off_linux() {
+        assert!(thermal_warning(true, false).is_some());
+        assert!(thermal_warning(true, true).is_none());
+        assert!(thermal_warning(false, false).is_none());
+    }
 }

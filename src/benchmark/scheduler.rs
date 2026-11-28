@@ -790,6 +790,28 @@ impl<'a> Scheduler<'a> {
         }
     }
 
+    /// `--roofline`: place every command on the roofline and hand the result to the JSON export.
+    pub fn print_roofline(&self) {
+        let Some(config) = &self.options.roofline else {
+            return;
+        };
+        let results: Vec<&BenchmarkResult> = self
+            .results
+            .iter()
+            .filter(|r| !(self.options.filter_failed && r.has_failure()))
+            .collect();
+        let inputs: Vec<crate::roofline::Input> = results
+            .iter()
+            .map(|r| crate::roofline::Input::from_result(r, config.precision))
+            .collect();
+        let roofline = crate::roofline::analyze(config, &inputs);
+        self.export_manager
+            .set_roofline(serde_json::to_value(&roofline).ok());
+        if self.options.output_style != OutputStyleOption::Disabled {
+            crate::out!("{}", crate::roofline::terminal(&roofline));
+        }
+    }
+
     /// `--complexity`: fit and print the growth models, and hand them to the JSON export.
     pub fn print_complexity(&self) {
         let Some(var) = &self.options.complexity else {
@@ -1152,6 +1174,82 @@ impl<'a> Scheduler<'a> {
                  to be accurately benchmarked by perfratio.",
                  colors::red("Note").bold()
             );
+        }
+    }
+
+    /// `--paired`: the mean difference of every command to the reference over
+    /// the rounds of the interleaved schedule (#368).
+    pub fn print_paired_analysis(&self) {
+        let settings = crate::stats::settings::current();
+        if !settings.paired || self.options.output_style == OutputStyleOption::Disabled {
+            return;
+        }
+        let results: Vec<&BenchmarkResult> = self
+            .results
+            .iter()
+            .filter(|r| !(self.options.filter_failed && r.has_failure()))
+            .collect();
+        if results.len() < 2 {
+            return;
+        }
+        let owned: Vec<BenchmarkResult> = results.iter().map(|r| (*r).clone()).collect();
+        let metric = self.options.metric;
+        let reference = self
+            .get_reference_result(&owned)
+            .unwrap_or_else(|| relative_speed::best_of(&owned, metric));
+        crate::outln!(
+            "{}",
+            format!(
+                "Paired by round, {}% interval of the difference to '{}'",
+                settings.confidence_percent(),
+                reference.command_with_unused_parameters
+            )
+            .bold()
+        );
+        for result in &owned {
+            if std::ptr::eq(result, reference) || result.command == reference.command {
+                continue;
+            }
+            match crate::stats::hierarchical::paired_results(
+                reference,
+                result,
+                settings.confidence_level,
+            ) {
+                Some(p) => {
+                    let unit = self.options.time_unit;
+                    let change = p
+                        .relative_change
+                        .map(|c| format!(" ({:+.2}%)", c * 100.0))
+                        .unwrap_or_default();
+                    let sign = |v: f64| {
+                        if v < 0.0 {
+                            format!("-{}", format_duration(-v, unit))
+                        } else {
+                            format!("+{}", format_duration(v, unit))
+                        }
+                    };
+                    let reduction = p
+                        .variance_reduction
+                        .map(|r| format!(", variance reduced by {:.0}%", r * 100.0))
+                        .unwrap_or_default();
+                    crate::outln!(
+                        "  {}: {}{} [{}, {}], p = {:.4}, {} rounds{}",
+                        colors::magenta(&result.command_with_unused_parameters),
+                        sign(p.mean_difference),
+                        change,
+                        sign(p.difference_ci[0]),
+                        sign(p.difference_ci[1]),
+                        p.p_value,
+                        p.rounds,
+                        reduction
+                    );
+                }
+                None => crate::outln!(
+                    "  {}: {}",
+                    colors::magenta(&result.command_with_unused_parameters),
+                    "not paired (fewer than 3 common rounds, or runs were omitted)".dimmed()
+                ),
+            }
         }
     }
 

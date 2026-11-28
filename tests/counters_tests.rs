@@ -214,7 +214,7 @@ fn imported_results_keep_counters() {
     );
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "macos")))]
 #[test]
 fn unsupported_platform_warns_once_and_continues() {
     let dir = tempfile::tempdir().unwrap();
@@ -231,6 +231,61 @@ fn unsupported_platform_warns_once_and_continues() {
     let m = &v["perfratio"]["measurements"];
     assert_eq!(m["counters"], "unavailable");
     assert_eq!(m["counters_unavailable_reason"], "unsupported_platform");
+    assert!(v["results"][0].get("counters").is_none());
+}
+
+/// macOS (#411): task-level counters, no root, only with `-N`. Apple Silicon only.
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_counts_instructions_and_cycles_with_no_shell() {
+    if cfg!(not(target_arch = "aarch64")) {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let json = dir.path().join("out.json");
+    perfratio()
+        .args([
+            "--runs=2",
+            "--counters=instructions,cycles",
+            "-N",
+            "--export-json",
+        ])
+        .arg(&json)
+        .args(["--", "/usr/bin/awk", "BEGIN{for(i=0;i<1000000;i++)s+=i}"])
+        .assert()
+        .success();
+    let v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&json).unwrap()).unwrap();
+    assert_eq!(v["perfratio"]["measurements"]["counters"], "measured");
+    for name in ["instructions", "cycles"] {
+        let runs = v["results"][0]["counters"][name].as_array().unwrap();
+        assert_eq!(runs.len(), 2);
+        assert!(runs.iter().all(|x| x.as_u64().unwrap() > 0), "{name}");
+    }
+}
+
+/// macOS (#411): with a shell the counters would measure the shell, so they
+/// are dropped with a warning that points to `-N`.
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_with_a_shell_is_unavailable_and_suggests_no_shell() {
+    if cfg!(not(target_arch = "aarch64")) {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let json = dir.path().join("out.json");
+    perfratio()
+        .args(["--runs=2", "--counters=instructions", "--export-json"])
+        .arg(&json)
+        .arg("true")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("Use '-N'"));
+    let v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&json).unwrap()).unwrap();
+    let m = &v["perfratio"]["measurements"];
+    assert_eq!(m["counters"], "unavailable");
+    assert_eq!(m["counters_unavailable_reason"], "other");
     assert!(v["results"][0].get("counters").is_none());
 }
 

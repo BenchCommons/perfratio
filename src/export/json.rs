@@ -25,7 +25,7 @@ pub struct PrimaryMetricStats {
 }
 
 /// Version of the JSON output contract (`docs/specs/output-schema-contract.md`).
-pub const SCHEMA_VERSION: &str = "1.37";
+pub const SCHEMA_VERSION: &str = "1.40";
 
 #[derive(Serialize, Debug)]
 struct PerfratioSummary<'a> {
@@ -45,6 +45,9 @@ struct PerfratioSummary<'a> {
     /// Empirical complexity fits of `--complexity` (new in 1.33, #374)
     #[serde(skip_serializing_if = "Option::is_none")]
     complexity: Option<serde_json::Value>,
+    /// Roofline placement of `--roofline` (new in 1.39, #379)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    roofline: Option<serde_json::Value>,
     /// Pareto analysis of `--pareto` (new in 1.16, #326)
     #[serde(skip_serializing_if = "Option::is_none")]
     pareto: Option<Analysis>,
@@ -89,6 +92,10 @@ struct ResultEntry<'a> {
     /// p-value of the equivalence test (TOST) for the mean (new in 1.33, #323)
     #[serde(skip_serializing_if = "Option::is_none")]
     equivalence_p_value: Option<f64>,
+    /// Paired comparison with the reference over the rounds of an interleaved
+    /// schedule (new in 1.37, #368); only with `--paired`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    paired: Option<crate::stats::hierarchical::PairedAnalysis>,
 }
 
 /// The `perfratio` object: the run metadata plus the descriptor of every metric (#317).
@@ -146,6 +153,8 @@ pub struct JsonExporter {
     pub optimize: std::sync::Mutex<Option<serde_json::Value>>,
     /// Result of `--complexity`
     pub complexity: std::sync::Mutex<Option<serde_json::Value>>,
+    /// Result of `--roofline`
+    pub roofline: std::sync::Mutex<Option<serde_json::Value>>,
     /// Pareto analysis of the results being serialized
     pub pareto: std::sync::Mutex<Option<Analysis>>,
     /// Runner floor measured by `--calibrate`
@@ -244,6 +253,15 @@ impl Exporter for JsonExporter {
                     effect: assessment.and_then(|a| a.verdict).map(|v| v.effect),
                     classification: assessment.and_then(|a| a.verdict).map(|v| v.classification),
                     equivalence_p_value: assessment.and_then(|a| a.verdict?.equivalence_p),
+                    paired: reference_result
+                        .filter(|_| settings.paired)
+                        .and_then(|reference| {
+                            crate::stats::hierarchical::paired_results(
+                                reference,
+                                result,
+                                settings.confidence_level,
+                            )
+                        }),
                 }
             })
             .collect();
@@ -263,6 +281,11 @@ impl Exporter for JsonExporter {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .clone(),
+            roofline: self
+                .roofline
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone(),
             pareto: self
                 .pareto
                 .lock()
@@ -279,6 +302,10 @@ impl Exporter for JsonExporter {
 
     fn set_optimize(&self, value: Option<&serde_json::Value>) {
         *self.optimize.lock().unwrap_or_else(|e| e.into_inner()) = value.cloned();
+    }
+
+    fn set_roofline(&self, value: Option<&serde_json::Value>) {
+        *self.roofline.lock().unwrap_or_else(|e| e.into_inner()) = value.cloned();
     }
 
     fn set_complexity(&self, value: Option<&serde_json::Value>) {

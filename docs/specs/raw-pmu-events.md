@@ -24,7 +24,7 @@ PMUs with a `cpumask` (uncore) are marked system-wide: they count per socket,
 and `perf_event_open` on a benchmarked process refuses them, so the event is
 reported unavailable with the usual single warning.
 
-### JSON (MINOR, schemaVersion 1.37)
+### JSON (MINOR, schemaVersion 1.40)
 Raw events add keys to `results[].counters`, `counters_summary` and
 `counters_coverage`: `r01c2`, `cpu/event=0x3c,umask=0x01/`, `cpu/mem-loads/`
 (`rNNNN` keys are lowercased; `pmu/.../` keys keep the case as written, with no spaces; no
