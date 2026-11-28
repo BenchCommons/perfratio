@@ -44,6 +44,10 @@ Apple M4, uid 501, no root).
     Windows can only read cycles.
   - With a shell (the default, `cmd.exe`) the counters would measure the shell: dropped as on
     macOS (`unavailable`, reason `other`, warning that suggests `-N`).
+  - No calibration on Windows: the overhead is calibrated with `true` runs, which Windows does not
+    have (found on the CI runners: Git's MSYS `true.exe` uses far more cycles than the command and
+    brought every run to 0 after subtraction). The cycles are those of the whole process,
+    including its startup.
   - `--simd` and `--topdown`: as on macOS (`unsupported_platform`, warning, benchmark continues).
   - The hidden `task-clock` (divisor of the effective frequency) has no source, so the effective
     frequency is not computed on Windows.

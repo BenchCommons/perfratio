@@ -1509,12 +1509,16 @@ impl RunCounters {
 }
 
 /// Whether calibration runs are needed: some real (non-mock) events are open.
+/// Never on Windows: the calibration command is `true`, which Windows does not
+/// have (a `true.exe` from Git's MSYS tools costs far more cycles than the
+/// command), and the cycles of a process include its own startup.
 pub fn needs_calibration(
     counters: Option<&CounterConfig>,
     topdown: Option<&crate::topdown::TopdownConfig>,
 ) -> bool {
-    counters.is_some_and(|c| c.is_active() && !c.mock)
-        || topdown.is_some_and(|t| t.is_active() && !t.mock)
+    !cfg!(windows)
+        && (counters.is_some_and(|c| c.is_active() && !c.mock)
+            || topdown.is_some_and(|t| t.is_active() && !t.mock))
 }
 
 /// Median overhead of the calibration runs per event of a combined reading.
