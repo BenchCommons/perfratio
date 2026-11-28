@@ -38,11 +38,14 @@ rejected or ignored. "Warning" is a line on stderr; "reason" is
 | `--simd` | yes (PMU) | no: warning, `simd: unavailable`, reason `unsupported_platform` | no: same as macOS |
 | `--topdown` | yes, x86_64 only | no: warning, `topdown: unavailable`, reason `unsupported_platform` (`counters-macos-windows.md`) | no: same as macOS |
 | Raw PMU events, `--list-events` (#394) | yes (sysfs `event_source`, `perf_event_open`) | no: `--list-events` prints the built-in names and "No PMUs found ... (only available on Linux)"; raw events warn as `--counters` does elsewhere | no: same as macOS |
-| `--gpu` NVML / AMD SMI (#401) | yes, via `dlopen`; not run on GPU hardware | no (from code): the loader is `cfg(unix)` but NVML and AMD SMI do not exist on macOS, so warning with reason `gpu_library_not_found` | no: `nvml.dll` loader not implemented, reason `unsupported_platform` |
-| `--energy-attribution cpu-time\|cgroup` (#402) | yes (`/proc/stat`, cgroup `cpu.stat`) | no: warning once, no estimate; measured energy unaffected | no: same as macOS |
-| `--power-meter COMMAND` (#402) | yes (`sh -c`) | yes (`sh -c`; from code) | yes (`cmd /C`; from code) |
-| `--thermal` (temperature sampling) | yes (sysfs) | no: warning (added here); `interference.thermal` absent | no: same |
-| `--cooldown until-temp=C` | yes | no: warning "no temperature sensor can be read on this host; not waiting" (verified) | no: same |
+| `--gpu` NVML / AMD SMI (#401) | yes, via `dlopen`; not run on GPU hardware | no: warning, reason `gpu_library_not_found` (neither NVML nor AMD SMI exists on macOS; verified) | no: `nvml.dll` loader not implemented, reason `unsupported_platform` |
+| `--energy-attribution cpu-time\|cgroup` (#402) | yes (`/proc/stat`, cgroup `cpu.stat`) | no: warning once that `/proc/stat` is needed, no estimate; measured energy unaffected (verified) | no: same as macOS (from code) |
+| `--power-meter COMMAND` (#402) | yes (`sh -c`) | yes (`sh -c`; verified with `--power-meter 'echo 5'`) | yes (`cmd /C`; from code) |
+| `--thermal` (temperature sampling) | yes (sysfs, `interference.thermal` in °C) | partial (#419): no temperature without root; the thermal pressure level (`nominal` to `sleeping`) goes to `interference.thermal_pressure`, `interference.thermal` is absent (verified) | no: warning, nothing sampled |
+| `--cooldown until-temp=C` | yes | no: warning "no temperature sensor can be read on this host ...; not waiting", with the macOS cause (verified) | no: same warning |
+| `--collector-plugin PATH` (#403) | yes | yes: JSON lines over pipes, no OS-specific code (verified with a shell-script plugin) | yes (from code); `PATH` must be something `CreateProcess` runs directly (`.exe`, `.bat`, `.cmd`), not a `.sh` script |
+| `--collector cachegrind\|callgrind` (#403) | yes, needs Valgrind | no: error, non-zero exit, because Valgrind cannot be run (not installed here; Valgrind does not support Apple Silicon, see `valgrind-collector.md`) | no: same error (from code) |
+| `--membw` memory bandwidth and NUMA (#404) | yes (uncore IMC via `perf_event_open`, `numa_maps`); not run on Linux hardware here | no: two warnings, `membw` and `numa` `unavailable` with reason `unsupported_platform` (verified) | no: same (from code) |
 | cgroup quota/throttle counters | yes (automatic, no flag) | no: nothing is read, no warning | no: same |
 
 ### Control of the benchmarked process
@@ -54,31 +57,16 @@ rejected or ignored. "Warning" is a line on stderr; "reason" is
 | `--jobs N` with `--pin-workers`, `--reserve-cpus` | yes | no: warning "workers cannot be pinned ... ignored", run continues (verified) | yes |
 | `--priority high` / `idle` | nice -20 / `SCHED_IDLE` | nice -20 / nice 19; non-root `high` fails with "raising the priority requires root" (verified) | `HIGH_` / `IDLE_PRIORITY_CLASS` |
 | `--priority realtime` | `SCHED_FIFO` at max priority | partial: nice -20 plus foreground task role, not a real-time policy; needs root (error as non-root, verified) | `REALTIME_PRIORITY_CLASS`; without administrator rights Windows lowers it to high, and perfratio now warns after reading the class back (#418; from code, needs Windows to run) |
-| `--check-system` | governor, turbo, load, power source, temperature | load, power source, Low Power Mode, thermal speed limit (`pmset`) (verified) | power source, power plan, CPU load, CPU frequency limit; no turbo check |
+| `--check-system` | governor, turbo, load, power source, temperature | load, power source, Low Power Mode, thermal speed limit (`pmset`), thermal pressure level (#419) (verified) | power source, power plan, CPU load, CPU frequency limit; no turbo check |
 
 ### Exit and reporting behaviour common to all
 - A requested measurement that cannot work never changes the exit code, except where the
   table says "error" (CPU-list `--affinity` on macOS, `--priority` without
-  privileges). Where it degrades, `measurements.<group>` is `unavailable` and the reason is an
+  privileges, `--collector cachegrind|callgrind` without a working Valgrind). Where it degrades, `measurements.<group>` is `unavailable` and the reason is an
   open enum (new values are a MINOR change, see `output-schema-contract.md`).
 - Energy reasons: `unsupported_platform`, `rapl_not_found`, `rapl_unreadable`,
   `unsupported_cpu`, `ioreport_not_found`, `ioreport_frozen`, `emi_not_found`,
   `emi_unreadable` (`energy::Unavailable`). Counter reasons: see `src/perf_counters.rs`.
-
-### Rows from pull requests still open
-These PRs are not part of `master`. Cells follow each PR description and have not been checked
-here. Each adds a row to the matrix once merged. #399 (`--persistent`, region SDKs) and #405
-(`--optimize` search) state no platform differences.
-
-| Feature (PR) | Linux | macOS | Windows |
-|---|---|---|---|
-| `--thermal` and `--check-system` thermal pressure level (#419) | unchanged (sysfs) | yes: thermal pressure level | not stated |
-| `--collector-plugin` (#403) | yes | yes (JSON-lines over pipes; not stated per OS) | not stated |
-| `--collector cachegrind\|callgrind` (#403) | yes, needs Valgrind | no: Valgrind unsupported on Apple Silicon | no |
-| `--membw` memory bandwidth and NUMA (#404) | yes (uncore IMC, `numa_maps`) | no: warning, reason `unsupported_platform` | no: same |
-
-Open PRs that add JSON fields pick the next `schemaVersion` in the order they merge. Update this
-table when they land.
 
 ## Gaps
 Fixed in this change (small, no JSON change):
@@ -94,7 +82,9 @@ Open, tracked as issues (large, or need hardware or a design decision):
 - #411 Hardware counters on macOS and Windows. #420 delivered `instructions` and `cycles` on
   macOS with `-N`, and `--topdown` now degrades like `--counters`. Missing: Windows, other
   events on macOS, Intel Macs (`counters-macos-windows.md`).
-- #412 Temperature sampling and `--cooldown until-temp` on macOS and Windows.
+- #412 Temperature sampling and `--cooldown until-temp` on macOS and Windows. #419 added the
+  thermal pressure level on macOS (`--thermal`, `--check-system`). Missing: a temperature in
+  °C on macOS (needs root) and any reading on Windows (`thermal-macos-windows.md`).
 - #413 Validate IOReport and EMI energy on real hardware; macOS 27 via CLPC.
 - #414 Detect Windows lowering `--priority realtime` to high. #418 added the warning. Missing:
   a run on Windows, since the check is not exercised in CI.
@@ -111,6 +101,7 @@ Accepted limits, no issue:
 ## Tests
 - `energy::baseline_tests::every_reason_has_a_message_and_only_rapl_ones_mention_rapl`
 - `options::thermal_warning_tests::warns_only_when_requested_off_linux`
+- `thermal::tests::macos_reports_a_pressure_level` (macOS only)
 - macOS behaviour in the matrix was run manually with the debug binary; it is not in CI.
 
 Refs: #291.
