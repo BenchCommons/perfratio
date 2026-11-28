@@ -196,6 +196,17 @@ request comment. A GitHub Actions example is in [doc/ci.md](doc/ci.md).
 
 Every benchmark also gets a measurement quality report (`results[].quality` in the JSON, a summary in the terminal when a check warns or fails): sample sufficiency, CI precision, outliers, trend, clusters, counter and energy coverage, workload validation. `--fail-on-quality with_caveats` exits with code 5 if a measurement is `unreliable`, next to `--fail-if-regressed` ([spec](docs/specs/measurement-quality.md)). Exports carry an environment block and a fingerprint (`perfratio.environment_fingerprint`); `--compare` and `--import-json` warn when the hardware class differs, `--meta git` records the commit ([spec](docs/specs/environment-fingerprint.md)). A command within the runner floor (measured at start with a trivial command, `--calibrate`) is flagged as below resolution, `--below-floor fail` exits with code 6 ([spec](docs/specs/measurement-floor.md)). `--evidence DIR` writes a hashed bundle (results, every sample, environment, calibration, validation, quality, command line) and `perfratio --verify-evidence DIR` checks it ([spec](docs/specs/evidence-bundle.md)). Cgroup throttling and thermal readings during the runs are reported as `interference` and a quality check; `--cooldown` waits before every run ([spec](docs/specs/cgroup-thermal.md)).
 
+Statistics and analysis flags, one line each:
+
+- `--paired` pairs the runs of one round of an interleaved schedule and reports the mean difference against the reference with a paired t-test; `--ci-method hierarchical` handles runs that share a process or worker ([spec](docs/specs/hierarchical-paired.md)).
+- `--roofline` places each command on the roofline (arithmetic intensity against compute and memory roofs), Linux x86_64 only ([spec](docs/specs/roofline.md)).
+- `--pareto-significance` and `--pareto-probability` make the `--pareto` frontier count only significant differences, and report per command the bootstrap probability of not being dominated ([spec](docs/specs/pareto.md)).
+- `--power` and `--target-effect` report the smallest change the runs can detect and the runs needed for a target effect; with `--target-effect` and no `--runs`, it also decides when to stop ([spec](docs/specs/statistical-power.md)).
+- `--list-events` lists the built-in and PMU events that `--counters` accepts, including raw `raw:rXXXX` and `pmu/event=.../` syntax, Linux only ([spec](docs/specs/raw-pmu-events.md)).
+- `--region-scope` reports CPU time, energy and counters for the code inside `--region` regions only ([spec](docs/specs/region-scope.md)).
+
+The second binary `perfratio-mcp` is a Model Context Protocol server over stdio for agents. It offers the tools `capabilities`, `run_benchmark` and `compare`, and `compare` returns the `--verdict-json` document, so an agent needs no shell or terminal parsing. See [docs/specs/mcp-server.md](docs/specs/mcp-server.md) for the trust model and limits.
+
 ## JSON export and the `schemaVersion` contract
 
 `--export-json <FILE>` (or `-e results.json`) writes the summary statistics and every run's
