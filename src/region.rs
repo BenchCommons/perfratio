@@ -147,9 +147,12 @@ pub fn parse(text: &str) -> Result<Option<Report>> {
             "region protocol: line {line_no}: expected 'hello {PROTOCOL_VERSION}' first, got '{}'",
             shorten(kind)
         );
-        let name = parts
-            .next()
-            .ok_or_else(|| anyhow!("region protocol: line {line_no}: '{kind}' needs a name"))?;
+        let name = parts.next().ok_or_else(|| {
+            anyhow!(
+                "region protocol: line {line_no}: '{}' needs a name",
+                shorten(kind)
+            )
+        })?;
         ensure!(
             is_valid_name(name),
             "region protocol: line {line_no}: invalid region name '{}' \
@@ -307,6 +310,20 @@ mod tests {
         let e = parse(&format!("hello 1\n{long} a 1\n"))
             .unwrap_err()
             .to_string();
+        assert!(e.len() < 250 && e.contains("..."), "{e}");
+    }
+
+    #[test]
+    fn escapes_and_limits_event_kind_without_a_name() {
+        let e = parse("hello 1\n\u{1b}[2J\n").unwrap_err().to_string();
+        assert!(e.contains("needs a name"), "{e}");
+        assert!(!e.contains('\u{1b}'), "{e}");
+        assert!(e.contains("\\u{1b}"), "{e}");
+        let long = "z".repeat(500);
+        let e = parse(&format!("hello 1\n{long}\n"))
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("needs a name"), "{e}");
         assert!(e.len() < 250 && e.contains("..."), "{e}");
     }
 
