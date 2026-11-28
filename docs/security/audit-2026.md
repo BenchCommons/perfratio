@@ -107,6 +107,8 @@ the PR diff, not on `master`.
   redaction option changes the export contract: version it and note it in the spec.
 - State: open (master). Partly mitigated: `--power-meter` is redacted in PR #402, and
   `--evidence` warns in PR #393 and `--meta` warns on `master`.
+- Fixed in part (this PR): warning added to the `--export-json` help and to the README
+  (JSON export section). Redaction (recommendations 2 and 3) is still open.
 
 ### M4. Text from the benchmarked program is printed unescaped (region protocol, persistent mode)
 
@@ -127,7 +129,9 @@ the PR diff, not on `master`.
   rule of `is_valid_name` and limit it to 64 characters. In persistent mode read with a
   limited reader (as `collector::read_line_limited`), and bound the number of lines kept
   for one iteration.
-- State: open (master and PR #399).
+- State: fixed on `master` for `src/region.rs` in this PR: program text in error messages is
+  escaped and cut to 64 characters, and the SDK id is validated (ASCII letters, digits and
+  `_-./+`, at most 64). Still open in PR #399 (`src/persistent.rs`), not touched here.
 
 ## Low
 
@@ -247,7 +251,9 @@ the PR diff, not on `master`.
   real machine. `PERFRATIO_ENERGY_BACKEND` is a user-facing variable and is fine.
 - Recommendation: build the hook only under `cfg(test)` or a `test-hooks` feature; if it
   must stay, record `fake_root: true` in the export and print a warning.
-- State: open (master). Recording it changes the export: version it.
+- State: fixed in this PR. The variable is read only with the `test-hooks` cargo feature
+  (`system_check::fake_root`); release builds ignore it. `cargo test` enables the feature
+  through a dev-dependency of the crate on itself. No export change.
 
 ### L8. `--import-json`: no size limit
 

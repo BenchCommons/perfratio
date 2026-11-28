@@ -9,7 +9,22 @@ use crate::output::colors;
 
 /// Hidden testing hook: read the Linux `/proc` and `/sys` files below this
 /// directory instead of `/`, on any platform.
+///
+/// Only honored when built with the `test-hooks` feature (never in release
+/// builds): see [`fake_root`].
 pub const FAKE_ROOT_ENV: &str = "PERFRATIO_SYSTEM_CHECK_ROOT";
+
+/// The fake root named by [`FAKE_ROOT_ENV`], if the `test-hooks` feature is on.
+#[cfg(feature = "test-hooks")]
+pub fn fake_root() -> Option<std::ffi::OsString> {
+    std::env::var_os(FAKE_ROOT_ENV)
+}
+
+/// Without the `test-hooks` feature the variable is ignored.
+#[cfg(not(feature = "test-hooks"))]
+pub fn fake_root() -> Option<std::ffi::OsString> {
+    None
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
@@ -71,7 +86,7 @@ pub fn run_checks() -> Vec<Check> {
     let cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1);
-    if let Some(root) = std::env::var_os(FAKE_ROOT_ENV) {
+    if let Some(root) = fake_root() {
         return linux_checks(Path::new(&root), cpus);
     }
     #[cfg(target_os = "linux")]

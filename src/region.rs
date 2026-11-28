@@ -24,6 +24,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{anyhow, bail, ensure, Context, Result};
 
+use crate::util::sanitize::escape_control_chars;
+
 /// The protocol version this perfratio speaks.
 pub const PROTOCOL_VERSION: u32 = 1;
 /// Environment variable with the path of the event file.
@@ -60,6 +62,32 @@ pub struct Report {
     /// Identifier the client announced in its `hello` line, if any.
     pub sdk: Option<String>,
     pub regions: BTreeMap<String, Totals>,
+}
+
+/// An SDK identifier such as `c/1.0`: ASCII letters, digits and `_-./+`, at
+/// most 64 characters.
+fn is_valid_sdk_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 64
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "_-./+".contains(c))
+}
+
+/// Longest piece of program-provided text echoed in an error message.
+const MAX_ECHO: usize = 64;
+
+/// Escape control characters (CWE-150) and cut text from the measured program
+/// to [`MAX_ECHO`] characters, for use in error messages.
+fn shorten(s: &str) -> String {
+    let escaped = escape_control_chars(s);
+    let mut it = escaped.chars();
+    let head: String = it.by_ref().take(MAX_ECHO).collect();
+    if it.next().is_some() {
+        format!("{head}...")
+    } else {
+        head
+    }
 }
 
 /// Parse the event file of one run.
@@ -99,24 +127,40 @@ pub fn parse(text: &str) -> Result<Option<Report>> {
                      perfratio release."
                 );
             }
-            report.sdk = parts.next().map(str::to_string);
+            report.sdk = match parts.next() {
+                None => None,
+                Some(id) => {
+                    ensure!(
+                        is_valid_sdk_id(id),
+                        "region protocol: line {line_no}: invalid SDK identifier '{}' \
+                         (ASCII letters, digits and '_-./+', at most 64 characters)",
+                        shorten(id)
+                    );
+                    Some(id.to_string())
+                }
+            };
             said_hello = true;
             continue;
         }
         ensure!(
             said_hello,
-            "region protocol: line {line_no}: expected 'hello {PROTOCOL_VERSION}' first, got '{kind}'"
+            "region protocol: line {line_no}: expected 'hello {PROTOCOL_VERSION}' first, got '{}'",
+            shorten(kind)
         );
         let name = parts
             .next()
             .ok_or_else(|| anyhow!("region protocol: line {line_no}: '{kind}' needs a name"))?;
         ensure!(
             is_valid_name(name),
-            "region protocol: line {line_no}: invalid region name '{name}' \
-             (ASCII letters, digits and '_', at most 64 characters)"
+            "region protocol: line {line_no}: invalid region name '{}' \
+             (ASCII letters, digits and '_', at most 64 characters)",
+            shorten(name)
         );
         let t: u64 = parts.next().and_then(|t| t.parse().ok()).ok_or_else(|| {
-            anyhow!("region protocol: line {line_no}: '{kind} {name}' needs a time in nanoseconds")
+            anyhow!(
+                "region protocol: line {line_no}: '{} {name}' needs a time in nanoseconds",
+                shorten(kind)
+            )
         })?;
         match kind {
             "start" => {
@@ -139,7 +183,10 @@ pub fn parse(text: &str) -> Result<Option<Report>> {
                 entry.0 += u128::from(t - start);
                 entry.1 += 1;
             }
-            other => bail!("region protocol: line {line_no}: unknown event '{other}'"),
+            other => bail!(
+                "region protocol: line {line_no}: unknown event '{}'",
+                shorten(other)
+            ),
         }
     }
 
@@ -248,6 +295,27 @@ pub fn count_key(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn escapes_and_limits_program_text_in_errors() {
+        let e = parse("hello 1\nstart a 1\n\u{1b}[2Jx a 1\n")
+            .unwrap_err()
+            .to_string();
+        assert!(!e.contains('\u{1b}'), "{e}");
+        assert!(e.contains("\\u{1b}"), "{e}");
+        let long = "z".repeat(500);
+        let e = parse(&format!("hello 1\n{long} a 1\n"))
+            .unwrap_err()
+            .to_string();
+        assert!(e.len() < 250 && e.contains("..."), "{e}");
+    }
+
+    #[test]
+    fn rejects_bad_sdk_ids() {
+        assert!(parse("hello 1 \u{1b}[2J\n").is_err());
+        assert!(parse(&format!("hello 1 {}\n", "a".repeat(65))).is_err());
+        assert!(parse("hello 1 rust/1.2+x\n").is_ok());
+    }
 
     fn total(report: &Report, name: &str) -> Totals {
         report.regions[name]

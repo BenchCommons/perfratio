@@ -15,7 +15,7 @@ use crate::system_check::entries;
 /// The root to read `/sys` and `/proc` below: `/`, or the fixture directory
 /// named by [`crate::system_check::FAKE_ROOT_ENV`]
 pub fn default_root() -> PathBuf {
-    std::env::var_os(crate::system_check::FAKE_ROOT_ENV)
+    crate::system_check::fake_root()
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/"))
 }

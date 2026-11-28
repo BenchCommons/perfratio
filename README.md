@@ -202,6 +202,11 @@ Every benchmark also gets a measurement quality report (`results[].quality` in t
 timings. perfratio owns this output, and consumers such as `tools-benchmark` read it.
 The current version is `"1.44"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested.
 
+**Secrets.** The export records the commands and the full command line exactly as typed
+(`results[].command`, `perfratio.command_line`), plus an environment block, and `--evidence`
+bundles copy them. Keep tokens and passwords out of command arguments and `--meta` values
+before you share an export.
+
 The contract is a top-level `"schemaVersion": "MAJOR.MINOR"` string. Consumers must ignore
 unknown keys and accept any MINOR version of the MAJOR version they support. A removed or
 renamed field, or a changed unit, bumps MAJOR.

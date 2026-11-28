@@ -39,7 +39,7 @@ no hostname or user name.
 
 ## Testability
 The Linux checks read below a root directory. The hidden environment variable
-`PERFRATIO_SYSTEM_CHECK_ROOT` points it at a fake `/sys` + `/proc` tree on any
+`PERFRATIO_SYSTEM_CHECK_ROOT` (only in builds with the `test-hooks` feature, which `cargo test` enables; ignored in release builds) points it at a fake `/sys` + `/proc` tree on any
 platform, which the integration tests use. It only redirects reads.
 
 ## Tests

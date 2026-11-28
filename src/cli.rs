@@ -1443,7 +1443,9 @@ pub fn build_command() -> Command {
                 .value_name("FILE")
                 .value_hint(ValueHint::FilePath)
                 .help("Export the timing summary statistics and timings of individual runs as JSON to the given FILE. \
-                       The output time unit is always seconds"),
+                       The output time unit is always seconds. \
+                       The file records the commands and the command line as typed: \
+                       keep secrets (tokens, passwords) out of them"),
         )
         .arg(
             Arg::new("export-markdown")
