@@ -80,7 +80,10 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   (already used for imported JSON). Compare `metadata.len()` with `entry.bytes` first and
   hash with a streaming reader (`io::copy` into the hasher, through `Read::take(bytes + 1)`).
   Cap the manifest size (for example 1 MiB).
-- State: open, **master**.
+- State: **master**. Corrigido em #428 (PR aberto): every text of the report is escaped with
+  `escape_control_chars`, `is_plain_name` rejects control characters, `manifest.json` is
+  limited to 1 MiB and files are hashed in a stream (`Sha256`). `verify` opens with
+  `O_NOFOLLOW` and checks the metadata of the open handle (no TOCTOU).
 
 ### M3. Secrets in the command line are exported and bundled; warnings and redaction are partial
 
@@ -146,7 +149,8 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   `create_new(true)` (and `O_NOFOLLOW` on Unix). Write into a fresh temporary directory
   next to the target and `rename` it into place at the end, so the final directory appears
   complete or not at all.
-- State: open, **master**.
+- State: **master**. Corrigido em parte em #428 (PR aberto): files are written with `create_new` and
+  `O_NOFOLLOW`. The 0700 directory mode and the temp-directory plus `rename` are not done.
 
 ### L2. Collector plugin: path lookup, unbounded reply queue, inherited environment
 

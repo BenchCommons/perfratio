@@ -247,6 +247,70 @@ fn compress(state: &mut [u32; 8], block: &[u8; 64]) {
     }
 }
 
+/// Incremental SHA-256, to hash a file without loading it into memory
+pub struct Sha256 {
+    state: [u32; 8],
+    buf: [u8; 64],
+    buf_len: usize,
+    total: u64,
+}
+
+impl Default for Sha256 {
+    fn default() -> Self {
+        Self {
+            state: [
+                0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+                0x5be0cd19,
+            ],
+            buf: [0; 64],
+            buf_len: 0,
+            total: 0,
+        }
+    }
+}
+
+impl Sha256 {
+    pub fn update(&mut self, mut data: &[u8]) {
+        self.total += data.len() as u64;
+        if self.buf_len > 0 {
+            let take = (64 - self.buf_len).min(data.len());
+            self.buf[self.buf_len..self.buf_len + take].copy_from_slice(&data[..take]);
+            self.buf_len += take;
+            data = &data[take..];
+            if self.buf_len < 64 {
+                return;
+            }
+            let block = self.buf;
+            compress(&mut self.state, &block);
+            self.buf_len = 0;
+        }
+        let (blocks, rest) = data.as_chunks::<64>();
+        for block in blocks {
+            compress(&mut self.state, block);
+        }
+        self.buf[..rest.len()].copy_from_slice(rest);
+        self.buf_len = rest.len();
+    }
+
+    /// The digest as 64 lowercase hex digits
+    pub fn finish_hex(mut self) -> String {
+        let bits = self.total * 8;
+        let mut tail = self.buf[..self.buf_len].to_vec();
+        tail.push(0x80);
+        while tail.len() % 64 != 56 {
+            tail.push(0);
+        }
+        tail.extend_from_slice(&bits.to_be_bytes());
+        for block in tail.as_chunks::<64>().0 {
+            compress(&mut self.state, block);
+        }
+        self.state
+            .iter()
+            .map(|word| format!("{word:08x}"))
+            .collect()
+    }
+}
+
 /// SHA-256 (FIPS 180-4) of `data` as 64 lowercase hex digits
 pub fn sha256_hex(data: &[u8]) -> String {
     let mut state: [u32; 8] = [
@@ -272,6 +336,18 @@ pub fn sha256_hex(data: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn incremental_sha256_matches_one_shot() {
+        let data: Vec<u8> = (0..1000u32).map(|i| (i % 251) as u8).collect();
+        for step in [1, 7, 63, 64, 65, 300] {
+            let mut h = Sha256::default();
+            for chunk in data.chunks(step) {
+                h.update(chunk);
+            }
+            assert_eq!(h.finish_hex(), sha256_hex(&data), "step {step}");
+        }
+    }
 
     #[test]
     fn sha256_matches_the_fips_vectors() {
