@@ -341,6 +341,7 @@ fn test_csv() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            power: None,
             shell: None,
             baseline: None,
             ..Default::default()
@@ -390,6 +391,7 @@ fn test_csv() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            power: None,
             shell: None,
             baseline: None,
             ..Default::default()
@@ -466,6 +468,7 @@ fn test_csv_formula_injection_sanitization() {
         diagnostics: None,
         per_run_parameters: None,
         precision: None,
+        power: None,
         shell: None,
         baseline: None,
         ..Default::default()
@@ -571,6 +574,7 @@ fn test_csv_with_reference_command() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            power: None,
             shell: None,
             baseline: None,
             ..Default::default()
@@ -619,6 +623,7 @@ fn test_csv_with_reference_command() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            power: None,
             shell: None,
             baseline: None,
             ..Default::default()
@@ -695,6 +700,7 @@ fn test_csv_heterogeneous_parameters() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            power: None,
             shell: None,
             baseline: None,
             ..Default::default()
@@ -743,6 +749,7 @@ fn test_csv_heterogeneous_parameters() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            power: None,
             shell: None,
             baseline: None,
             ..Default::default()

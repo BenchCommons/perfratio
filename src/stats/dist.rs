@@ -7,7 +7,7 @@
 //! Accurate to about 1e-12 relative, checked against SciPy in the tests.
 
 /// ln Γ(x) for x > 0 (Lanczos approximation, g = 7, n = 9).
-fn ln_gamma(x: f64) -> f64 {
+pub(crate) fn ln_gamma(x: f64) -> f64 {
     const G: [f64; 9] = [
         0.999_999_999_999_809_9,
         676.520_368_121_885_1,

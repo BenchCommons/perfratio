@@ -984,14 +984,51 @@ pub fn build_command() -> Command {
                        the runs. Assumes independent runs with finite variance."),
         )
         .arg(
+            Arg::new("target-precision-metrics")
+                .long("target-precision-metrics")
+                .action(ArgAction::Set)
+                .value_name("METRICS")
+                .requires("target-precision")
+                .help("Metrics that '--target-precision' waits for, comma-separated from \
+                       'wall', 'memory' and 'energy' (default: wall). Each command runs until \
+                       every listed metric has the precision of '--target-precision', by \
+                       '--target-precision-method'. A metric without samples (energy without \
+                       a sensor) is not waited for and is reported as not reached."),
+        )
+        .arg(
+            Arg::new("power")
+                .long("power")
+                .action(ArgAction::Set)
+                .value_name("P")
+                .help("Statistical power for the power report and '--target-effect' (default: \
+                       0.8; a fraction between 0 and 1). Adds a 'Power' line with the smallest \
+                       change of the mean that a two-sided t-test at '--significance-level' \
+                       detects with this probability when this command is compared with an \
+                       identical one that has the same number of runs. Assumes independent runs \
+                       and approximately normal means."),
+        )
+        .arg(
+            Arg::new("target-effect")
+                .long("target-effect")
+                .action(ArgAction::Set)
+                .value_name("PCT")
+                .help("The smallest change of the mean to detect, as a percentage of the mean \
+                       (e.g. '3%'), with the '--power' (default 0.8). Reports the runs needed. \
+                       Without '--runs' and '--duration' it is also a stopping rule: each \
+                       command runs until that many runs have been made, within '--min-runs', \
+                       '--max-runs' and '--max-benchmarking-time'. The runs needed are computed \
+                       from the standard deviation seen so far."),
+        )
+        .group(ArgGroup::new("adaptive-stop").args(["target-precision", "target-effect"]).multiple(true))
+        .arg(
             Arg::new("max-benchmarking-time")
                 .long("max-benchmarking-time")
                 .action(ArgAction::Set)
                 .value_name("SECONDS")
-                .requires("target-precision")
-                .help("Time budget per command for '--target-precision' (default: 60). If \
-                       the target is not reached within it, a warning shows the precision \
-                       that was reached."),
+                .requires("adaptive-stop")
+                .help("Time budget per command for '--target-precision' and '--target-effect' \
+                       (default: 60). If the target is not reached within it, a warning shows \
+                       what was reached."),
         )
         .arg(
             Arg::new("duration")

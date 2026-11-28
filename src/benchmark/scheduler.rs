@@ -389,8 +389,7 @@ impl<'a> Scheduler<'a> {
             // 4. Timing iterations: on the worker pool with `--jobs`, otherwise
             // interleaved
             if let Some(policy) = self.options.schedule.pool_policy() {
-                let adaptive =
-                    self.options.target_precision.is_some() || self.options.duration.is_some();
+                let adaptive = self.options.adaptive_runs();
                 let budget = self.options.max_benchmarking_time * runners.len() as f64;
                 let multiple_runners = runners.len() > 1;
                 let time_unit = self.options.time_unit;
@@ -429,8 +428,7 @@ impl<'a> Scheduler<'a> {
                 // 4. Interleaved timing iterations. With --target-precision, each
                 // command keeps running until its mean is precise enough; the
                 // commands share the wall-clock time, and so the time budget.
-                let adaptive =
-                    self.options.target_precision.is_some() || self.options.duration.is_some();
+                let adaptive = self.options.adaptive_runs();
                 let started = std::time::Instant::now();
                 let budget = self.options.max_benchmarking_time * runners.len() as f64;
                 let multiple_runners = runners.len() > 1;

@@ -92,6 +92,14 @@ const CASES: &[(&str, &[&str])] = &[
         ],
     ),
     (
+        "multi-metric stopping",
+        &[
+            "--target-precision=5%",
+            "--target-precision-metrics=wall,memory,energy",
+            "sleep 0.1",
+        ],
+    ),
+    (
         "randomized order",
         &[
             "--runs=3",
@@ -499,6 +507,16 @@ fn real_cases() -> Vec<(&'static str, Vec<String>)> {
                 "true",
                 "echo",
                 "pwd",
+            ]),
+        ),
+        (
+            "power analysis",
+            args(&[
+                "--runs=4",
+                "-N",
+                "--power=0.9",
+                "--target-effect=3%",
+                "true",
             ]),
         ),
         (
