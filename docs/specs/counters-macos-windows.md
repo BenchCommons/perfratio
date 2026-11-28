@@ -13,10 +13,12 @@ Apple M4, uid 501, no root).
   `measurements.counters = "measured"` (or `partial` when other events were requested, which
   are listed in `counters_unavailable_events`). Other events and `:u`/`:k` scopes have no source.
 - The child is read while still a zombie (`waitid(WNOWAIT)`), right before `wait4`. Only the
-  spawned process is counted, not its children.
+  spawned process is counted, not its children. `waitid` and `proc_pid_rusage` run before
+  `stop_timer`, so their cost (microseconds) is inside the measured time and is not subtracted.
 - macOS with a shell: counters would measure the shell, so they are dropped:
   `counters = "unavailable"`, `counters_unavailable_reason = "other"`, plus a warning that
-  suggests `-N`.
+  suggests `-N`. That warning replaces the other counter warnings (skipped events, task-level
+  note), which would describe counters that are not read.
 - Intel Macs: the fields stay 0, the probe fails and the counters are `unavailable`.
 - `--simd` stays Linux only: warning on macOS, `simd = unavailable / unsupported_platform`.
 - `--topdown` outside Linux x86_64 is no longer an error: warning, `topdown = "unavailable"`,

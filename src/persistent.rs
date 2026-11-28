@@ -193,7 +193,8 @@ impl IterationsReport {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Outcome {
     Done(Second),
-    Failed(String),
+    /// The message and the interval the program reported before failing, if any.
+    Failed(String, Option<Second>),
 }
 
 /// Turn the lines of one response (prefix removed, `done`/`fail` last) into an outcome.
@@ -237,7 +238,10 @@ pub fn parse_response(lines: &[String], expected: u64) -> Result<Outcome> {
     };
     match kind {
         "done" => Ok(Outcome::Done(seconds()?)),
-        "fail" => Ok(Outcome::Failed(parts.next().unwrap_or("").to_string())),
+        "fail" => Ok(Outcome::Failed(
+            parts.next().unwrap_or("").to_string(),
+            seconds().ok(),
+        )),
         other => bail!(
             "persistent protocol: unexpected '{}' instead of done/fail",
             crate::region::shorten(other)
@@ -345,12 +349,17 @@ impl Process {
         }
     }
 
-    fn kill(&mut self) {
+    /// SIGKILL to the process group created by `process_group(0)` (unix only).
+    fn kill_group(&self) {
         #[cfg(unix)]
         // SAFETY: signals the group created by process_group(0); no memory is touched.
         unsafe {
             libc::kill(-(self.child.id() as libc::pid_t), libc::SIGKILL);
         }
+    }
+
+    fn kill(&mut self) {
+        self.kill_group();
         let _ = self.child.kill();
     }
 
@@ -361,6 +370,8 @@ impl Process {
         let deadline = Instant::now() + QUIT_GRACE;
         while Instant::now() < deadline {
             if matches!(self.child.try_wait(), Ok(Some(_))) {
+                // the program left by itself: its children may still be running
+                self.kill_group();
                 return;
             }
             std::thread::sleep(Duration::from_millis(10));
@@ -436,11 +447,13 @@ impl Executor for PersistentExecutor<'_> {
             *current = Some((key, Process::start(command.get_command()?, stderr)?));
         }
         let (_, process) = current.as_mut().expect("process was started");
+        let started = Instant::now();
         let outcome = process.iterate(self.options.timeout)?;
+        let round_trip = started.elapsed().as_secs_f64();
         let sdk = process.sdk.clone();
         let (seconds, status) = match outcome {
             Outcome::Done(seconds) => (seconds, exit_status(0)),
-            Outcome::Failed(message) => {
+            Outcome::Failed(message, reported) => {
                 let action = command_failure_action
                     .unwrap_or_else(|| self.options.command_failure_action.clone());
                 let ignored = match action {
@@ -455,7 +468,9 @@ impl Executor for PersistentExecutor<'_> {
                         crate::region::shorten(&message)
                     );
                 }
-                (0.0, exit_status(1))
+                // A failed iteration was still measured: use the interval the program
+                // reported, else the wall time of the round trip (never a made-up 0.0).
+                (reported.unwrap_or(round_trip), exit_status(1))
             }
         };
         Ok((
@@ -584,7 +599,15 @@ mod tests {
         assert!(err(&["stop iteration 5", "done 1"], 1).contains("without a start"));
         assert_eq!(
             parse_response(&lines(&["fail 3 boom now"]), 3).unwrap(),
-            Outcome::Failed("boom now".into())
+            Outcome::Failed("boom now".into(), None)
+        );
+        assert_eq!(
+            parse_response(
+                &lines(&["start iteration 1000", "stop iteration 3500", "fail 3 boom"]),
+                3
+            )
+            .unwrap(),
+            Outcome::Failed("boom".into(), Some(2.5e-6))
         );
     }
 }

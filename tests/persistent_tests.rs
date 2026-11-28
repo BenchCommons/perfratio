@@ -224,6 +224,69 @@ done
     }
 
     #[test]
+    fn a_failed_iteration_is_measured_not_counted_as_zero() {
+        let dir = tempfile::tempdir().unwrap();
+        let starts = dir.path().join("starts");
+        let out = dir.path().join("out.json");
+        // odd iterations fail: one reports its interval (5 ms), the others none
+        let body = r#"      if [ $((n % 2)) -eq 1 ]; then
+        echo "@perfratio fail $n boom"
+      else
+        echo "@perfratio start iteration 1000000000"
+        echo "@perfratio stop iteration 1010000000"
+        echo "@perfratio done $n"
+      fi"#;
+        let command = script(dir.path(), GOOD_HELLO, body);
+        run(
+            &command,
+            &["--runs=6", "-i", "--export-json", out.to_str().unwrap()],
+            &starts,
+        )
+        .success();
+        let json: Value = serde_json::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
+        let times = json["results"][0]["times"].as_array().unwrap();
+        assert_eq!(times.len(), 6);
+        assert!(
+            times.iter().all(|t| t.as_f64().unwrap() > 0.0),
+            "a failed iteration must not be recorded as 0.0: {times:?}"
+        );
+        assert!(json["results"][0]["min"].as_f64().unwrap() > 0.0);
+    }
+
+    #[test]
+    fn grandchildren_are_killed_when_the_program_exits_by_itself() {
+        let dir = tempfile::tempdir().unwrap();
+        let starts = dir.path().join("starts");
+        let pidfile = dir.path().join("grandchild.pid");
+        let hello = format!(
+            "sleep 60 >/dev/null 2>&1 &\necho $! > {}\n{GOOD_HELLO}",
+            pidfile.display()
+        );
+        let command = script(dir.path(), &hello, GOOD_BODY);
+        run(&command, &["--runs=3"], &starts).success();
+        let pid = std::fs::read_to_string(&pidfile)
+            .unwrap()
+            .trim()
+            .to_string();
+        let alive = || {
+            let out = std::process::Command::new("ps")
+                .args(["-o", "stat=", "-p", &pid])
+                .output()
+                .unwrap();
+            let stat = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            !stat.is_empty() && !stat.starts_with('Z')
+        };
+        for _ in 0..50 {
+            if !alive() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        let _ = std::process::Command::new("kill").arg(&pid).status();
+        panic!("the grandchild {pid} survived the persistent process");
+    }
+
+    #[test]
     fn a_process_that_dies_mid_benchmark_is_reported() {
         let dir = tempfile::tempdir().unwrap();
         let starts = dir.path().join("starts");

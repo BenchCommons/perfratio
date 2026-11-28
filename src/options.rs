@@ -1469,10 +1469,13 @@ impl Options {
                 .executor_kinds
                 .iter()
                 .any(|k| matches!(k, ExecutorKind::Shell(_)));
-            warnings.extend(crate::perf_counters::require_no_shell(
-                &mut config,
-                uses_shell,
-            ));
+            // With a shell every counter is dropped: the shell warning replaces the
+            // others, which would describe counters that are not going to be read.
+            if let Some(shell_warning) =
+                crate::perf_counters::require_no_shell(&mut config, uses_shell)
+            {
+                warnings = vec![shell_warning];
+            }
             for warning in warnings {
                 eprintln!("{} {warning}", crate::output::colors::yellow("Warning:"));
             }
