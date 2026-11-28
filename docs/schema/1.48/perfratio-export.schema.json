@@ -2533,15 +2533,21 @@
         }
       },
       "required": [
+        "var",
+        "min",
+        "max",
         "metric",
         "algorithm",
         "budget",
         "evaluations",
+        "best",
         "best_value",
         "best_command",
-        "at_boundary"
+        "unimodal_warning",
+        "at_boundary",
+        "evaluated"
       ],
-      "description": "Result of one --optimize search. var, min, max, best, evaluated and unimodal_warning describe the one-variable golden-section search (1.6) and, in 1.45, a one-variable search with another algorithm; a search over several variables has vars and best_point instead (and no unimodal_warning)."
+      "description": "Result of one --optimize search. var, min, max, best, evaluated and unimodal_warning are always present (required since 1.6). For a search over several variables (1.45) they describe the first declared variable: best is its value in the best point, evaluated its value in every distinct point (same order and length as evaluated_points), unimodal_warning is false. vars, best_point and evaluated_points carry all variables."
     },
     "pareto": {
       "type": "object",
