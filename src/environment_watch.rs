@@ -30,7 +30,7 @@ pub struct Interference {
     pub cgroup_oom_kills: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thermal: Option<ThermalTrace>,
-    /// Coarse thermal pressure level (macOS, with `--thermal`; new in 1.37, #412)
+    /// Coarse thermal pressure level (macOS, with `--thermal`; new in 1.48, #412)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thermal_pressure: Option<PressureTrace>,
 }

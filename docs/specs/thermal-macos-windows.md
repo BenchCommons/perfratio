@@ -3,7 +3,7 @@
 **Issue:** [#412](https://github.com/BenchCommons/perfratio/issues/412), part of the
 parity matrix of #291 (`platform-parity.md`).
 **Status:** macOS done (coarse thermal pressure level). Windows not implemented
-(documented limit). JSON `schemaVersion` 1.37.
+(documented limit). JSON `schemaVersion` 1.48.
 **Related:** `cgroup-thermal.md` (#315), `check-system.md`, `output-schema-contract.md` (#240).
 
 ## Problem / Motivation
@@ -31,7 +31,7 @@ temperature and stays at 100 on Apple Silicon.
 ### `interference.thermal` vs `interference.thermal_pressure`
 `interference.thermal` keeps its meaning: degrees Celsius, Linux only. A coarse
 level is not a temperature, so it goes in a separate, additive object (JSON
-`schemaVersion` 1.36 → 1.37, MINOR):
+`schemaVersion` 1.47 → 1.48, MINOR):
 
 ```json
 "interference": {
@@ -63,6 +63,6 @@ level; on Windows the sensors are not read yet. A level-based cooldown
   moderate, under parallel builds). Unit tests in `thermal.rs`, `system_check.rs`;
   `tests/cgroup_thermal_tests.rs::macos_thermal_records_the_pressure_level` runs
   the real executor with `--thermal` and checks the exported levels.
-- JSON Schema: `docs/schema/perfratio-export.schema.json` and the 1.37 snapshot.
+- JSON Schema: `docs/schema/perfratio-export.schema.json` and the 1.48 snapshot.
 - Windows: no code path added; nothing to verify beyond the existing warning.
 - Linux: `read_pressure_level` returns `None`; existing tests cover the sysfs path.
