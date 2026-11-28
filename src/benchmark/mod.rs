@@ -16,7 +16,7 @@ use crate::energy::{
 use crate::metric::Metric;
 use crate::options::{
     CmdFailureAction, CommandOutputPolicy, ExecutorKind, FirstRunPolicy, Options,
-    OutputStyleOption, RunBounds,
+    OutputStyleOption, PrecisionMetric, RunBounds,
 };
 use crate::outlier_detection::{
     detect_outliers, modified_zscores, outlier_indices, OutlierReport, MAX_DISCARD_FRACTION,
@@ -135,6 +135,9 @@ pub struct BenchmarkRunner<'a> {
     pending_attribution: Option<crate::energy::attribution::Estimate>,
     /// Energy of the whole window of the last `stop_energy`, before the child-time alignment
     last_window_energy: Option<f64>,
+    /// GPU utilization of each run (`--gpu`), aligned with `energy_measurements`
+    pub gpu_util_measurements: Vec<Option<Vec<(String, f64)>>>,
+    pending_gpu_util: Option<Vec<(String, f64)>>,
     pub exit_codes: Vec<Option<i32>>,
     /// `--concurrency N` (N > 1): instance wall times of every run, in spawn order
     pub instance_times: Vec<Vec<Second>>,
@@ -169,6 +172,11 @@ pub struct BenchmarkRunner<'a> {
     pub timed_out: bool,
     /// `--jobs`: the worker slots that executed at least one run
     pub workers_seen: std::collections::BTreeSet<usize>,
+    /// `--jobs`: the worker slot of every run, aligned with the times (`None`:
+    /// ran on the main thread)
+    pub run_workers: Vec<Option<usize>>,
+    /// Worker slot of the run being recorded (set by the pool)
+    pub pending_worker: Option<usize>,
     /// Extracted custom metrics per run
     pub custom_metrics: std::collections::BTreeMap<String, Vec<Option<f64>>>,
     /// `--region`: SDK identifier the program reported
@@ -278,6 +286,23 @@ impl<'a> BenchmarkRunner<'a> {
         };
 
         let attribution = make_attribution_tracker(options);
+        let energy_sampler = match energy_sampler {
+            Some(inner) if options.energy_gpu => {
+                Some(if matches!(options.executor_kind, ExecutorKind::Mock(_)) {
+                    // deterministic stand-in for the vendor libraries
+                    Box::new(crate::energy::gpu::GpuSampler::new(
+                        inner,
+                        vec![Box::new(crate::energy::gpu::SimulatedGpu::new(
+                            "nvml", 2, 2.0, 60.0,
+                        ))],
+                    )) as Box<dyn EnergySampler>
+                } else {
+                    crate::energy::gpu::with_gpu(inner)
+                })
+            }
+            other => other,
+        };
+
         let mut energy_sampler = energy_sampler;
         if options.energy_domains {
             if let Some(s) = energy_sampler.as_mut() {
@@ -312,6 +337,8 @@ impl<'a> BenchmarkRunner<'a> {
             attribution_runs: vec![],
             pending_attribution: None,
             last_window_energy: None,
+            gpu_util_measurements: vec![],
+            pending_gpu_util: None,
             exit_codes: vec![],
             instance_times: vec![],
             instance_exit_codes: vec![],
@@ -343,6 +370,8 @@ impl<'a> BenchmarkRunner<'a> {
             baseline: None,
             timed_out: false,
             workers_seen: std::collections::BTreeSet::new(),
+            run_workers: vec![],
+            pending_worker: None,
             custom_metrics: std::collections::BTreeMap::new(),
             region_sdk: None,
         }
@@ -553,8 +582,11 @@ impl<'a> BenchmarkRunner<'a> {
                 .map(|(n, j)| (n, align_to_child(j, time_real, window)))
                 .collect::<Vec<_>>()
         });
-        if self.options.energy_domains {
+        if self.options.energy_domains || self.options.energy_gpu {
             self.pending_domains = domains;
+        }
+        if self.options.energy_gpu {
+            self.pending_gpu_util = sampler.gpu_utilization();
         }
         energy.map(|e| align_to_child(e, time_real, window))
     }
@@ -641,9 +673,10 @@ impl<'a> BenchmarkRunner<'a> {
                 || !whole_cycles
                 || self.times_real.iter().sum::<Second>() < duration - 1e-9; // float sum slack
         }
-        let Some(target) = self.options.target_precision else {
+        let precision_target = self.options.target_precision;
+        if precision_target.is_none() && !self.options.target_effect_stops {
             return false;
-        };
+        }
         let runs = self.measured_times().len() as u64;
         if self.options.run_bounds.max.is_some_and(|max| runs >= max) {
             return false;
@@ -655,8 +688,160 @@ impl<'a> BenchmarkRunner<'a> {
         if started.elapsed().as_secs_f64() >= budget {
             return false;
         }
-        self.precision_half_width(self.measured_times())
-            .is_none_or(|width| width > target)
+        if let Some(target) = precision_target {
+            if self.options.target_precision_metrics.is_empty() {
+                if self
+                    .precision_half_width(self.measured_times())
+                    .is_none_or(|width| width > target)
+                {
+                    return true;
+                }
+            } else if self.options.target_precision_metrics.iter().any(|&metric| {
+                // a metric without samples (no energy sensor) or without a positive
+                // mean (nothing to be relative to) cannot be waited for
+                self.metric_precision(metric)
+                    .is_some_and(|(n, width)| width.map_or(n < 2, |w| w > target))
+            }) {
+                return true;
+            }
+        }
+        self.options.target_effect_stops && !self.effect_runs_enough()
+    }
+
+    /// `--target-effect`: whether the runs made so far are enough to detect the
+    /// effect with `--power`, for the standard deviation seen so far.
+    fn effect_runs_enough(&self) -> bool {
+        let Some(effect) = self.options.target_effect else {
+            return true;
+        };
+        let times = self.measured_times();
+        let Some((mean, sd)) = mean_and_sd(times) else {
+            return false;
+        };
+        if mean <= 0.0 {
+            return false;
+        }
+        if sd == 0.0 {
+            return true;
+        }
+        crate::stats::power::enough_runs(
+            effect * mean / sd,
+            times.len() as f64,
+            crate::stats::settings::current().significance_level,
+            self.options.power_level(),
+        )
+    }
+
+    /// `--power` / `--target-effect`: the power analysis of the runs made.
+    fn power_analysis(&self) -> Option<benchmark_result::PowerAnalysis> {
+        if !self.options.reports_power() {
+            return None;
+        }
+        let times = self.measured_times();
+        let alpha = crate::stats::settings::current().significance_level;
+        let power = self.options.power_level();
+        let (mean, sd) = mean_and_sd(times).unwrap_or((f64::NAN, f64::NAN));
+        let usable = mean > 0.0 && sd.is_finite();
+        let minimum_detectable_effect = if usable && sd == 0.0 {
+            Some(0.0)
+        } else if usable {
+            crate::stats::power::minimum_detectable_d(times.len() as f64, alpha, power)
+                .map(|d| d * sd / mean)
+        } else {
+            None
+        };
+        let runs_needed = self.options.target_effect.and_then(|effect| {
+            if !usable {
+                None
+            } else if sd == 0.0 {
+                Some(2)
+            } else {
+                crate::stats::power::runs_needed(effect * mean / sd, alpha, power)
+            }
+        });
+        Some(benchmark_result::PowerAnalysis {
+            significance_level: alpha,
+            power,
+            runs: times.len(),
+            minimum_detectable_effect,
+            target_effect: self.options.target_effect,
+            runs_needed,
+            met: runs_needed.map(|needed| times.len() as u64 >= needed),
+            stopping_rule: self.options.target_effect_stops,
+        })
+    }
+
+    /// `--target-precision-metrics`: the values of `metric` that count (without
+    /// an excluded first run) and the half-width of the interval of their mean,
+    /// relative to the mean. `None` if the metric has no sample at all.
+    fn metric_precision(&self, metric: PrecisionMetric) -> Option<(usize, Option<f64>)> {
+        let skip = self.times_real.len() - self.measured_times().len();
+        let values: Vec<f64> = match metric {
+            PrecisionMetric::Wall => {
+                return Some((
+                    self.measured_times().len(),
+                    self.precision_half_width(self.measured_times()),
+                ))
+            }
+            PrecisionMetric::Memory => self
+                .memory_usage_byte
+                .iter()
+                .skip(skip)
+                .map(|&b| b as f64)
+                .collect(),
+            PrecisionMetric::Energy => self
+                .energy_measurements
+                .iter()
+                .skip(skip)
+                .flatten()
+                .copied()
+                .collect(),
+        };
+        if values.is_empty() {
+            return None;
+        }
+        let width = match self.options.target_precision_method {
+            crate::stats::sequential::StoppingRule::FixedCi => {
+                crate::stats::precision::relative_ci_half_width_with_baseline(&values, None, 0)
+            }
+            crate::stats::sequential::StoppingRule::ConfidenceSequence => {
+                crate::stats::sequential::relative_half_width(
+                    &values,
+                    crate::stats::settings::current().confidence_level,
+                )
+            }
+        };
+        Some((values.len(), width))
+    }
+
+    /// `--target-precision-metrics`: the precision reached by each listed metric
+    fn precision_metrics(&self) -> Option<Vec<benchmark_result::MetricPrecision>> {
+        let target = self.options.target_precision?;
+        if self.options.target_precision_metrics.is_empty() {
+            return None;
+        }
+        Some(
+            self.options
+                .target_precision_metrics
+                .iter()
+                .map(|&metric| {
+                    let (runs, reached) = match metric {
+                        PrecisionMetric::Wall => (
+                            self.times_real.len(),
+                            self.precision_half_width(&self.times_real),
+                        ),
+                        _ => self.metric_precision(metric).unwrap_or((0, None)),
+                    };
+                    benchmark_result::MetricPrecision {
+                        metric,
+                        target,
+                        reached,
+                        runs,
+                        met: reached.is_some_and(|r| r <= target),
+                    }
+                })
+                .collect(),
+        )
     }
 
     /// Relative half-width of the interval that `--target-precision-method` stops on:
@@ -796,6 +981,8 @@ impl<'a> BenchmarkRunner<'a> {
             .push(self.subtract_baseline_energy(energy_initial));
         self.domain_measurements.push(self.pending_domains.take());
         self.attribution_runs.push(self.pending_attribution.take());
+        self.gpu_util_measurements
+            .push(self.pending_gpu_util.take());
         self.exit_codes.push(extract_exit_code(status));
         self.push_instances(&res, run.ids());
         self.resource_counters.push(res.counters);
@@ -870,6 +1057,8 @@ impl<'a> BenchmarkRunner<'a> {
             .push(self.subtract_baseline_energy(energy));
         self.domain_measurements.push(self.pending_domains.take());
         self.attribution_runs.push(self.pending_attribution.take());
+        self.gpu_util_measurements
+            .push(self.pending_gpu_util.take());
         self.exit_codes.push(extract_exit_code(status));
         self.push_instances(&res, ids);
         self.resource_counters.push(res.counters);
@@ -925,6 +1114,62 @@ impl<'a> BenchmarkRunner<'a> {
         Ok(Some(false))
     }
 
+    /// The sample hierarchy of this benchmark and the variance at its levels
+    /// (#368): `--jobs` workers hold runs, a `--concurrency` run holds
+    /// instances, a `--region` run holds repetitions. `None` for a plain
+    /// sequence of runs.
+    pub fn hierarchy_report(
+        &self,
+        regions: &[benchmark_result::RegionResult],
+    ) -> Option<crate::stats::hierarchical::HierarchyReport> {
+        use crate::stats::hierarchical::{group_by_key, HierarchyReport};
+        let concurrency = self.concurrency();
+        let jobs = self.options.jobs > 1 && self.run_workers.len() == self.times_real.len();
+        let repetitions: std::collections::BTreeMap<_, _> = regions
+            .iter()
+            .filter(|r| r.count_per_run.iter().flatten().any(|&c| c > 1))
+            .map(|r| (r.name.clone(), r.count_per_run.clone()))
+            .collect();
+        if concurrency <= 1 && !jobs && repetitions.is_empty() {
+            return None;
+        }
+        let mut levels = Vec::new();
+        if jobs {
+            levels.push("worker".to_string());
+        }
+        levels.push("run".to_string());
+        if concurrency > 1 {
+            levels.push("instance".to_string());
+        }
+        if !repetitions.is_empty() {
+            levels.push("repetition".to_string());
+        }
+        let mut report = HierarchyReport {
+            levels,
+            workers: jobs.then(|| self.run_workers.clone()),
+            repetitions,
+            ..Default::default()
+        };
+        let settings = crate::stats::settings::current();
+        let analysis = |level: &str, groups: &[Vec<f64>], report: &mut HierarchyReport| {
+            report.analyze(
+                level,
+                groups,
+                settings.ci_method,
+                settings.confidence_level,
+                settings.bootstrap_resamples,
+                settings.seed,
+            );
+        };
+        if concurrency > 1 && self.instance_times.len() == self.times_real.len() {
+            analysis("run", &self.instance_times, &mut report);
+        } else if jobs {
+            let groups = group_by_key(&self.times_real, &self.run_workers);
+            analysis("worker", &groups, &mut report);
+        }
+        Some(report)
+    }
+
     /// Instances per run of this benchmark (`--concurrency`, possibly `{param}`)
     fn concurrency(&self) -> usize {
         self.command.concurrency_or(self.options.concurrency)
@@ -933,6 +1178,7 @@ impl<'a> BenchmarkRunner<'a> {
     /// `--concurrency`: remember the instances of the run just measured.
     fn push_instances(&mut self, res: &TimingResult, ids: crate::run_id::RunIds) {
         self.run_ids.push(ids.first);
+        self.run_workers.push(self.pending_worker.take());
         if self.concurrency() > 1 {
             self.instance_run_ids.push(ids.all());
             self.instance_times
@@ -1052,6 +1298,12 @@ impl<'a> BenchmarkRunner<'a> {
         if self.attribution_runs.len() == run_count {
             self.attribution_runs = select(&self.attribution_runs, keep);
         }
+        if self.gpu_util_measurements.len() == run_count {
+            self.gpu_util_measurements = keep
+                .iter()
+                .map(|&index| self.gpu_util_measurements[index].clone())
+                .collect();
+        }
         if self.domain_measurements.len() == run_count {
             self.domain_measurements = keep
                 .iter()
@@ -1061,6 +1313,9 @@ impl<'a> BenchmarkRunner<'a> {
         self.exit_codes = select(&self.exit_codes, keep);
         if self.run_ids.len() == run_count {
             self.run_ids = select(&self.run_ids, keep);
+        }
+        if self.run_workers.len() == run_count {
+            self.run_workers = select(&self.run_workers, keep);
         }
         if self.instance_run_ids.len() == run_count {
             self.instance_run_ids = keep
@@ -1429,6 +1684,8 @@ impl<'a> BenchmarkRunner<'a> {
             .options
             .target_precision
             .map(|target| (target, self.precision_half_width(&self.times_real)));
+        let power_analysis = self.power_analysis();
+        let precision_metrics = self.precision_metrics();
         if let Some((target, reached)) = precision_reached {
             excluded.push(format!(
                 "±{} @{}%{}, target {}",
@@ -1526,6 +1783,7 @@ impl<'a> BenchmarkRunner<'a> {
             })
             .collect();
         let regions = (!regions.is_empty()).then_some(regions);
+        let hierarchy = self.hierarchy_report(regions.as_deref().unwrap_or_default());
         let output_metric_series: std::collections::BTreeMap<_, _> = self
             .custom_metrics
             .iter()
@@ -1883,6 +2141,10 @@ impl<'a> BenchmarkRunner<'a> {
                     crate::outln!("  Counters (mean):    {}", line.dimmed());
                 }
 
+                if let Some(analysis) = &power_analysis {
+                    crate::outln!("  Power:              {}", analysis.summary().dimmed());
+                }
+
                 if let Some(export) = topdown_export.as_ref() {
                     for (i, line) in export.lines.iter().enumerate() {
                         if i == 0 {
@@ -1961,18 +2223,53 @@ impl<'a> BenchmarkRunner<'a> {
                         if let Some(domains) =
                             domains_series(&self.domain_measurements, self.times_real.len())
                         {
-                            let parts: Vec<String> = ["core", "uncore", "dram", "package", "psys"]
-                                .iter()
-                                .filter_map(|n| domains.get(*n).map(|v| (n, v)))
-                                .map(|(n, v)| format!("{n} {:.3} J", mean(v)))
-                                .collect();
+                            let mut parts: Vec<String> =
+                                ["core", "uncore", "dram", "package", "psys"]
+                                    .iter()
+                                    .filter_map(|n| domains.get(*n).map(|v| (n, v)))
+                                    .map(|(n, v)| format!("{n} {:.3} J", mean(v)))
+                                    .collect();
+                            let util =
+                                domains_series(&self.gpu_util_measurements, self.times_real.len());
+                            for (n, v) in domains.iter().filter(|(n, _)| n.starts_with("gpu:")) {
+                                let u = util
+                                    .as_ref()
+                                    .and_then(|u| u.get(n))
+                                    .map(|u| format!(", util {:.0}%", mean(u)))
+                                    .unwrap_or_default();
+                                parts.push(format!("{n} {:.3} J{u}", mean(v)));
+                            }
                             crate::outln!("  Domains (mean):      {}", parts.join(" · "));
                         }
                     } else {
                         crate::outln!(
                             "  Energy:             {:>14}",
-                            "RAPL unprivileged/unavailable on host".dimmed()
+                            crate::energy::last_unavailable()
+                                .map_or("RAPL unprivileged/unavailable on host", |r| r.message())
+                                .dimmed()
                         );
+                    }
+                }
+
+                if crate::stats::settings::current().ci_method
+                    == crate::stats::hierarchical::CiMethod::Hierarchical
+                {
+                    if let Some(h) = self.hierarchy_report(&[]) {
+                        if let (Some(ci), Some(v), Some(level)) =
+                            (&h.mean_ci, &h.variance, &h.cluster_level)
+                        {
+                            crate::outln!(
+                                "  Hierarchical {}% CI: [mean: {} … {}]  ({} {}s, ICC {:.2}, flat CI: {} … {})",
+                                crate::stats::settings::current().confidence_percent(),
+                                format_duration(ci.lower, Some(time_unit)),
+                                format_duration(ci.upper, Some(time_unit)),
+                                h.clusters.unwrap_or(0),
+                                level,
+                                v.icc,
+                                format_duration(ci.flat[0], Some(time_unit)),
+                                format_duration(ci.flat[1], Some(time_unit)),
+                            );
+                        }
                     }
                 }
 
@@ -2275,6 +2572,7 @@ impl<'a> BenchmarkRunner<'a> {
                 &self.attribution_runs,
             )
         });
+        let gpu_utilization = domains_series(&self.gpu_util_measurements, total_runs);
         let valid_energy: Vec<f64> = self.energy_measurements.into_iter().flatten().collect();
         let energy_samples = self.energy_sampler.is_some().then_some(valid_energy.len());
         let (mean_energy, mean_watts, energy_all) = if !valid_energy.is_empty() {
@@ -2342,6 +2640,7 @@ impl<'a> BenchmarkRunner<'a> {
             mean_net_energy_joules: mean_net_energy,
             energy_domains_joules: energy_domains,
             energy_attribution,
+            gpu_utilization_percent: gpu_utilization,
             exit_codes: if concurrency.is_some() {
                 // N exit codes per run, row-major (docs/specs/concurrency.md)
                 self.instance_exit_codes.into_iter().flatten().collect()
@@ -2359,6 +2658,7 @@ impl<'a> BenchmarkRunner<'a> {
             run_ids: Some(self.run_ids).filter(|ids| !ids.is_empty()),
             instance_run_ids: concurrency.map(|_| self.instance_run_ids),
             leftover_processes: self.leftover_processes.get(),
+            hierarchy,
             workers_used: (self.options.jobs > 1).then_some(self.workers_seen.len()),
             contended: (self.options.jobs > 1).then_some(true),
             parameters: self
@@ -2427,6 +2727,8 @@ impl<'a> BenchmarkRunner<'a> {
                 .options
                 .has_per_command_shells()
                 .then(|| self.options.executor_kind_for(self.number).name()),
+            power: power_analysis.clone(),
+            precision_metrics,
             precision: precision_reached.map(|(target, reached)| {
                 benchmark_result::PrecisionReached {
                     target,
@@ -2830,7 +3132,7 @@ impl<'a> Benchmark<'a> {
         // Gather statistics (perform the actual benchmark). With
         // --target-precision, the runs continue until the mean is precise
         // enough instead of stopping after the planned count.
-        let adaptive = self.options.target_precision.is_some() || self.options.duration.is_some();
+        let adaptive = self.options.adaptive_runs();
         let started = std::time::Instant::now();
         let mut i = 0;
         loop {
@@ -2976,6 +3278,15 @@ fn relative_spread(times: &[f64]) -> f64 {
     (max(times) - min(times)) / median
 }
 
+/// Mean and sample standard deviation; `None` for fewer than 2 values.
+fn mean_and_sd(values: &[Second]) -> Option<(f64, f64)> {
+    if values.len() < 2 {
+        return None;
+    }
+    let m = mean(values);
+    Some((m, standard_deviation(values, Some(m))))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3071,6 +3382,31 @@ mod tests {
         let result = runner.finish(false).unwrap();
         assert_eq!(result.energy_joules, Some(vec![1.5, 2.5]));
         assert_eq!(result.mean_energy_joules, Some(2.0));
+    }
+
+    fn effect_runner_answer(times: Vec<f64>) -> bool {
+        let cmd = Command::new(None, "true");
+        let options = Options {
+            command_output_policies: vec![CommandOutputPolicy::Null],
+            target_effect: Some(0.5),
+            target_effect_stops: true,
+            ..Default::default()
+        };
+        let executor = MockExecutor::new(None, None);
+        let mut runner = BenchmarkRunner::new(0, 0, &cmd, &options, &executor);
+        runner.times_real = times;
+        runner.effect_runs_enough()
+    }
+
+    #[test]
+    fn test_effect_runs_enough_with_a_nonzero_standard_deviation() {
+        // mean 1.0, sd 1.27: a 50% effect is 0.39 sd, far from detectable with 2 runs
+        assert!(!effect_runner_answer(vec![0.1, 1.9]));
+        // mean 1.0, sd ~0.01: a 50% effect is ~47 sd, detectable with 10 runs
+        let quiet: Vec<f64> = (0..10)
+            .map(|i| if i % 2 == 0 { 0.99 } else { 1.01 })
+            .collect();
+        assert!(effect_runner_answer(quiet));
     }
 
     #[test]

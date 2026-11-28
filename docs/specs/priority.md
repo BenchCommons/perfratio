@@ -30,6 +30,18 @@ priority is useful for benchmarking background workloads.
 - The calibration error now keeps its cause, so the hint (or e.g. "No such file
   or directory" for a missing `--shell`) is shown instead of a generic message.
 
+## Windows: detecting a lowered class (#414)
+Without administrator rights `SetPriorityClass(REALTIME_PRIORITY_CLASS)` succeeds
+but Windows applies `HIGH_PRIORITY_CLASS`. After `SetPriorityClass`, perfratio
+reads the class back with `GetPriorityClass` and, if it differs from the request,
+prints one warning per process to stderr, e.g.
+`Warning: '--priority realtime' requested REALTIME_PRIORITY_CLASS but Windows applied HIGH_PRIORITY_CLASS: ...`.
+The run continues (warn, not fail). No JSON change: the effective priority is not
+exported, so `SCHEMA_VERSION` is unchanged. If it is exported later, version it.
+The comparison is `priority::priority_downgrade_warning` (unit-tested on every
+platform); the readback is `#[cfg(windows)]` and **not tested locally** (needs
+Windows, CI only compiles it).
+
 ## macOS `realtime` (#291)
 macOS has no `SCHED_FIFO` for processes. Its real-time mechanism is the Mach
 `THREAD_TIME_CONSTRAINT_POLICY`, and the closest non-real-time one is thread QoS

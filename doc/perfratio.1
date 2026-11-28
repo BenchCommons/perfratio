@@ -130,6 +130,10 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR KEY=VALUE|git ]
 .RB [ \-\-require\-compatible\-env ]
 .RB [ \-\-calibrate [ =auto|off ]]
+.RB [ \-\-evidence
+.IR DIR ]
+.RB [ \-\-verify\-evidence
+.IR DIR ]
 .RB [ \-\-below\-floor
 .IR ACTION ]
 .RB [ \-\-expect\-output\-sha256
@@ -175,6 +179,8 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR POLICY ]
 .RB [ \-\-export\-diff\-markdown
 .IR FILE ]
+.RB [ \-\-verdict\-json
+.IR FILE ]
 .RB [ \-\-parameter\-scan
 .IR VAR
 .IR MIN
@@ -212,6 +218,7 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .RB [ \-\-energy\-baseline
 .IR DURATION ]
 .RB [ \-\-energy\-domains ]
+.RB [ \-\-gpu ]
 .RB [ \-\-energy\-backend
 .IR BACKEND ]
 .RB [ \-\-power\-meter
@@ -230,6 +237,12 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR PCT ]
 .RB [ \-\-target\-precision\-method
 .IR METHOD ]
+.RB [ \-\-target\-precision\-metrics
+.IR METRICS ]
+.RB [ \-\-power
+.IR P ]
+.RB [ \-\-target\-effect
+.IR PCT ]
 .RB [ \-\-max\-benchmarking\-time
 .IR SECONDS ]
 .RB [ \-\-duration
@@ -274,6 +287,11 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR DIRECTION:METRIC ]
 .RB [ \-\-noise\-threshold
 .IR PERCENT ]
+.RB [ \-\-pareto\-significance ]
+.RB [ \-\-pareto\-probability ]
+.RB [ \-\-ci\-method
+.IR METHOD ]
+.RB [ \-\-paired ]
 .RB [ \-\-show\-output\-on\-failure ]
 .RB [ \-\-generate\-completions
 .IR SHELL ]
@@ -399,6 +417,10 @@ What to do with a budget that cannot be evaluated (the metric is missing in the 
 \fB\-\-export\-diff\-markdown\fR \fIFILE\fP
 .IP
 With \fB\-\-compare\fR: write the comparison as a Markdown table to FILE, e.g. for a pull request comment or a CI job summary.
+.HP
+\fB\-\-verdict\-json\fR \fIFILE\fP
+.IP
+With \fB\-\-compare\fR: write a compact JSON verdict to FILE. Per command and metric it says whether the metric improved, regressed, is unchanged or inconclusive, with the change, its confidence interval and the p-value, plus an overall verdict (improved, regressed, trade_off, unchanged, inconclusive) and the result of \fB\-\-budget\fR. Written also when a budget fails.
 .HP
 \fB\-w\fR, \fB\-\-warmup\fR \fINUM|auto\fP
 .IP
@@ -538,6 +560,14 @@ How long until\-temp waits before it gives up (default 5m). Requires \fB\-\-cool
 .IP
 Record provenance of the benchmarked program under perfratio.meta in the JSON export (repeatable). KEY=VALUE is a string; git adds git_commit and git_dirty of the git repository in the current directory. The export contains no host name, user name, environment variables or working directory.
 .HP
+\fB\-\-evidence\fR \fIDIR\fP
+.IP
+Write an evidence bundle to the new or empty directory DIR: manifest.json (SHA\-256 of every file), results.json (the JSON export), samples.jsonl (every run), environment.json, calibration.json, validation.json, quality.json and command.json (the exact command line). No host name, user name or environment variables. The commands are recorded as typed: keep secrets out of them. See docs/specs/evidence\-bundle.md.
+.HP
+\fB\-\-verify\-evidence\fR \fIDIR\fP
+.IP
+Check the hashes, sizes and file list of the evidence bundle in DIR and exit: 0 if it is intact, 1 otherwise. Prints the SHA\-256 of manifest.json.
+.HP
 \fB\-\-require\-compatible\-env\fR
 .IP
 Fail instead of warning when the environment of a \fB\-\-compare\fR baseline or an \fB\-\-import\-json\fR file differs from this machine (CPU model, architecture, OS, kernel major version, governor, SMT, container), or when the file records no environment.
@@ -580,6 +610,10 @@ Measure idle power for DURATION (e.g. 2s) before benchmarking and also report ne
 \fB\-\-energy\-domains\fR
 .IP
 Also report energy per RAPL domain (package, core, uncore, dram, psys) where the hardware exposes them. The domains overlap: the total energy is the package energy and the other domains must not be added to it.
+.HP
+\fB\-\-gpu\fR
+.IP
+Also record GPU energy and utilization (requires \fB\-\-energy\fR): NVIDIA through NVML and AMD through AMD SMI, loaded at run time. Energy is reported per device as gpu:<index> in energy_domains_joules and is not added to the host total; utilization (percent, sampled when each run ends) as gpu_utilization_percent. Without a driver library a warning is printed and the run continues. Not validated on hardware.
 .HP
 \fB\-\-energy\-backend\fR \fIBACKEND\fP
 .IP
@@ -625,9 +659,21 @@ Instead of a fixed number of runs, keep running each command until the 95% confi
 .IP
 How \fB\-\-target\-precision\fR decides that the interval is narrow enough: \fBfixed\fR (default) re-checks the Student-t interval of the mean after every run, which stops too early more often than the confidence level says; \fBsequential\fR uses an anytime-valid confidence sequence of the mean, valid however the run count was chosen, at the cost of about 2.5x the runs. Assumes independent runs with finite variance. Not with \fB\-\-subtract\fR or an \fB\-\-estimator\fR other than the mean.
 .HP
+\fB\-\-target\-precision\-metrics\fR \fIMETRICS\fP
+.IP
+Metrics that \fB\-\-target\-precision\fR waits for, comma\-separated from \fBwall\fR, \fBmemory\fR and \fBenergy\fR (default: wall). Each command runs until every listed metric has the precision of \fB\-\-target\-precision\fR, by \fB\-\-target\-precision\-method\fR. A metric without samples (energy without a sensor) is not waited for and is reported as not reached.
+.HP
+\fB\-\-power\fR \fIP\fP
+.IP
+Statistical power for the power report and \fB\-\-target\-effect\fR (default: 0.8; a fraction between 0 and 1). Adds a Power line with the smallest change of the mean that a two\-sided t\-test at \fB\-\-significance\-level\fR detects with this probability when the command is compared with an identical one that has the same number of runs. Assumes independent runs and approximately normal means.
+.HP
+\fB\-\-target\-effect\fR \fIPCT\fP
+.IP
+The smallest change of the mean to detect, as a percentage of the mean (e.g. 3%), with \fB\-\-power\fR. Reports the runs needed. Without \fB\-\-runs\fR and \fB\-\-duration\fR it is also a stopping rule: each command runs until that many runs have been made, within \fB\-\-min\-runs\fR, \fB\-\-max\-runs\fR and \fB\-\-max\-benchmarking\-time\fR. The runs needed are computed from the standard deviation seen so far.
+.HP
 \fB\-\-max\-benchmarking\-time\fR \fISECONDS\fP
 .IP
-Time budget per command for \fB\-\-target\-precision\fR (default: 60). If the target is not reached within it, a warning shows the precision that was reached.
+Time budget per command for \fB\-\-target\-precision\fR and \fB\-\-target\-effect\fR (default: 60). If the target is not reached within it, a warning shows what was reached.
 .HP
 \fB\-\-duration\fR \fIDURATION\fP
 .IP
@@ -745,6 +791,14 @@ Print a table comparing every measured dimension (wall time, peak memory, energy
 .IP
 Mark the commands on the Pareto frontier of the comma\-separated metrics, e.g. \fIwall,energy,memory\fR: the commands that no other command beats in one metric without being worse in another. A metric takes an optional statistic (\fIwall.p95\fR, \fImemory.max\fR). Commands without data for a metric are excluded, never counted as 0. Printed after the summary, and added to the JSON, Markdown and HTML exports.
 .HP
+\fB\-\-ci\-method\fR \fIMETHOD\fR
+.IP
+Interval of the mean when the runs have a hierarchy (\fB\-\-jobs\fR workers, \fB\-\-concurrency\fR instances): \fIflat\fR treats every run as independent (default), \fIhierarchical\fR resamples the clusters and then the runs inside them (Kalibera and Jones, 2013), which is wider when the clusters differ. Shown in the summary and in results[].hierarchy of the JSON export together with the variance per level. Does not change \fB\-\-target\-precision\fR or the tests.
+.HP
+\fB\-\-paired\fR
+.IP
+Paired analysis of every command against the reference: the runs of one round of an interleaved schedule (\fB\-\-schedule\fR round\-robin, randomized or balanced) are paired, and the mean difference, its interval and a paired t\-test are reported (results[].paired in the JSON export).
+.HP
 \fB\-\-constraint\fR \fIEXPR\fR
 .IP
 Only commands that satisfy the constraint are candidates for \fB\-\-pareto\fR and \fB\-\-objective\fR. EXPR is \(aq<METRIC> <op> <VALUE>\(aq with <=, <, >= or >, e.g. \(aqmemory <= 256MiB\(aq or \(aqwall.p95 <= 20ms\(aq. Repeatable.
@@ -756,6 +810,14 @@ Pick the single best candidate under the constraints, e.g. \fIminimize:energy\fR
 \fB\-\-noise\-threshold\fR \fIPERCENT\fR
 .IP
 Differences smaller than PERCENT of the reference are classified as \fBwithin noise\fR whatever the p\-value, and replace the default 1% floor of the significance markers. \fB\-\-fail\-if\-regressed\fR ignores them. With \fB\-\-pareto\fR: a command counts as dominated only if another is better by more than PERCENT of the value on some metric and not worse beyond it on any. Default: off (strict comparison for \fB\-\-pareto\fR).
+.HP
+\fB\-\-pareto\-significance\fR
+.IP
+With \fB\-\-pareto\fR: a command is dominated only when the commands that are better in the estimates are significantly better on every such metric (per\-run samples, \fB\-\-estimator\fR, \fB\-\-significance\-level\fR, \fB\-\-correction\fR, \fB\-\-bootstrap\-resamples\fR, \fB\-\-noise\-threshold\fR). Otherwise it stays on the frontier as \fBnot dominated (difference not significant)\fR. Metrics without 3 runs of samples never show a difference.
+.HP
+\fB\-\-pareto\-probability\fR
+.IP
+With \fB\-\-pareto\fR: report, per command, the bootstrap probability of not being dominated (share of \fB\-\-bootstrap\-resamples\fR resamples of the runs in which no other command dominates it).
 .HP
 \fB\-\-show\-output\-on\-failure\fR
 .IP
@@ -795,7 +857,11 @@ Show the mean voluntary/involuntary context switches, minor/major page faults an
 .HP
 \fB\-\-counters\fR[=\fILIST\fP]
 .IP
-Collect performance counters per run (Linux): instructions, cycles, cache\-references, cache\-misses, branches, branch\-misses (default: all; give a list with \fB\-\-counters\fR=cycles,instructions) and the software events cpu\-migrations, context\-switches, page\-faults and task\-clock (which cannot be scoped). Shorthands: default, sw (cpu\-migrations, context\-switches), frequency (cycles). With cycles the effective CPU frequency (cycles / task\-clock) is shown and a warning is printed when it varies or falls. The scheduler events need kernel scope (perf_event_paranoid <= 1) and are 'unavailable', never 0, otherwise. An event takes a ':u' (user) or ':k' (kernel) modifier, e.g. instructions:u,instructions:k; the JSON key keeps the suffix. Counts user and kernel space, or user space only when perf_event_paranoid > 1 ('counters_scope' in JSON). Adds counts, a summary, IPC/CPI and miss rates, and one terminal line. Unavailable counters (no PMU, permissions, macOS, Windows) give one warning and status 'unavailable' in perfratio.measurements.counters.
+Collect performance counters per run (Linux): instructions, cycles, cache\-references, cache\-misses, branches, branch\-misses (default: all; give a list with \fB\-\-counters\fR=cycles,instructions) and the software events cpu\-migrations, context\-switches, page\-faults and task\-clock (which cannot be scoped). Raw PMU events: raw:r01c2 (hexadecimal config), cpu/event=0x3c,umask=0x01/ (terms placed by the PMU's sysfs format) and named events such as cpu/mem\-loads/; see \fB\-\-list\-events\fR. Shorthands: default, sw (cpu\-migrations, context\-switches), frequency (cycles). With cycles the effective CPU frequency (cycles / task\-clock) is shown and a warning is printed when it varies or falls. The scheduler events need kernel scope (perf_event_paranoid <= 1) and are 'unavailable', never 0, otherwise. An event takes a ':u' (user) or ':k' (kernel) modifier, e.g. instructions:u,instructions:k; the JSON key keeps the suffix. Counts user and kernel space, or user space only when perf_event_paranoid > 1 ('counters_scope' in JSON). Adds counts, a summary, IPC/CPI and miss rates, and one terminal line. Unavailable counters (no PMU, permissions, macOS, Windows) give one warning and status 'unavailable' in perfratio.measurements.counters.
+.HP
+\fB\-\-list\-events\fR
+.IP
+List the events \fB\-\-counters\fR accepts and exit: the built\-in names, the raw syntax and the named events and terms of the PMUs under /sys/bus/event_source/devices (Linux), like perf list.
 .HP
 \fB\-\-scope\fR \fISCOPE\fP
 .IP
@@ -807,6 +873,18 @@ Collect Top\-down Microarchitecture Analysis level 1 per run (Linux x86_64): the
 \fB\-\-simd\fR
 .IP
 Collect a floating\-point scalar/vector breakdown per run (Linux, x86_64): retired scalar, 128\-, 256\- and 512\-bit packed floating\-point arithmetic and the vectorization ratio ('simd' and 'simd_summary' in JSON, one terminal block). Intel counts instructions, AMD Zen 4/5 counts uops, so compare ratios only within one vendor. Integer SIMD is not counted. Works with or without \fB\-\-counters\fR and honors \fB\-\-scope\fR (except split). Unsupported CPUs (including AArch64), hybrid Intel CPUs, VMs without a PMU, permissions and other platforms give one warning and status 'unavailable' in perfratio.measurements.simd.
+.HP
+\fB\-\-roofline\fR
+.IP
+Place every command on the roofline (Linux, x86_64): arithmetic intensity (FLOP per byte), GFLOP/s and GB/s, and whether the run is memory\- or compute\-bound. Enables \fB\-\-simd\fR and cache\-misses. FLOPs come from the \fB\-\-simd\fR counts; the bytes are last\-level cache misses times 64, a lower bound of the real traffic (it misses prefetches and write\-backs), so the intensity is an upper bound. Exported as 'roofline' in the JSON file. See \fBdocs/specs/roofline.md\fR.
+.HP
+\fB\-\-roofline\-peaks\fR \fIGFLOPS,GBPS\fP
+.IP
+The roofs of \fB\-\-roofline\fR: peak GFLOP/s and peak memory bandwidth in GB/s, e.g. 48,20. Or observed (default): the best values over the benchmarked commands, which needs two commands and is only a lower bound of the real ceilings.
+.HP
+\fB\-\-roofline\-precision\fR \fIPRECISION\fP
+.IP
+Element size of the packed floating\-point counts: double (default) or single (twice the FLOPs per packed instruction).
 .HP
 \fB\-\-first\-run\fR \fIMODE\fP
 .IP

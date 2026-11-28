@@ -3,9 +3,7 @@
 **Issues:** #381 (process and container attribution, estimated), #382 (external power meter).
 **Related:** #364 (parent), #317 (`metric-descriptors.md`, `kind: estimated`), #337,
 `energy-accuracy.md`, `rapl-domains.md`, `output-schema-contract.md`, `cgroup-thermal.md`.
-**JSON:** `schemaVersion` 1.37, additive only. The open pull requests #393 to #400 also use 1.37,
-so whichever merges second resolves the version by rebase (renumber to the next free MINOR,
-move `docs/schema/1.37/` and the constants). The fields of the two changes do not overlap.
+**JSON:** `schemaVersion` 1.43, additive only (renumbered from 1.37 when rebased on master at 1.42).
 
 ## Problem / Motivation
 
@@ -75,7 +73,7 @@ Energy (mean):  1.250 J    [Power: 12.50 W]
 Energy (estimated):  0.312 J    [cpu-time-share, process scope, share 25.0%]
 ```
 
-#### JSON (new in 1.37): `results[].energy_attribution`
+#### JSON (new in 1.43): `results[].energy_attribution`
 ```json
 "energy_attribution": {
   "kind": "estimated",
@@ -144,7 +142,7 @@ The command can carry credentials (URL token, password). It is never exported: t
 value in `perfratio.command_line` is replaced by `<redacted>`. It does appear in the process list
 of the machine while it runs, as any command line does.
 
-#### JSON (new values in 1.37)
+#### JSON (new values in 1.43)
 - `perfratio.energy_backend`: `external_meter` (open enum).
 - `perfratio.measurements.energy_unavailable_reason`: `meter_not_configured`, `meter_unreadable`
   (open enum).
@@ -152,7 +150,7 @@ of the machine while it runs, as any command line does.
   `external_meter`.
 
 ## Versioning
-`SCHEMA_VERSION` 1.36 -> 1.37 (MINOR, additive). `docs/schema/1.37/perfratio-export.schema.json`
+`SCHEMA_VERSION` 1.42 -> 1.43 (MINOR, additive). `docs/schema/1.43/perfratio-export.schema.json`
 is the frozen copy. Consumers that ignore unknown keys (the contract) keep working. A consumer
 that reads `energy_backend` as a closed enum must accept `external_meter`.
 

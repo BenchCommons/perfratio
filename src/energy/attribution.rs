@@ -242,7 +242,7 @@ impl Tracker {
     }
 }
 
-/// `results[].energy_attribution` of the JSON export (new in 1.37)
+/// `results[].energy_attribution` of the JSON export (new in 1.43)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct EnergyAttribution {
     /// Always `estimated`: the values are a model output, not a measurement

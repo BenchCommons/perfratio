@@ -103,6 +103,10 @@ pub struct StatSettings {
     pub noise_threshold: Option<f64>,
     /// Relative margin of the equivalence test, TOST (0.05 = 5%) (#323)
     pub equivalence_margin: Option<f64>,
+    /// `--ci-method`: flat or hierarchical interval of the mean (#368)
+    pub ci_method: crate::stats::hierarchical::CiMethod,
+    /// `--paired`: paired analysis over the rounds of an interleaved schedule (#368)
+    pub paired: bool,
 }
 
 impl Default for StatSettings {
@@ -117,6 +121,8 @@ impl Default for StatSettings {
             family: Family::Reference,
             noise_threshold: None,
             equivalence_margin: None,
+            ci_method: Default::default(),
+            paired: false,
         }
     }
 }
