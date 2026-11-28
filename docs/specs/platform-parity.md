@@ -40,7 +40,7 @@ rejected or ignored. "Warning" is a line on stderr; "reason" is
 | Raw PMU events, `--list-events` (#394) | yes (sysfs `event_source`, `perf_event_open`) | no: `--list-events` prints the built-in names and "No PMUs found ... (only available on Linux)"; raw events warn as `--counters` does elsewhere | no: same as macOS |
 | `--gpu` NVML / AMD SMI (#401) | yes, via `dlopen`; not run on GPU hardware | no: warning, reason `gpu_library_not_found` (neither NVML nor AMD SMI exists on macOS; verified) | no: `nvml.dll` loader not implemented, reason `unsupported_platform` |
 | `--energy-attribution cpu-time\|cgroup` (#402) | yes (`/proc/stat`, cgroup `cpu.stat`) | no: warning once that `/proc/stat` is needed, no estimate; measured energy unaffected (verified) | no: same as macOS (from code) |
-| `--power-meter COMMAND` (#402) | yes (`sh -c`) | yes (`sh -c`; verified with `--power-meter 'echo 5'`) | yes (`cmd /C`; from code) |
+| `--power-meter COMMAND` (#402; requires `--energy`) | yes (`sh -c`) | yes (`sh -c`; verified with `--power-meter 'echo 5'`) | yes (`cmd /C`; from code) |
 | `--thermal` (temperature sampling) | yes (sysfs, `interference.thermal` in °C) | partial (#419): no temperature without root; the thermal pressure level (`nominal` to `sleeping`) goes to `interference.thermal_pressure`, `interference.thermal` is absent (verified) | no: warning, nothing sampled |
 | `--cooldown until-temp=C` | yes | no: warning "no temperature sensor can be read on this host ...; not waiting", with the macOS cause (verified) | no: same warning |
 | `--collector-plugin PATH` (#403) | yes | yes: JSON lines over pipes, no OS-specific code (verified with a shell-script plugin) | yes (from code); `PATH` must be something `CreateProcess` runs directly (`.exe`, `.bat`, `.cmd`), not a `.sh` script |
@@ -100,7 +100,7 @@ Accepted limits, no issue:
 
 ## Tests
 - `energy::baseline_tests::every_reason_has_a_message_and_only_rapl_ones_mention_rapl`
-- `options::thermal_warning_tests::warns_only_when_requested_off_linux`
+- `options::thermal_warning_tests::warns_only_when_requested_where_unsupported`
 - `thermal::tests::macos_reports_a_pressure_level` (macOS only)
 - macOS behaviour in the matrix was run manually with the debug binary; it is not in CI.
 
