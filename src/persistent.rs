@@ -253,8 +253,9 @@ pub fn parse_response(lines: &[String], expected: u64) -> Result<Outcome> {
 pub const MAX_LINE: usize = 64 * 1024;
 
 /// Reads the lines of the program's stdout and sends the protocol messages (the lines with
-/// [`LINE_PREFIX`]). Memory stays bounded: a protocol line longer than [`MAX_LINE`] is
-/// reported as an error and ends the reading, and any other long line (ordinary program
+/// [`LINE_PREFIX`]). Memory stays bounded: a `fail` line longer than [`MAX_LINE`] is
+/// cut to [`MAX_LINE`] bytes and accepted, any other protocol line that long is reported as an
+/// error and ends the reading, and any other long line (ordinary program
 /// output) is skipped without being kept.
 fn read_protocol_lines<R: BufRead>(mut reader: R, tx: &mpsc::Sender<Result<String, String>>) {
     let mut buffer = Vec::new();
@@ -270,7 +271,15 @@ fn read_protocol_lines<R: BufRead>(mut reader: R, tx: &mpsc::Sender<Result<Strin
             return;
         }
         if buffer.len() > MAX_LINE && buffer.last() != Some(&b'\n') {
-            if buffer.starts_with(LINE_PREFIX.as_bytes()) {
+            let fail = format!("{LINE_PREFIX}fail ");
+            if buffer.starts_with(fail.as_bytes()) {
+                // a failure message is only text: keep the cut start, drop the rest
+                let text = String::from_utf8_lossy(&buffer[..MAX_LINE]).into_owned();
+                let message = text.strip_prefix(LINE_PREFIX).unwrap_or(&text).trim_end();
+                if tx.send(Ok(message.to_string())).is_err() {
+                    return;
+                }
+            } else if buffer.starts_with(LINE_PREFIX.as_bytes()) {
                 let _ = tx.send(Err(format!("a line is longer than {MAX_LINE} bytes")));
                 return;
             }
@@ -594,6 +603,19 @@ mod tests {
         assert_eq!(got.len(), 2);
         assert!(got[0].is_ok());
         assert!(got[1].as_ref().unwrap_err().contains("longer than"));
+    }
+
+    #[test]
+    fn an_oversized_fail_line_is_truncated_not_fatal() {
+        let mut input = format!("{LINE_PREFIX}fail 3 ").into_bytes();
+        input.extend(std::iter::repeat_n(b'a', MAX_LINE * 3));
+        input.extend(format!("\n{LINE_PREFIX}done 4\n").bytes());
+        let got = read_all(&input);
+        assert_eq!(got.len(), 2);
+        let message = got[0].as_ref().unwrap();
+        assert!(message.starts_with("fail 3 aaa"));
+        assert!(message.len() <= MAX_LINE);
+        assert_eq!(got[1].as_ref().unwrap(), "done 4");
     }
 
     #[test]

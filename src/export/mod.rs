@@ -229,7 +229,15 @@ impl ExportManager {
                 .flatten()
                 .map(String::as_str),
         )?;
-        metadata.meta = crate::environment::resolve_meta(&meta_request);
+        metadata.meta = crate::environment::resolve_meta(
+            &meta_request,
+            !matches
+                .try_get_one::<bool>("no-redact-meta")
+                .ok()
+                .flatten()
+                .copied()
+                .unwrap_or(false),
+        );
         metadata.execution = execution;
         let mut export_manager = Self {
             exporters: vec![],
