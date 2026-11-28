@@ -126,6 +126,8 @@ pub mod roofline;
 #[doc(hidden)]
 pub mod run_id;
 #[doc(hidden)]
+pub mod search;
+#[doc(hidden)]
 pub mod simd;
 #[doc(hidden)]
 pub mod stats;

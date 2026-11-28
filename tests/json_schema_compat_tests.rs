@@ -53,8 +53,8 @@ fn archived() -> Vec<((u32, u32), PathBuf)> {
 }
 
 /// Differences between two schemas that break a consumer written for `old`:
-/// a property that disappeared or changed type, an enum value that was removed, or a newly
-/// required key. New optional properties are fine (MINOR).
+/// a property that disappeared or changed type, an enum value that was removed, a newly
+/// required key, or a key that is no longer required. New optional properties are fine (MINOR).
 fn breaking_changes(old: &Value, new: &Value) -> Vec<String> {
     let mut out = Vec::new();
     walk(old, new, "#", &mut out);
@@ -111,6 +111,20 @@ fn walk(old: &Value, new: &Value, at: &str, out: &mut Vec<String>) {
         for key in new_required.iter().filter_map(Value::as_str) {
             if !old_required.contains(&key) {
                 out.push(format!("{at}: `{key}` became required"));
+            }
+        }
+    }
+    // A key that was required and no longer is: a consumer that reads it unconditionally breaks
+    // (only checked where the new schema still lists `properties`, i.e. the object is still there)
+    if new.get("properties").is_some() {
+        let new_required: Vec<&str> = new
+            .get("required")
+            .and_then(Value::as_array)
+            .map(|a| a.iter().filter_map(Value::as_str).collect())
+            .unwrap_or_default();
+        for key in &old_required {
+            if !new_required.contains(key) {
+                out.push(format!("{at}: `{key}` is no longer required"));
             }
         }
     }
@@ -275,4 +289,65 @@ fn the_diff_flags_retyped_and_newly_required_fields_but_allows_additions() {
     let mut narrowed = old.clone();
     narrowed["properties"]["b"]["enum"] = json!(["x"]);
     assert_eq!(breaking_changes(&old, &narrowed).len(), 1);
+}
+
+#[test]
+fn the_diff_flags_a_required_key_that_is_no_longer_required() {
+    let old = json!({
+        "type": "object",
+        "required": ["a", "b"],
+        "properties": { "a": { "type": "number" }, "b": { "type": "number" } }
+    });
+    let mut relaxed = old.clone();
+    relaxed["required"] = json!(["a"]);
+    let problems = breaking_changes(&old, &relaxed);
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(problems[0].contains("`b` is no longer required"));
+}
+
+/// Consecutive archived schemas of one MAJOR whose `required` lists were relaxed before this
+/// check existed. They are published and frozen; each entry is `(new version, path fragment)`.
+const RELAXED_REQUIRED_BEFORE_THE_CHECK: &[(&str, &str)] = &[];
+
+#[test]
+fn no_published_minor_removed_a_required_key_of_the_previous_one() {
+    let archived = archived();
+    let mut problems = Vec::new();
+    for pair in archived.windows(2) {
+        let ((old_major, _), old_path) = &pair[0];
+        let ((new_major, new_minor), new_path) = &pair[1];
+        if old_major != new_major {
+            continue;
+        }
+        let version = format!("{new_major}.{new_minor}");
+        for p in breaking_changes(&read(old_path), &read(new_path)) {
+            if !p.contains("is no longer required") {
+                continue;
+            }
+            let allowed = RELAXED_REQUIRED_BEFORE_THE_CHECK
+                .iter()
+                .any(|(v, frag)| *v == version && p.contains(frag));
+            if !allowed {
+                problems.push(format!("{version}: {p}"));
+            }
+        }
+    }
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
+}
+
+#[test]
+fn optimize_of_1_45_keeps_the_required_keys_of_1_44() {
+    let required = |version: &str| -> Vec<String> {
+        let schema = read(&Path::new(SCHEMA_DIR).join(version).join(FILE));
+        schema["$defs"]["optimize"]["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect()
+    };
+    let new = required("1.45");
+    for key in required("1.44") {
+        assert!(new.contains(&key), "`{key}` is no longer required in 1.45");
+    }
 }

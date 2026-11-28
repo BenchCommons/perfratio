@@ -359,7 +359,7 @@ pub fn build_command() -> Command {
         .arg(
             Arg::new("optimize")
                 .long("optimize")
-                .action(ArgAction::Set)
+                .action(ArgAction::Append)
                 .allow_hyphen_values(true)
                 .num_args(3)
                 .value_names(["VAR", "MIN", "MAX"])
@@ -373,7 +373,38 @@ pub fn build_command() -> Command {
                      Uses a golden-section search and assumes that the metric is unimodal in VAR; \
                      perfratio warns if the evaluated points suggest otherwise. With very noisy \
                      metrics the search can miss the true minimum. Other parameters ('-P', '-L') \
-                     are combined with the search: one search runs per combination.",
+                     are combined with the search: one search runs per combination.\n\n\
+                     Give '--optimize' several times to search several variables at once. That \
+                     needs '--optimize-algorithm random', 'halving' or 'bayes' (random is the \
+                     default then).",
+                ),
+        )
+        .arg(
+            Arg::new("optimize-algorithm")
+                .long("optimize-algorithm")
+                .action(ArgAction::Set)
+                .value_name("ALGORITHM")
+                .value_parser(["golden", "random", "halving", "bayes"])
+                .help(
+                    "Search algorithm of '--optimize'. 'golden' (default for one variable) is the \
+                     golden-section search for one unimodal variable. 'random' evaluates \
+                     '--optimize-budget' random points of the grid of all variables. 'halving' is \
+                     successive halving: all budget points get few runs, the best third gets three \
+                     times as many, and so on, until two points are left. 'bayes' fits a Gaussian \
+                     process to the points so far and benchmarks the point with the highest \
+                     expected improvement. Integers only. The random choices follow '--seed'.",
+                ),
+        )
+        .arg(
+            Arg::new("optimize-validate")
+                .long("optimize-validate")
+                .action(ArgAction::SetTrue)
+                .help(
+                    "After a 'random', 'halving' or 'bayes' search, benchmark the winner and the \
+                     runner-up again in a fresh round and report whether the winner holds up \
+                     (confirmed, refuted or inconclusive) and how far its value drifted. The \
+                     samples of the search are not reused. These runs are not part of \
+                     '--optimize-budget'.",
                 ),
         )
         .arg(
@@ -403,8 +434,9 @@ pub fn build_command() -> Command {
                 .value_parser(clap::value_parser!(usize))
                 .default_value("12")
                 .help(
-                    "Maximum number of distinct parameter values '--optimize' evaluates (at least 3). \
-                     A range that fits into the budget is evaluated completely.",
+                    "Maximum number of distinct parameter values (or points of the grid, with several \
+                     variables) '--optimize' evaluates (at least 3). A range that fits into the \
+                     budget is evaluated completely.",
                 ),
         )
         .arg(

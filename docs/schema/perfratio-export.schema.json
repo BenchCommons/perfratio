@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.44 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.45 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.44",
+      "const": "1.45",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -2252,6 +2252,137 @@
             "type": "number"
           },
           "description": "Values run a second time by --optimize-confirm (1.15)."
+        },
+        "vars": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "min": {
+                "type": "integer"
+              },
+              "max": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name",
+              "min",
+              "max"
+            ]
+          },
+          "description": "New in 1.45 (#385): the searched variables, in the order of --optimize. Present for --optimize with several variables or --optimize-algorithm random, halving or bayes."
+        },
+        "best_point": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "New in 1.45 (#385): the best value of every searched variable."
+        },
+        "runner_up_point": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "New in 1.45 (#385): the second best point."
+        },
+        "evaluated_points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "description": "New in 1.45 (#385): every distinct point, in evaluation order."
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "New in 1.45 (#385): the --seed of the random choices."
+        },
+        "cost": {
+          "type": "object",
+          "properties": {
+            "benchmarks": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "points": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "runs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rungs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "runs": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "points": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "runs",
+                  "points"
+                ]
+              }
+            }
+          },
+          "required": [
+            "benchmarks",
+            "points",
+            "runs"
+          ],
+          "description": "New in 1.45 (#385): budget accounting."
+        },
+        "validation": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "description": "confirmed, refuted or inconclusive (open enum)"
+            },
+            "value": {
+              "type": "number"
+            },
+            "search_value": {
+              "type": "number"
+            },
+            "drift": {
+              "type": "number"
+            },
+            "runner_up_value": {
+              "type": "number"
+            },
+            "p_value": {
+              "type": "number"
+            },
+            "runs": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "status",
+            "value",
+            "search_value",
+            "drift",
+            "runs"
+          ],
+          "description": "New in 1.45 (#385): the independent validation round of --optimize-validate."
         }
       },
       "required": [
@@ -2269,7 +2400,7 @@
         "at_boundary",
         "evaluated"
       ],
-      "description": "Result of one --optimize search."
+      "description": "Result of one --optimize search. var, min, max, best, evaluated and unimodal_warning are always present (required since 1.6). For a search over several variables (1.45) they describe the first declared variable: best is its value in the best point, evaluated its value in every distinct point (same order and length as evaluated_points), unimodal_warning is false. vars, best_point and evaluated_points carry all variables."
     },
     "pareto": {
       "type": "object",

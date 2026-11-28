@@ -107,6 +107,7 @@ pub enum SortOrder {
 }
 
 /// Bounds for the number of benchmark runs
+#[derive(Clone, Copy)]
 pub struct RunBounds {
     /// Minimum number of benchmark runs
     pub min: u64,
@@ -362,6 +363,7 @@ fn thermal_warning(requested: bool, linux: bool) -> Option<&'static str> {
 }
 
 /// The main settings for a perfratio benchmark session
+#[derive(Clone)]
 pub struct Options {
     /// Upper and lower bound for the number of benchmark runs
     pub run_bounds: RunBounds,
@@ -457,6 +459,8 @@ pub struct Options {
 
     /// `--optimize`: search a parameter for the best value of the primary metric
     pub optimize: Option<crate::optimize::OptimizeSpec>,
+    /// `--optimize` with several variables or `--optimize-algorithm random|halving|bayes`
+    pub search: Option<crate::search::SearchSpec>,
 
     /// `--work N[unit]`: amount of work of one run, for the per-operation metrics
     pub work: Option<crate::efficiency::Work>,
@@ -629,6 +633,7 @@ impl Default for Options {
             command_input_policy: CommandInputPolicy::Null,
             metric: crate::metric::Metric::Wall,
             optimize: None,
+            search: None,
             work: None,
             complexity: None,
             roofline: None,
@@ -1227,6 +1232,9 @@ impl Options {
 
         options.optimize = crate::optimize::OptimizeSpec::from_cli_arguments(matches)
             .map_err(|e| OptionsError::InvalidOptimize(format!("{e:#}")))?;
+        options.search =
+            crate::search::SearchSpec::from_cli_arguments(matches, options.stat_settings.seed)
+                .map_err(|e| OptionsError::InvalidOptimize(format!("{e:#}")))?;
         options.complexity = matches.get_one::<String>("complexity").cloned();
         options.measure_energy = matches.get_flag("energy");
         if let Some(metric_str) = matches.get_one::<String>("metric") {
@@ -1694,6 +1702,19 @@ impl Options {
                     var = spec.var,
                     command = command.get_command_line()
                 );
+            }
+        }
+
+        if let Some(spec) = &self.search {
+            for dim in &spec.dims {
+                if let Some(command) = commands.iter().find(|c| !c.uses_parameter(&dim.var)) {
+                    bail!(
+                        "'--optimize {var}': the command '{command}' does not contain \
+                         '{{{var}}}'",
+                        var = dim.var,
+                        command = command.get_command_line()
+                    );
+                }
             }
         }
 
