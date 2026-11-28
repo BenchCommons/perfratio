@@ -28,6 +28,37 @@ pub fn is_key(key: &str) -> bool {
         .any(|tool| key.strip_prefix(tool).is_some_and(|r| r.starts_with('.')))
 }
 
+/// Largest profile file read (bytes). A cachegrind/callgrind file of a large program with
+/// debug info is tens of MiB; 256 MiB leaves a wide margin and still bounds memory when the
+/// benchmarked process writes its own `cachegrind.out.*`.
+pub const MAX_PROFILE_BYTES: u64 = 256 * 1024 * 1024;
+
+/// Reads a profile file: it must be a regular file (a symlink or a device is refused) of at
+/// most `limit` bytes.
+fn read_profile(path: &Path, limit: u64) -> Result<String> {
+    use std::io::Read;
+    let meta = std::fs::symlink_metadata(path)
+        .with_context(|| format!("could not read {}", path.display()))?;
+    ensure!(
+        meta.file_type().is_file(),
+        "{} is not a regular file; refusing to read it",
+        path.display()
+    );
+    let mut text = String::new();
+    std::fs::File::open(path)
+        .with_context(|| format!("could not read {}", path.display()))?
+        .take(limit + 1)
+        .read_to_string(&mut text)
+        .with_context(|| format!("could not read {}", path.display()))?;
+    ensure!(
+        text.len() as u64 <= limit,
+        "{} is larger than {} MiB; refusing to read it",
+        path.display(),
+        limit / (1024 * 1024)
+    );
+    Ok(text)
+}
+
 /// Variable that replaces `valgrind` as the program to run (tests, non-standard installs).
 pub const BINARY_ENV: &str = "PERFRATIO_VALGRIND";
 
@@ -345,8 +376,7 @@ pub fn measure(tool: Tool, command: &Command) -> Result<Outcome> {
     }
     let mut total = Profile::default();
     for file in files {
-        let text = std::fs::read_to_string(&file)
-            .with_context(|| format!("could not read {}", file.display()))?;
+        let text = read_profile(&file, MAX_PROFILE_BYTES)?;
         total.merge(parse_profile(&text).with_context(|| format!("{}", file.display()))?);
     }
     Ok(Outcome {
@@ -378,6 +408,26 @@ fn=main
 1 700
 totals: 700
 ";
+
+    #[test]
+    fn profile_read_is_bounded_and_regular_only() {
+        let dir = std::env::temp_dir().join(format!("pr-vg-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("cachegrind.out.1");
+        std::fs::write(&file, "events: Ir\n").unwrap();
+        assert!(read_profile(&file, 1024).is_ok());
+        assert_eq!(read_profile(&file, 11).unwrap().len(), 11);
+        let err = read_profile(&file, 10).unwrap_err().to_string();
+        assert!(err.contains("larger than"), "{err}");
+        #[cfg(unix)]
+        {
+            let link = dir.join("cachegrind.out.2");
+            std::os::unix::fs::symlink(&file, &link).unwrap();
+            let err = read_profile(&link, 1024).unwrap_err().to_string();
+            assert!(err.contains("not a regular file"), "{err}");
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn parses_cachegrind_summary() {

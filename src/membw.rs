@@ -239,7 +239,14 @@ pub fn delta_bytes(pmus: &[ImcPmu], before: &[(u64, u64)], after: &[(u64, u64)])
 /// Bytes per NUMA node from the text of `/proc/<pid>/numa_maps`: every mapping line lists
 /// `N<node>=<pages>` and `kernelpagesize_kB=<n>` (4 kB when absent).
 pub fn parse_numa_maps(text: &str) -> BTreeMap<u32, u64> {
+    parse_numa_maps_checked(text).0
+}
+
+/// Like [`parse_numa_maps`], and says whether a value overflowed (the sums then saturate at
+/// `u64::MAX` and the placement data is not reliable).
+pub fn parse_numa_maps_checked(text: &str) -> (BTreeMap<u32, u64>, bool) {
     let mut nodes = BTreeMap::new();
+    let mut overflow = false;
     for line in text.lines() {
         let mut page_bytes = 4096u64;
         let mut pages: Vec<(u32, u64)> = Vec::new();
@@ -248,8 +255,15 @@ pub fn parse_numa_maps(text: &str) -> BTreeMap<u32, u64> {
                 continue;
             };
             if key == "kernelpagesize_kB" {
-                if let Ok(kb) = value.parse::<u64>() {
-                    page_bytes = kb * 1024;
+                if let Some(bytes) = value
+                    .parse::<u64>()
+                    .ok()
+                    .and_then(|kb| kb.checked_mul(1024))
+                {
+                    page_bytes = bytes;
+                } else {
+                    // absurd page size: ignore the value, keep the 4 kB default
+                    overflow = true;
                 }
             } else if let Some(node) = key.strip_prefix('N').and_then(|n| n.parse::<u32>().ok()) {
                 if let Ok(count) = value.parse::<u64>() {
@@ -258,10 +272,15 @@ pub fn parse_numa_maps(text: &str) -> BTreeMap<u32, u64> {
             }
         }
         for (node, count) in pages {
-            *nodes.entry(node).or_insert(0) += count * page_bytes;
+            let bytes = count.checked_mul(page_bytes).unwrap_or_else(|| {
+                overflow = true;
+                u64::MAX
+            });
+            let total = nodes.entry(node).or_insert(0u64);
+            *total = total.saturating_add(bytes);
         }
     }
-    nodes
+    (nodes, overflow)
 }
 
 /// Why NUMA placement cannot be sampled (`None`: it can)
@@ -291,12 +310,24 @@ impl Sampler {
         let handle = std::thread::spawn(move || {
             let path = format!("/proc/{pid}/numa_maps");
             let mut best: Option<(u64, BTreeMap<u32, u64>)> = None;
+            let mut warned = false;
             loop {
                 if let Ok(text) = std::fs::read_to_string(&path) {
-                    let sample = parse_numa_maps(&text);
-                    let total: u64 = sample.values().sum();
-                    if total > 0 && best.as_ref().is_none_or(|(t, _)| total >= *t) {
-                        best = Some((total, sample));
+                    let (sample, overflow) = parse_numa_maps_checked(&text);
+                    if overflow {
+                        // the kernel reported values that do not fit: drop the sample
+                        if !std::mem::replace(&mut warned, true) {
+                            eprintln!(
+                                "{} NUMA placement skipped: a value in /proc/{pid}/numa_maps \
+                                 overflows 64 bits.",
+                                crate::output::colors::yellow("Warning:")
+                            );
+                        }
+                    } else {
+                        let total = sample.values().fold(0u64, |a, b| a.saturating_add(*b));
+                        if total > 0 && best.as_ref().is_none_or(|(t, _)| total >= *t) {
+                            best = Some((total, sample));
+                        }
                     }
                 }
                 if flag.load(std::sync::atomic::Ordering::Relaxed) {
@@ -814,6 +845,25 @@ mod tests {
         assert!(parse_numa_maps("").is_empty());
         // `anon=` and `dirty=` are not node tokens
         assert!(parse_numa_maps("00400000 default anon=5 dirty=5").is_empty());
+    }
+
+    #[test]
+    fn numa_maps_overflow_is_flagged_and_saturates() {
+        // huge page size: kB * 1024 overflows, the 4 kB default stays
+        let text = format!("00400000 default N0=1 kernelpagesize_kB={}\n", u64::MAX);
+        let (nodes, overflow) = parse_numa_maps_checked(&text);
+        assert!(overflow);
+        assert_eq!(nodes[&0], 4096);
+        // pages * page size overflows
+        let text = format!("00400000 default N0={} kernelpagesize_kB=2048\n", u64::MAX);
+        let (nodes, overflow) = parse_numa_maps_checked(&text);
+        assert!(overflow);
+        assert_eq!(nodes[&0], u64::MAX);
+        // sums saturate
+        let text = format!("a d N0={0}\nb d N0={0}\n", u64::MAX / 4096);
+        let (nodes, _) = parse_numa_maps_checked(&text);
+        assert_eq!(nodes[&0], u64::MAX);
+        assert!(!parse_numa_maps_checked("a d N0=2").1);
     }
 
     fn run(read: Option<u64>, write: Option<u64>, nodes: &[(u32, u64)]) -> Option<Run> {

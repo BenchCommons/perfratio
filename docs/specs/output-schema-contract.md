@@ -117,6 +117,7 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
   values is closed (a new built-in value is MAJOR); the `custom:` prefix is a pattern, so
   consumers must accept any `custom:<name>`. Its unit and direction are those of the `custom.<name>` descriptor in `perfratio.metrics[]` (**new in 1.29**); without a declaration it is unitless and lower is better.
 - `perfratio` (object, guaranteed): run metadata, as `ExportMetadata` today.
+- `perfratio.meta` (object of strings): behavior note, no version bump (the type is unchanged). The value of a `--meta` key that names a secret is the string `"[redacted]"`. The key is split at `_`, `-`, `.` and camelCase; a segment `token`, `secret`, `password`, `passwd`, `passphrase`, `credential`, `credentials` or `apikey`, or `key` right after `api`, `access`, `secret`, `private`, `ssh`, `auth` or `priv`, triggers it. `--no-redact-meta` disables it. Consumers must not treat `"[redacted]"` as a real value. See `environment-fingerprint.md` 2.1.
 - `perfratio.statistics` (object, **new in 1.21**, #320; written by every export of 1.21 and later, absent from older ones): `{estimator, confidence_level,
   significance_level, bootstrap_resamples, bootstrap_seed}`. `estimator` is `mean`, `median` or a
   percentile such as `p95` and is the central value behind `relative_speed`, `significance`,

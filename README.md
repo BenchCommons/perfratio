@@ -219,7 +219,12 @@ The current version is `"1.48"`. The `perfratio` key holds run metadata and `per
 **Secrets.** The export records the commands and the full command line exactly as typed
 (`results[].command`, `perfratio.command_line`), plus an environment block, and `--evidence`
 bundles copy them. Keep tokens and passwords out of command arguments and `--meta` values
-before you share an export.
+before you share an export. As a safety net, the value of a `--meta` key that names a secret
+is exported as `"[redacted]"` (a warning names the key). The key is split at `_`, `-`, `.` and
+camelCase and is redacted if a segment is `token`, `secret`, `password`, `passwd`, `passphrase`,
+`credential`, `credentials` or `apikey`, or `key` right after `api`, `access`, `secret`,
+`private`, `ssh`, `auth` or `priv` (`api_key`, `AccessKey`); `key`, `cache_key` and `sort_key`
+are kept. `--no-redact-meta` turns this off. Nothing else is redacted.
 
 The contract is a top-level `"schemaVersion": "MAJOR.MINOR"` string. Consumers must ignore
 unknown keys and accept any MINOR version of the MAJOR version they support. A removed or
