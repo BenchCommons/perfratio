@@ -5,7 +5,7 @@
 //! Diagnostics only: nothing here changes a statistic. A source that cannot be
 //! read is left out, never reported as "no throttling".
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -110,6 +110,10 @@ const BACKGROUND_INTERVAL: Duration = Duration::from_secs(1);
 /// Longest wait in `finish` for a first reading that is still in progress
 const FIRST_READ_WAIT: Duration = Duration::from_millis(200);
 
+/// The same on Windows, where the first PDH query is slower than a sysfs read.
+/// Only a host without the counter waits this long, once, after the last run.
+const WINDOWS_FIRST_READ_WAIT: Duration = Duration::from_millis(500);
+
 /// Reads the temperature on its own thread. Some hosts (cloud VMs) take about
 /// a second per read of `/sys/class/thermal` and `/sys/class/hwmon`; reading
 /// them on the benchmark thread delayed the first run by that much.
@@ -123,6 +127,7 @@ struct BackgroundThermal {
     /// Wait in `finish` for a first reading: only for a fixture root (tests),
     /// whose reads are instant; a real host never waits for its sensors.
     wait_first_read: bool,
+    root: PathBuf,
 }
 
 impl BackgroundThermal {
@@ -132,6 +137,7 @@ impl BackgroundThermal {
         let (thread_stop, thread_latest) = (Arc::clone(&stop), Arc::clone(&latest));
         let root_is_fixture = root != Path::new("/");
         let root = root.to_path_buf();
+        let host_root = root.clone();
         let spawned = std::thread::Builder::new()
             .name("perfratio-thermal".into())
             .spawn(move || {
@@ -167,11 +173,12 @@ impl BackgroundThermal {
         if spawned.is_err() {
             stop.store(true, Ordering::Relaxed);
         }
-        let wait_first_read = root_is_fixture;
+        let wait_first_read = root_is_fixture || cfg!(windows);
         BackgroundThermal {
             stop,
             latest,
             wait_first_read,
+            root: host_root,
         }
     }
 
@@ -181,7 +188,11 @@ impl BackgroundThermal {
         // A benchmark shorter than the first read (e.g. `--debug-mode`) waits
         // briefly for it; this is after the last run, outside every timing.
         let wait = if self.wait_first_read {
-            FIRST_READ_WAIT
+            if cfg!(windows) && self.root == Path::new("/") {
+                WINDOWS_FIRST_READ_WAIT
+            } else {
+                FIRST_READ_WAIT
+            }
         } else {
             Duration::ZERO
         };
@@ -194,6 +205,9 @@ impl BackgroundThermal {
             std::thread::sleep(Duration::from_millis(2));
         };
         self.stop.store(true, Ordering::Relaxed);
+        if trace == (None, None) {
+            crate::thermal::warn_no_sensor_once(&self.root);
+        }
         trace
     }
 }

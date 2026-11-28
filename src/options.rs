@@ -353,13 +353,13 @@ pub struct UntilSettings {
     pub match_stderr: bool,
 }
 
-/// `--thermal` reads Linux sysfs sensors and the macOS thermal pressure level; on other
-/// systems it cannot sample.
+/// `--thermal` reads Linux sysfs sensors, the Windows thermal zone counter and the macOS
+/// thermal pressure level; on other systems it cannot sample.
 #[cfg(feature = "cli")]
 fn thermal_warning(requested: bool, supported: bool) -> Option<&'static str> {
     (requested && !supported).then_some(
-        "'--thermal' reads Linux sysfs temperature sensors and the macOS thermal pressure \
-         level; on this platform nothing is sampled and 'interference.thermal' and \
+        "'--thermal' reads Linux sysfs and Windows thermal zone temperature sensors and the \
+         macOS thermal pressure level; on this platform nothing is sampled and 'interference.thermal' and \
          'interference.thermal_pressure' are absent from the export.",
     )
 }
@@ -1361,7 +1361,7 @@ impl Options {
         options.thermal = matches.get_flag("thermal");
         if let Some(warning) = thermal_warning(
             options.thermal,
-            cfg!(any(target_os = "linux", target_os = "macos")),
+            cfg!(any(target_os = "linux", target_os = "macos", windows)),
         ) {
             eprintln!("Warning: {warning}");
         }

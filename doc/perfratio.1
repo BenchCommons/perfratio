@@ -571,7 +571,7 @@ Exit with code 5 if the quality grade of any benchmark is worse than GRADE (comp
 .HP
 \fB\-\-thermal\fR
 .IP
-Sample the hottest CPU temperature sensor (Linux thermal zones and hwmon) on a background thread while the benchmark runs, and report it as interference.thermal and in the environment_stability quality check. Off by default: on some hosts (cloud VMs) reading the sensors takes about a second. \fB\-\-cooldown\fR until\-temp reads the sensors either way.
+Sample the hottest temperature sensor (Linux thermal zones and hwmon, Windows ACPI thermal zones through the "Thermal Zone Information" performance counter, no administrator rights) on a background thread while the benchmark runs, and report it as interference.thermal and in the environment_stability quality check. Off by default: on some hosts (cloud VMs) reading the sensors takes about a second. \fB\-\-cooldown\fR until\-temp reads the sensors either way.
 .IP
 macOS has no CPU temperature without root: perfratio records the coarse thermal pressure level (nominal, moderate, heavy, trapping, sleeping) as interference.thermal_pressure instead. Windows: not supported yet.
 .HP

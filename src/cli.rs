@@ -643,11 +643,12 @@ pub fn build_command() -> Command {
                 .long("thermal")
                 .action(ArgAction::SetTrue)
                 .help(
-                    "Sample the CPU temperature (Linux) or the thermal pressure level (macOS) \
+                    "Sample the CPU temperature (Linux, Windows) or the thermal pressure level (macOS) \
                      while the benchmark runs (elsewhere it warns and does nothing).",
                 )
                 .long_help(
-                    "Sample the hottest CPU temperature sensor (thermal zones and hwmon) on a \
+                    "Sample the hottest temperature sensor (Linux thermal zones and hwmon, Windows ACPI \
+                     thermal zones) on a \
                      background thread while the benchmark runs, and report it as \
                      'interference.thermal' and in the 'environment_stability' quality check. \
                      Off by default: on some hosts (cloud VMs) reading the sensors takes about a \
@@ -655,7 +656,10 @@ pub fn build_command() -> Command {
                      either way.\n\n\
                      macOS has no CPU temperature without root: perfratio records the coarse \
                      thermal pressure level (nominal, moderate, heavy, trapping, sleeping) as \
-                     'interference.thermal_pressure' instead. Windows: not supported yet.",
+                     'interference.thermal_pressure' instead.\n\n\
+                     Windows: reads the 'Thermal Zone Information' performance counter (no \
+                     administrator rights). Many desktops and VMs have no instance: perfratio \
+                     then warns once and samples nothing.",
                 ),
         )
         .arg(

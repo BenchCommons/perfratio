@@ -41,8 +41,8 @@ rejected or ignored. "Warning" is a line on stderr; "reason" is
 | `--gpu` NVML / AMD SMI (#401) | yes, via `dlopen`; not run on GPU hardware | no: warning, reason `gpu_library_not_found` (neither NVML nor AMD SMI exists on macOS; verified) | no: `nvml.dll` loader not implemented, reason `unsupported_platform` |
 | `--energy-attribution cpu-time\|cgroup` (#402) | yes (`/proc/stat`, cgroup `cpu.stat`) | no: warning once that `/proc/stat` is needed, no estimate; measured energy unaffected (verified) | no: same as macOS (from code) |
 | `--power-meter COMMAND` (#402; requires `--energy`) | yes (`sh -c`) | yes (`sh -c`; verified with `--power-meter 'echo 5'`) | yes (`cmd /C`; from code) |
-| `--thermal` (temperature sampling) | yes (sysfs, `interference.thermal` in °C) | partial (#419): no temperature without root; the thermal pressure level (`nominal` to `sleeping`) goes to `interference.thermal_pressure`, `interference.thermal` is absent (verified) | no: warning, nothing sampled |
-| `--cooldown until-temp=C` | yes | no: warning "no temperature sensor can be read on this host ...; not waiting", with the macOS cause (verified) | no: same warning |
+| `--thermal` (temperature sampling) | yes (sysfs, `interference.thermal` in °C) | partial (#419): no temperature without root; the thermal pressure level (`nominal` to `sleeping`) goes to `interference.thermal_pressure`, `interference.thermal` is absent (verified) | partial (#412): hottest ACPI thermal zone from the `Thermal Zone Information` performance counter (PDH, no admin) in `interference.thermal`; hosts without the counter (many desktops, VMs) get one warning and no field (from code; CI runner outcome in the PR) |
+| `--cooldown until-temp=C` | yes | no: warning "no temperature sensor can be read on this host ...; not waiting", with the macOS cause (verified) | yes where the counter exists; otherwise the same warning, with the Windows cause (from code) |
 | `--collector-plugin PATH` (#403) | yes | yes: JSON lines over pipes, no OS-specific code (verified with a shell-script plugin) | yes (from code); `PATH` must be something `CreateProcess` runs directly (`.exe`, `.bat`, `.cmd`), not a `.sh` script |
 | `--collector cachegrind\|callgrind` (#403) | yes, needs Valgrind | no: error, non-zero exit, because Valgrind cannot be run (not installed here; Valgrind does not support Apple Silicon, see `valgrind-collector.md`) | no: same error (from code) |
 | `--membw` memory bandwidth and NUMA (#404) | yes (uncore IMC via `perf_event_open`, `numa_maps`); not run on Linux hardware here | no: two warnings, `membw` and `numa` `unavailable` with reason `unsupported_platform` (verified) | no: same (from code) |
@@ -84,8 +84,9 @@ Open, tracked as issues (large, or need hardware or a design decision):
   with `-N` (`QueryProcessCycleTime`). Missing: `instructions` and other events on Windows,
   other events on macOS, Intel Macs (`counters-macos-windows.md`).
 - #412 Temperature sampling and `--cooldown until-temp` on macOS and Windows. #419 added the
-  thermal pressure level on macOS (`--thermal`, `--check-system`). Missing: a temperature in
-  °C on macOS (needs root) and any reading on Windows (`thermal-macos-windows.md`).
+  thermal pressure level on macOS (`--thermal`, `--check-system`). Windows reads the
+  thermal zone counter (no admin). Missing: a temperature in °C on macOS (needs root) and a
+  reading on Windows hosts without the counter (`thermal-macos-windows.md`).
 - #413 Validate IOReport and EMI energy on real hardware; macOS 27 via CLPC.
 - #414 Detect Windows lowering `--priority realtime` to high. #418 added the warning. Missing:
   a run on Windows, since the check is not exercised in CI.
@@ -103,6 +104,7 @@ Accepted limits, no issue:
 - `energy::baseline_tests::every_reason_has_a_message_and_only_rapl_ones_mention_rapl`
 - `options::thermal_warning_tests::warns_only_when_requested_where_unsupported`
 - `thermal::tests::macos_reports_a_pressure_level` (macOS only)
+- `thermal::tests::windows_zone_counter_is_absent_or_plausible` and `cgroup_thermal_tests::windows_thermal_records_a_temperature_or_warns` (Windows only, run in CI)
 - macOS behaviour in the matrix was run manually with the debug binary; it is not in CI.
 
 Refs: #291.

@@ -327,6 +327,9 @@ perfratio -N --warmup auto --first-run=separate \
   snapshots 1.39 to 1.48 (and in the schema that matched them) says 1.37 by mistake. The
   snapshots are frozen and were not edited; no version bump.
 
+- `interference.thermal` emitted on Windows (#412, `thermal-macos-windows.md`) is not a schema
+  change: same field, type, unit and meaning, already optional. No bump, no new snapshot.
+
 ## Implementation
 - `src/export/json.rs`: add `schema_version: &'static str` serialized as `"schemaVersion"`
   first in `PerfratioSummary`; a `pub const SCHEMA_VERSION: &str = "1.1"`.

@@ -117,7 +117,8 @@ const NO_SENSOR_REASON: &str = if cfg!(target_os = "macos") {
     " (macOS exposes no CPU temperature without root; '--thermal' records the \
      coarse thermal pressure level instead)"
 } else if cfg!(windows) {
-    " (temperature sensors are not read on Windows yet)"
+    " (the Windows 'Thermal Zone Information' performance counter has no instance on this \
+     host, common on desktops and VMs)"
 } else {
     ""
 };
