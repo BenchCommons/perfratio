@@ -60,7 +60,9 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   chosen by the user.
 - Recommendation: after a normal exit, kill the process group too, or do not `join` and
   receive the output through a channel with `recv_timeout`.
-- State: open, **master**. Reclassified from Medium to Low.
+- State: **master**. Reclassified from Medium to Low. Corrigido em #427 (PR aberto): the reader reports over a
+  channel, `recv_timeout` with the same deadline, the group is killed on expiry (test with a
+  background grandchild).
 
 ### M2. `--verify-evidence` prints untrusted text unescaped and reads files without a size bound
 
@@ -205,7 +207,9 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   `/usr/lib/x86_64-linux-gnu/`, `/usr/lib64/`, `/opt/rocm/lib/`) and fall back to the
   soname only with a warning. Refuse to load when running as root and the file is writable
   by group or other. Replace the `assert_eq!` with a compile-time assertion.
-- State: open, **master**.
+- State: open, **master**. Corrigido em parte em #427 (PR aberto): the `assert_eq!` is now a handled `None`
+  (backend degrades). `dlopen` by soname stays; search order and the `LD_LIBRARY_PATH` risk
+  are documented in `docs/specs/gpu-energy.md`.
 
 ### L5. `--membw`: arithmetic on values read from sysfs and `numa_maps`
 
@@ -262,7 +266,8 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   parsing. Content is validated after parsing (#27) and names are escaped (#24).
 - Recommendation: check `metadata.len()` against a limit (for example 256 MiB) with a clear
   message.
-- State: open, **master**, minor.
+- State: **master**, minor. Corrigido em #427 (PR aberto): 256 MiB limit (`MAX_IMPORT_BYTES`), clear
+  error; also in `import_environment`.
 
 ### L9. `PERFRATIO_RUN_DIR`: directory created from the user-supplied artifact path
 

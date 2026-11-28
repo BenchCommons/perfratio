@@ -40,6 +40,16 @@ dependency and no new crate. Libraries tried (first hit per vendor wins, both ca
   where the host sampler is unavailable the GPU values appear only in the JSON export.
 - **Console:** the `Domains (mean)` line gains `gpu:<n> <J> J, util <p>%`.
 
+### Library loading
+
+The vendor libraries are opened with `dlopen` by soname (`libnvidia-ml.so.1`, `libamd_smi.so`,
+then `/opt/rocm/lib/libamd_smi.so`), with `RTLD_NOW | RTLD_LOCAL`. The dynamic loader search
+order applies: `RPATH`, `LD_LIBRARY_PATH`, `RUNPATH`, `ld.so.cache`, then the default
+directories. A library found earlier in `LD_LIBRARY_PATH` runs its constructors inside the
+perfratio process. Do not run `--gpu` (often with `--energy` and elevated privileges) with an
+untrusted `LD_LIBRARY_PATH`. A symbol of an unexpected size makes the backend unavailable
+with a reason; it does not panic (audit L4).
+
 ### Degradation
 Without a library, a driver, or a device, perfratio prints one warning
 (`Warning: --gpu: ... (gpu_library_not_found); continuing without GPU measurements.`) and the run

@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
+use std::io::Read;
 
 use crate::benchmark::benchmark_result::BenchmarkResult;
 use crate::util::sanitize::escape_control_chars;
@@ -65,6 +66,23 @@ fn adopt_custom_descriptors(perfratio: Option<&serde_json::Value>, results: &[Be
     }
 }
 
+/// Largest accepted import file (256 MiB). Larger files are rejected before parsing.
+pub const MAX_IMPORT_BYTES: u64 = 256 * 1024 * 1024;
+
+fn check_size(file: &std::fs::File, path: &str, limit: u64) -> Result<()> {
+    let len = file
+        .metadata()
+        .with_context(|| format!("Could not read the size of import file '{path}'"))?
+        .len();
+    if len > limit {
+        bail!(
+            "Import file '{path}' is {len} bytes, above the {limit}-byte ({} MiB) limit",
+            limit / (1024 * 1024)
+        );
+    }
+    Ok(())
+}
+
 /// Import previously exported JSON benchmark results from the given file path.
 pub fn import_json(path: &str) -> Result<Vec<BenchmarkResult>> {
     import_json_for_metric(path, None)
@@ -78,7 +96,8 @@ pub fn import_json_for_metric(
 ) -> Result<Vec<BenchmarkResult>> {
     let file = std::fs::File::open(path)
         .with_context(|| format!("Could not open import file '{path}'"))?;
-    let reader = std::io::BufReader::new(file);
+    check_size(&file, path, MAX_IMPORT_BYTES)?;
+    let reader = std::io::BufReader::new(file.take(MAX_IMPORT_BYTES));
     let mut summary: PerfratioSummary = serde_json::from_reader(reader)
         .with_context(|| format!("Failed to parse import JSON '{path}'"))?;
     if let (Some(file_metric), Some(cli_metric)) = (summary.metric, expected) {
@@ -355,6 +374,17 @@ mod tests {
     }
 
     #[test]
+    fn test_import_json_rejects_files_above_the_size_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("big.json");
+        std::fs::write(&path, b"{}").unwrap();
+        let file = std::fs::File::open(&path).unwrap();
+        let err = check_size(&file, "big.json", 1).unwrap_err().to_string();
+        assert!(err.contains("above the 1-byte"), "{err}");
+        assert!(check_size(&file, "big.json", 2).is_ok());
+    }
+
+    #[test]
     fn test_import_json_missing_file() {
         let err = import_json("non_existent_json_file.json");
         assert!(err.is_err());
@@ -365,7 +395,9 @@ mod tests {
 /// none (exported before 1.19, or without metadata) or cannot be read.
 pub fn import_environment(path: &str) -> Option<crate::environment::Environment> {
     let file = std::fs::File::open(path).ok()?;
-    let value: serde_json::Value = serde_json::from_reader(std::io::BufReader::new(file)).ok()?;
+    check_size(&file, path, MAX_IMPORT_BYTES).ok()?;
+    let value: serde_json::Value =
+        serde_json::from_reader(std::io::BufReader::new(file.take(MAX_IMPORT_BYTES))).ok()?;
     serde_json::from_value(value.get("perfratio")?.get("environment")?.clone()).ok()
 }
 

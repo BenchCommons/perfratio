@@ -73,7 +73,8 @@ pub fn command_reader(config: &MeterConfig) -> Reader {
 
 /// Runs `command` through the shell and returns its stdout (at most 4 KiB).
 /// A command that runs longer than `timeout` is killed with its whole process group (Unix), and
-/// the reader thread is not joined, since a grandchild may keep the pipe open.
+/// the reader reports over a channel that is awaited only until the same deadline, since a
+/// grandchild may keep the pipe open.
 fn run_command(command: &str, timeout: Duration) -> Result<String, String> {
     use std::process::{Command, Stdio};
     #[cfg(windows)]
@@ -99,10 +100,11 @@ fn run_command(command: &str, timeout: Duration) -> Result<String, String> {
         .spawn()
         .map_err(|e| format!("cannot start the meter command: {e}"))?;
     let mut stdout = child.stdout.take().ok_or("no stdout")?;
-    let reader = std::thread::spawn(move || {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
         let mut buf = String::new();
         let _ = (&mut stdout).take(4096).read_to_string(&mut buf);
-        buf
+        let _ = tx.send(buf);
     });
     let deadline = Instant::now() + timeout;
     let status = loop {
@@ -112,27 +114,45 @@ fn run_command(command: &str, timeout: Duration) -> Result<String, String> {
                 std::thread::sleep(Duration::from_millis(5));
             }
             Ok(None) => {
-                #[cfg(unix)]
-                // SAFETY: killpg on the group created by process_group(0); no memory is touched.
-                unsafe {
-                    libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL);
-                }
-                let _ = child.kill();
+                kill_group(&mut child);
                 let _ = child.wait();
-                return Err(format!(
-                    "the meter command did not finish within {} s",
-                    timeout.as_secs()
-                ));
+                return Err(timeout_error(timeout));
             }
             Err(e) => return Err(format!("cannot wait for the meter command: {e}")),
         }
     };
-    let out = reader.join().unwrap_or_default();
+    // A descendant may keep the pipe open after `sh` exits: wait for the reader only until the
+    // same deadline, then kill the process group.
+    let out = match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+        Ok(out) => out,
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+            kill_group(&mut child);
+            return Err(timeout_error(timeout));
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => String::new(),
+    };
     if status.success() {
         Ok(out)
     } else {
         Err(format!("the meter command failed ({status})"))
     }
+}
+
+fn timeout_error(timeout: Duration) -> String {
+    format!(
+        "the meter command did not finish within {} s",
+        timeout.as_secs()
+    )
+}
+
+/// Kills the meter's process group (Unix) and the child itself.
+fn kill_group(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    // SAFETY: killpg on the group created by process_group(0); no memory is touched.
+    unsafe {
+        libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL);
+    }
+    let _ = child.kill();
 }
 
 /// Parses a meter reading: the first number of the output, with an optional unit either
@@ -346,6 +366,15 @@ pub fn build(config: &MeterConfig, read: Reader) -> Result<Box<dyn EnergySampler
 mod tests {
     use super::*;
     use std::sync::atomic::AtomicU64;
+
+    #[cfg(unix)]
+    #[test]
+    fn a_background_grandchild_holding_the_pipe_does_not_block_a_normal_exit() {
+        let start = Instant::now();
+        let r = run_command("sleep 30 & echo 5", Duration::from_millis(500));
+        assert!(r.unwrap_err().contains("did not finish"));
+        assert!(start.elapsed() < Duration::from_secs(10));
+    }
 
     #[cfg(unix)]
     #[test]

@@ -106,7 +106,9 @@ impl DynLib {
     /// `T` must be the `extern "C"` function pointer type of the symbol.
     #[cfg(unix)]
     unsafe fn sym<T: Copy>(&self, name: &str) -> Option<T> {
-        assert_eq!(std::mem::size_of::<T>(), std::mem::size_of::<usize>());
+        if std::mem::size_of::<T>() != std::mem::size_of::<usize>() {
+            return None; // not a function pointer: the backend degrades instead of panicking
+        }
         let c = CString::new(name).ok()?;
         let p = libc::dlsym(self.0 as *mut c_void, c.as_ptr());
         // SAFETY: sizes checked above; the caller guarantees the signature.
