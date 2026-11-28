@@ -83,6 +83,26 @@ fn run() -> Result<()> {
         return Ok(());
     }
 
+    if let Some(dir) = cli_arguments.get_one::<String>("verify-evidence") {
+        let report = perfratio::evidence::verify(std::path::Path::new(dir));
+        for file in &report.verified {
+            perfratio::outln!("ok       {file}");
+        }
+        for problem in &report.problems {
+            eprintln!("{} {problem}", colors::red("FAILED:"));
+        }
+        if let Some(hash) = report.manifest_sha256.as_ref().filter(|_| report.is_ok()) {
+            perfratio::outln!("manifest sha256: {hash}");
+        }
+        if !report.is_ok() {
+            anyhow::bail!(
+                "The evidence bundle '{dir}' is not intact ({} problem(s))",
+                report.problems.len()
+            );
+        }
+        return Ok(());
+    }
+
     let mut options = Options::from_cli_arguments(&cli_arguments)?;
     perfratio::stats::settings::install(options.stat_settings.clone());
     if let Some(precision) = cli_arguments.get_one::<String>("precision") {

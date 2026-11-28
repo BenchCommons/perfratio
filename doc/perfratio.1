@@ -130,6 +130,10 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR KEY=VALUE|git ]
 .RB [ \-\-require\-compatible\-env ]
 .RB [ \-\-calibrate [ =auto|off ]]
+.RB [ \-\-evidence
+.IR DIR ]
+.RB [ \-\-verify\-evidence
+.IR DIR ]
 .RB [ \-\-below\-floor
 .IR ACTION ]
 .RB [ \-\-expect\-output\-sha256
@@ -535,6 +539,14 @@ How long until\-temp waits before it gives up (default 5m). Requires \fB\-\-cool
 \fB\-\-meta\fR \fIKEY=VALUE|git\fP
 .IP
 Record provenance of the benchmarked program under perfratio.meta in the JSON export (repeatable). KEY=VALUE is a string; git adds git_commit and git_dirty of the git repository in the current directory. The export contains no host name, user name, environment variables or working directory.
+.HP
+\fB\-\-evidence\fR \fIDIR\fP
+.IP
+Write an evidence bundle to the new or empty directory DIR: manifest.json (SHA\-256 of every file), results.json (the JSON export), samples.jsonl (every run), environment.json, calibration.json, validation.json, quality.json and command.json (the exact command line). No host name, user name or environment variables. The commands are recorded as typed: keep secrets out of them. See docs/specs/evidence\-bundle.md.
+.HP
+\fB\-\-verify\-evidence\fR \fIDIR\fP
+.IP
+Check the hashes, sizes and file list of the evidence bundle in DIR and exit: 0 if it is intact, 1 otherwise. Prints the SHA\-256 of manifest.json.
 .HP
 \fB\-\-require\-compatible\-env\fR
 .IP
