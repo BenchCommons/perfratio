@@ -74,7 +74,7 @@ appended to `--export-diff-markdown`. The table is printed for explicit budgets 
   unavailable or not applicable, never 0. Entry `verdict`: `pass`, `fail`, `within_noise`,
   `not_evaluated` (with `reason`: `unavailable_in_baseline`, `unavailable_in_current`,
   `baseline_not_positive`, `too_few_runs`; open enum).
-- The environment comparison with the baseline (#314) is not reported yet: that change is not merged.
+- The `compare` block carries no environment comparison. The environment check against the baseline (#314, merged) is separate: it is a stderr warning, or an error with `--require-compatible-env` (`environment-fingerprint.md` §2.4).
 
 ## Tests
 `src/budget.rs` unit tests (parsing, table of verdicts by direction, noise, absolute, each

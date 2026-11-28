@@ -20,8 +20,6 @@ contract (no JSON export change).
 | Secrets | gitleaks runs in CI over the full history with a digest-pinned image. `.gitleaks.toml` extends the default ruleset and allowlists only `tests/` and `src/**/test(s).rs` fixtures |
 
 ## Left open
-- `winget` job still uses the identifier `UnitedOpenSource.perfratio`. It is
-  opt-in (`WINGET_ENABLED`), but must be renamed before enabling it for 1.0.
 - `windows_timer.rs` uses `assert!` on Win32 failures (panic instead of an
   error); acceptable, but a candidate for `Result`.
 - Fuzzing covers `--import-json` and the command splitter (`fuzz/`). Parameter parsing is not fuzzed yet. The targets were only compile-checked locally (no nightly toolchain or cargo-fuzz available); the optional `fuzz.yml` workflow runs them on nightly.
@@ -45,7 +43,7 @@ contract (no JSON export change).
   from the package and workspace. The `Fuzz` workflow is optional and not a
   required check.
 - [x] 6. `--export-diff-markdown` uses the atomic writer; `.gitleaks.toml` added.
-- [ ] 7. Remaining open items above (`winget` identifier, `windows_timer.rs`
-  panics, Windows sanitizer).
+- [ ] 7. Remaining open items above (`windows_timer.rs` panics,
+  Windows sanitizer).
 
 No JSON export change: this work does not touch the output contract.
