@@ -1,6 +1,6 @@
 # Spec: Metric descriptors and status taxonomy (`perfratio.metrics`) (#317)
 
-Shipped in `schemaVersion` 1.20 (additive, MINOR); unit and direction of custom metrics and descriptor import in 1.28. Part of the output contract of #240.
+Shipped in `schemaVersion` 1.20 (additive, MINOR); unit and direction of custom metrics and descriptor import in 1.30. Part of the output contract of #240.
 
 ## Problem / Motivation
 Every metric of the export was a special case: fixed fields for time, memory, energy and counters,
