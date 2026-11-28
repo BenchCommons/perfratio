@@ -112,6 +112,16 @@ pub fn wait(cooldown: Cooldown, root: &Path, timeout: Duration) -> Outcome {
     }
 }
 
+/// Why `until-temp` finds no sensor, per platform (#412)
+const NO_SENSOR_REASON: &str = if cfg!(target_os = "macos") {
+    " (macOS exposes no CPU temperature without root; '--thermal' records the \
+     coarse thermal pressure level instead)"
+} else if cfg!(windows) {
+    " (temperature sensors are not read on Windows yet)"
+} else {
+    ""
+};
+
 /// The first wait of a session is skipped: the machine has just been idle
 static STARTED: AtomicBool = AtomicBool::new(false);
 static WARNED_NO_SENSOR: AtomicBool = AtomicBool::new(false);
@@ -137,8 +147,9 @@ pub fn before_run(cooldown: Cooldown, timeout: Duration) {
             if !WARNED_NO_SENSOR.swap(true, Ordering::SeqCst) {
                 eprintln!(
                     "{} '--cooldown until-temp': no temperature sensor can be read on this \
-                     host; not waiting.",
-                    crate::output::colors::yellow("Warning:")
+                     host{}; not waiting.",
+                    crate::output::colors::yellow("Warning:"),
+                    NO_SENSOR_REASON
                 );
             }
         }

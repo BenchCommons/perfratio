@@ -34,3 +34,36 @@ pub fn is_rosetta() -> bool {
     }
     false
 }
+
+/// The example collector plugin (`examples/collector_plugin.rs`). `cargo test` builds it;
+/// with `--test <name>` it is built here on first use.
+#[allow(dead_code)]
+pub fn example_collector() -> std::path::PathBuf {
+    static BUILT: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    BUILT
+        .get_or_init(|| {
+            // <target>/<profile>/perfratio -> <target>/<profile>/examples/collector_plugin
+            let bin = assert_cmd::cargo::cargo_bin!("perfratio");
+            let path = bin
+                .parent()
+                .unwrap()
+                .join("examples")
+                .join(format!("collector_plugin{}", std::env::consts::EXE_SUFFIX));
+            if !path.exists() {
+                let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+                let mut build = Command::new(cargo);
+                build.args(["build", "--example", "collector_plugin"]);
+                if !cfg!(debug_assertions) {
+                    build.arg("--release");
+                }
+                let status = build
+                    .current_dir(env!("CARGO_MANIFEST_DIR"))
+                    .status()
+                    .unwrap();
+                assert!(status.success(), "could not build the example collector");
+            }
+            assert!(path.exists(), "{path:?} is missing");
+            path
+        })
+        .clone()
+}

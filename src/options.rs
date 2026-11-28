@@ -107,6 +107,7 @@ pub enum SortOrder {
 }
 
 /// Bounds for the number of benchmark runs
+#[derive(Clone, Copy)]
 pub struct RunBounds {
     /// Minimum number of benchmark runs
     pub min: u64,
@@ -352,16 +353,19 @@ pub struct UntilSettings {
     pub match_stderr: bool,
 }
 
-/// `--thermal` reads Linux sysfs sensors; on other systems it cannot sample.
+/// `--thermal` reads Linux sysfs sensors and the macOS thermal pressure level; on other
+/// systems it cannot sample.
 #[cfg(feature = "cli")]
-fn thermal_warning(requested: bool, linux: bool) -> Option<&'static str> {
-    (requested && !linux).then_some(
-        "'--thermal' reads Linux sysfs temperature sensors; on this platform no temperature \
-         is sampled and 'interference.thermal' is absent from the export.",
+fn thermal_warning(requested: bool, supported: bool) -> Option<&'static str> {
+    (requested && !supported).then_some(
+        "'--thermal' reads Linux sysfs temperature sensors and the macOS thermal pressure \
+         level; on this platform nothing is sampled and 'interference.thermal' and \
+         'interference.thermal_pressure' are absent from the export.",
     )
 }
 
 /// The main settings for a perfratio benchmark session
+#[derive(Clone)]
 pub struct Options {
     /// Upper and lower bound for the number of benchmark runs
     pub run_bounds: RunBounds,
@@ -457,6 +461,8 @@ pub struct Options {
 
     /// `--optimize`: search a parameter for the best value of the primary metric
     pub optimize: Option<crate::optimize::OptimizeSpec>,
+    /// `--optimize` with several variables or `--optimize-algorithm random|halving|bayes`
+    pub search: Option<crate::search::SearchSpec>,
 
     /// `--work N[unit]`: amount of work of one run, for the per-operation metrics
     pub work: Option<crate::efficiency::Work>,
@@ -537,6 +543,9 @@ pub struct Options {
     /// Hardware performance counters (--counters), resolved against the machine
     pub counters: Option<crate::perf_counters::CounterConfig>,
 
+    /// `--membw`: memory bandwidth and NUMA placement
+    pub membw: bool,
+
     /// Top-down analysis (--topdown), resolved against the machine
     pub topdown: Option<crate::topdown::TopdownConfig>,
 
@@ -576,6 +585,10 @@ pub struct Options {
     /// `--until`: stop timer upon readiness output pattern
     pub until: Option<UntilSettings>,
 
+    /// `--persistent`: start each command once and drive the iterations through the
+    /// persistent protocol (`docs/specs/persistent-mode.md`)
+    pub persistent: bool,
+
     /// `--region`: names of the instrumented regions to measure
     pub regions: Vec<String>,
 
@@ -587,6 +600,12 @@ pub struct Options {
 
     /// Extract `--output-metric` values from stderr instead of stdout
     pub output_metrics_stderr: bool,
+
+    /// `--collector`: built-in Valgrind adapter (`cachegrind`, `callgrind`)
+    pub valgrind: Option<crate::valgrind::Tool>,
+
+    /// `--collector-plugin`: executables that speak the collector protocol
+    pub collector_plugins: Vec<PathBuf>,
 }
 
 impl Default for Options {
@@ -623,6 +642,7 @@ impl Default for Options {
             command_input_policy: CommandInputPolicy::Null,
             metric: crate::metric::Metric::Wall,
             optimize: None,
+            search: None,
             work: None,
             complexity: None,
             roofline: None,
@@ -652,6 +672,7 @@ impl Default for Options {
             discard_outliers: None,
             show_resource_usage: false,
             counters: None,
+            membw: false,
             topdown: None,
             affinity: None,
             core_class: None,
@@ -665,10 +686,13 @@ impl Default for Options {
             artifact_dir: None,
             cpu_partition: None,
             until: None,
+            persistent: false,
             regions: Vec::new(),
             region_scope: false,
             output_metrics: Vec::new(),
             output_metrics_stderr: false,
+            valgrind: None,
+            collector_plugins: Vec::new(),
         }
     }
 }
@@ -1163,6 +1187,30 @@ impl Options {
             );
         }
         options.output_metrics_stderr = matches.get_flag("output-metric-stderr");
+        options.valgrind = matches
+            .get_one::<String>("collector")
+            .and_then(|name| crate::valgrind::Tool::from_name(name));
+        options.collector_plugins = matches
+            .get_many::<String>("collector-plugin")
+            .into_iter()
+            .flatten()
+            .map(PathBuf::from)
+            .collect();
+        if options.valgrind.is_some() || !options.collector_plugins.is_empty() {
+            if options.concurrency > 1 || options.concurrency_template.is_some() {
+                return Err(OptionsError::InvalidCollector(
+                    "collectors measure one process per run and cannot be combined with \
+                     '--concurrency'"
+                        .into(),
+                ));
+            }
+            if options.jobs > 1 {
+                return Err(OptionsError::InvalidCollector(
+                    "collectors measure one run at a time and cannot be combined with '--jobs'"
+                        .into(),
+                ));
+            }
+        }
         if !options.output_metrics.is_empty()
             && options.command_output_policies.iter().any(|p| {
                 matches!(
@@ -1195,6 +1243,9 @@ impl Options {
 
         options.optimize = crate::optimize::OptimizeSpec::from_cli_arguments(matches)
             .map_err(|e| OptionsError::InvalidOptimize(format!("{e:#}")))?;
+        options.search =
+            crate::search::SearchSpec::from_cli_arguments(matches, options.stat_settings.seed)
+                .map_err(|e| OptionsError::InvalidOptimize(format!("{e:#}")))?;
         options.complexity = matches.get_one::<String>("complexity").cloned();
         options.measure_energy = matches.get_flag("energy");
         if let Some(metric_str) = matches.get_one::<String>("metric") {
@@ -1243,6 +1294,7 @@ impl Options {
                 options.regions.push(name.to_string());
             }
         }
+        options.persistent = matches.get_flag("persistent");
         options.region_scope = matches.get_flag("region-scope");
         if options.region_scope && options.regions.is_empty() {
             return Err(OptionsError::InvalidRegion(
@@ -1307,7 +1359,10 @@ impl Options {
             .get_one::<String>("fail-on-quality")
             .and_then(|value| crate::quality::Grade::parse(value));
         options.thermal = matches.get_flag("thermal");
-        if let Some(warning) = thermal_warning(options.thermal, cfg!(target_os = "linux")) {
+        if let Some(warning) = thermal_warning(
+            options.thermal,
+            cfg!(any(target_os = "linux", target_os = "macos")),
+        ) {
             eprintln!("Warning: {warning}");
         }
         options.cooldown = matches
@@ -1347,6 +1402,23 @@ impl Options {
         }
         // `--roofline` needs the FP counts and the last-level misses
         let simd = matches.get_flag("simd") || roofline;
+        if matches.get_flag("membw") && !importing {
+            options.membw = true;
+            let debug_mode = matches.get_flag("debug-mode");
+            if let Some(reason) = crate::membw::configure(debug_mode) {
+                eprintln!(
+                    "{} --membw: memory bandwidth is unavailable: {}",
+                    crate::output::colors::yellow("Warning:"),
+                    reason.explain()
+                );
+            }
+            if let Some(reason) = crate::membw::numa_unavailable().filter(|_| !debug_mode) {
+                eprintln!(
+                    "{} --membw: NUMA placement is unavailable ({reason})",
+                    crate::output::colors::yellow("Warning:"),
+                );
+            }
+        }
         // `--metric instructions|cycles` collects its own counter
         let counters_list = matches.get_one::<String>("counters").cloned().or_else(|| {
             (!importing)
@@ -1662,6 +1734,19 @@ impl Options {
                     var = spec.var,
                     command = command.get_command_line()
                 );
+            }
+        }
+
+        if let Some(spec) = &self.search {
+            for dim in &spec.dims {
+                if let Some(command) = commands.iter().find(|c| !c.uses_parameter(&dim.var)) {
+                    bail!(
+                        "'--optimize {var}': the command '{command}' does not contain \
+                         '{{{var}}}'",
+                        var = dim.var,
+                        command = command.get_command_line()
+                    );
+                }
             }
         }
 
@@ -2069,7 +2154,7 @@ mod thermal_warning_tests {
     use super::thermal_warning;
 
     #[test]
-    fn warns_only_when_requested_off_linux() {
+    fn warns_only_when_requested_where_unsupported() {
         assert!(thermal_warning(true, false).is_some());
         assert!(thermal_warning(true, true).is_none());
         assert!(thermal_warning(false, false).is_none());

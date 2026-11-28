@@ -359,7 +359,7 @@ pub fn build_command() -> Command {
         .arg(
             Arg::new("optimize")
                 .long("optimize")
-                .action(ArgAction::Set)
+                .action(ArgAction::Append)
                 .allow_hyphen_values(true)
                 .num_args(3)
                 .value_names(["VAR", "MIN", "MAX"])
@@ -373,7 +373,38 @@ pub fn build_command() -> Command {
                      Uses a golden-section search and assumes that the metric is unimodal in VAR; \
                      perfratio warns if the evaluated points suggest otherwise. With very noisy \
                      metrics the search can miss the true minimum. Other parameters ('-P', '-L') \
-                     are combined with the search: one search runs per combination.",
+                     are combined with the search: one search runs per combination.\n\n\
+                     Give '--optimize' several times to search several variables at once. That \
+                     needs '--optimize-algorithm random', 'halving' or 'bayes' (random is the \
+                     default then).",
+                ),
+        )
+        .arg(
+            Arg::new("optimize-algorithm")
+                .long("optimize-algorithm")
+                .action(ArgAction::Set)
+                .value_name("ALGORITHM")
+                .value_parser(["golden", "random", "halving", "bayes"])
+                .help(
+                    "Search algorithm of '--optimize'. 'golden' (default for one variable) is the \
+                     golden-section search for one unimodal variable. 'random' evaluates \
+                     '--optimize-budget' random points of the grid of all variables. 'halving' is \
+                     successive halving: all budget points get few runs, the best third gets three \
+                     times as many, and so on, until two points are left. 'bayes' fits a Gaussian \
+                     process to the points so far and benchmarks the point with the highest \
+                     expected improvement. Integers only. The random choices follow '--seed'.",
+                ),
+        )
+        .arg(
+            Arg::new("optimize-validate")
+                .long("optimize-validate")
+                .action(ArgAction::SetTrue)
+                .help(
+                    "After a 'random', 'halving' or 'bayes' search, benchmark the winner and the \
+                     runner-up again in a fresh round and report whether the winner holds up \
+                     (confirmed, refuted or inconclusive) and how far its value drifted. The \
+                     samples of the search are not reused. These runs are not part of \
+                     '--optimize-budget'.",
                 ),
         )
         .arg(
@@ -403,8 +434,9 @@ pub fn build_command() -> Command {
                 .value_parser(clap::value_parser!(usize))
                 .default_value("12")
                 .help(
-                    "Maximum number of distinct parameter values '--optimize' evaluates (at least 3). \
-                     A range that fits into the budget is evaluated completely.",
+                    "Maximum number of distinct parameter values (or points of the grid, with several \
+                     variables) '--optimize' evaluates (at least 3). A range that fits into the \
+                     budget is evaluated completely.",
                 ),
         )
         .arg(
@@ -610,15 +642,20 @@ pub fn build_command() -> Command {
             Arg::new("thermal")
                 .long("thermal")
                 .action(ArgAction::SetTrue)
-                .help("Sample the CPU temperature while the benchmark runs (Linux only; elsewhere \
-                       it warns and does nothing).")
+                .help(
+                    "Sample the CPU temperature (Linux) or the thermal pressure level (macOS) \
+                     while the benchmark runs (elsewhere it warns and does nothing).",
+                )
                 .long_help(
                     "Sample the hottest CPU temperature sensor (thermal zones and hwmon) on a \
                      background thread while the benchmark runs, and report it as \
                      'interference.thermal' and in the 'environment_stability' quality check. \
                      Off by default: on some hosts (cloud VMs) reading the sensors takes about a \
                      second and slows perfratio down. '--cooldown until-temp' reads the sensors \
-                     either way.",
+                     either way.\n\n\
+                     macOS has no CPU temperature without root: perfratio records the coarse \
+                     thermal pressure level (nominal, moderate, heavy, trapping, sleeping) as \
+                     'interference.thermal_pressure' instead. Windows: not supported yet.",
                 ),
         )
         .arg(
@@ -971,6 +1008,49 @@ pub fn build_command() -> Command {
                 ),
         )
         .arg(
+            Arg::new("collector")
+                .long("collector")
+                .action(ArgAction::Set)
+                .value_name("TOOL")
+                .value_parser(["cachegrind", "callgrind"])
+                .help(
+                    "Run the command once more under Valgrind and export its simulated, \
+                     deterministic event counts (instructions, cache misses), marked \
+                     'simulated'. The extra run is not timed.",
+                )
+                .long_help(
+                    "Run the command once more under Valgrind (after the first timed run, \
+                     before '--conclude') and export instructions, cache misses and an \
+                     estimated cycle count as 'results[].collector_metrics' with the keys \
+                     '<TOOL>.instructions', '<TOOL>.l1_data_misses', ... marked 'simulated'. \
+                     The counts do not depend on machine noise, so they suit noisy CI runners \
+                     and machines without PMU access. The extra run is not timed, is about \
+                     20 to 50 times slower than a normal run, and sees no stdin. Children of \
+                     the command are counted too: use '--shell=none' to leave the shell out.\n\n\
+                     Needs Valgrind (set PERFRATIO_VALGRIND to use another binary).\n\n  \
+                     Example:  perfratio --shell=none --collector cachegrind './prog input'",
+                ),
+        )
+        .arg(
+            Arg::new("collector-plugin")
+                .long("collector-plugin")
+                .action(ArgAction::Append)
+                .value_name("PATH")
+                .help(
+                    "Measure extra metrics with an external collector plugin (repeatable). \
+                     The plugin runs with your privileges: only use programs you trust.",
+                )
+                .long_help(
+                    "Measure extra metrics with an external collector plugin: an executable \
+                     that speaks the JSON-lines collector protocol (docs/specs/collector-plugins.md). \
+                     perfratio starts it once, without a shell and without arguments, and \
+                     brackets every timed run with 'start', 'stop' and 'read'. Its metrics are \
+                     exported in 'results[].collector_metrics'. Repeatable.\n\n\
+                     The plugin runs with your privileges and sees your environment: only use \
+                     programs you trust. What it sends is validated, never trusted.",
+                ),
+        )
+        .arg(
             Arg::new("work")
                 .long("work")
                 .action(ArgAction::Set)
@@ -1142,6 +1222,24 @@ pub fn build_command() -> Command {
                        time; use '--metric region:NAME' to rank on a region. CPU time, memory, \
                        counters and energy still cover the whole process unless '--region-scope' is given. A command that \
                        reports no region fails."),
+        )
+        .arg(
+            Arg::new("persistent")
+                .long("persistent")
+                .action(ArgAction::SetTrue)
+                .conflicts_with_all([
+                    "concurrency", "subtract", "region", "region-scope", "jobs", "until",
+                    "output-metric", "energy", "counters", "topdown", "simd", "shell",
+                    "expect-output-sha256", "validate",
+                ])
+                .help("Start every command once and drive the runs as iterations of that one \
+                       process through the persistent protocol (see sdk/ and \
+                       docs/specs/persistent-mode.md). The program times each iteration itself, \
+                       so JIT runtimes reach steady state and services can be measured. The JSON \
+                       export gains 'mode: persistent' and 'iterations' with the detected warm-up \
+                       phase and the steady-state statistics. The command runs without a shell. \
+                       CPU time and memory are not collected. Use '-w 0' and many runs to see \
+                       the warm-up."),
         )
         .arg(
             Arg::new("region-scope")
@@ -1719,8 +1817,12 @@ pub fn build_command() -> Command {
                        noisy or irreproducible, with a hint for each problem:\n\
                        Linux: CPU frequency governor, turbo boost, load average, power source, \
                        temperature.\n\
-                       macOS: load average, power source, Low Power Mode, thermal throttling.\n\
-                       Windows: power source, power plan, CPU load, CPU frequency limit.\n\n\
+                       macOS: load average, power source, Low Power Mode, thermal throttling, \
+                       thermal pressure.
+\
+                       Windows: power source, power plan, CPU load, CPU frequency limit.
+
+\
                        '--check-system' (or '=warn') only reports. '--check-system=strict' \
                        aborts with exit code 4 if any check does not pass, which is useful on \
                        dedicated benchmark machines and CI runners.\n\n\
@@ -1834,6 +1936,19 @@ pub fn build_command() -> Command {
                        and honors '--scope' (except 'split'). \
                        Unsupported CPUs, hybrid Intel CPUs, VMs without PMU and denied \
                        permissions give one warning, never an error."),
+        )
+        .arg(
+            Arg::new("membw")
+                .long("membw")
+                .action(ArgAction::SetTrue)
+                .help("Measure memory bandwidth and NUMA placement per run (Linux): bytes read \
+                       and written through the memory controllers (Intel uncore_imc) and the \
+                       resident bytes per NUMA node from /proc/<pid>/numa_maps. The bandwidth \
+                       counters are system wide, so other activity on the machine is included. \
+                       Needs bare metal and 'kernel.perf_event_paranoid' <= 0 or CAP_PERFMON; \
+                       where a source is missing, one warning is printed and the other source \
+                       still works. Use '-N' or '--shell=none' for NUMA placement of the \
+                       command itself instead of the shell."),
         )
         .arg(
             Arg::new("roofline")

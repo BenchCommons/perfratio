@@ -15,7 +15,7 @@ perfratio -N --warmup auto --first-run=separate \
 | `--warmup auto` | Warms up until the last 5 timings agree within 1% (at most 100 runs). JIT and VM runtimes (JVM, .NET, V8, PyPy) reach steady state. Compiled languages stop after a few runs. |
 | `--first-run=separate` | Reports the cold start (runtime boot, class loading, page cache) in `first_run` instead of mixing it into the statistics. |
 | `--output-metric NAME=REGEX` | The program times only its algorithm and prints it, for example `ALGO_NS=12345`. The value lands in `custom_metrics`, apart from process startup, which `times` always includes. Name the unit in the metric (`algo_ns`). |
-| `--region[=NAME]` | The program brackets only its algorithm with the region SDK (`sdk/`: C/C++, Rust, Python; see [region-sdk.md](region-sdk.md)). The region time lands in `results[].regions`, apart from startup, JIT warm-up and shutdown, and `--metric region:NAME` ranks on it. More robust than `--output-metric` because the protocol is versioned and uses a monotonic clock. |
+| `--region[=NAME]` | The program brackets only its algorithm with the region SDK (`sdk/`: C/C++, Rust, Python, JavaScript/TypeScript, Go, Java, Kotlin; see [region-sdk.md](region-sdk.md)). The region time lands in `results[].regions`, apart from startup, JIT warm-up and shutdown, and `--metric region:NAME` ranks on it. More robust than `--output-metric` because the protocol is versioned and uses a monotonic clock. |
 | `--label KEY=VALUE` | Stores language and algorithm identity in the JSON (`perfratio.labels`), so consumers do not depend on file names. |
 | `--export-json FILE` | Machine-readable result. See [specs/output-schema-contract.md](specs/output-schema-contract.md). |
 
@@ -37,6 +37,6 @@ perfratio -N --warmup auto --first-run=separate \
 
 ## JSON fields for consumers
 
-Read `schemaVersion` first (currently `"1.43"`), accept any 1.x and ignore unknown keys. Run metadata is under the `perfratio` key. Check `perfratio.measurements.energy` (`measured`, `unavailable` or `not_requested`) before reading energy fields. With `--output-metric-stderr` the metric is read from stderr instead of stdout.
+Read `schemaVersion` first (currently `"1.48"`), accept any 1.x and ignore unknown keys. Run metadata is under the `perfratio` key. Check `perfratio.measurements.energy` (`measured`, `unavailable` or `not_requested`) before reading energy fields. With `--output-metric-stderr` the metric is read from stderr instead of stdout.
 
 Correctness checks of the algorithm output and per-language builds belong to the catalog contract in tools-benchmark, not to perfratio.

@@ -156,6 +156,8 @@ pub struct BenchmarkRunner<'a> {
     pub resource_counters: Vec<Option<timing_result::ResourceCounters>>,
     /// Hardware counter totals per run (`--counters`), aligned with the times
     pub hw_counters: Vec<Option<crate::perf_counters::HwReading>>,
+    /// Memory bandwidth and NUMA placement per run (`--membw`), aligned with the times
+    pub membw_runs: Vec<Option<crate::membw::Run>>,
     /// Per-run parameter values of each run, as (name, value) pairs
     pub per_run_values: Vec<Vec<(String, String)>>,
     pub all_succeeded: bool,
@@ -179,6 +181,8 @@ pub struct BenchmarkRunner<'a> {
     pub pending_worker: Option<usize>,
     /// Extracted custom metrics per run
     pub custom_metrics: std::collections::BTreeMap<String, Vec<Option<f64>>>,
+    /// Collector metrics (`<collector>.<id>`) per run
+    pub collector_metrics: std::collections::BTreeMap<String, Vec<Option<f64>>>,
     /// `--region`: SDK identifier the program reported
     pub region_sdk: Option<String>,
     /// Output validation of each run (`--expect-output-sha256`, `--validate`):
@@ -347,6 +351,7 @@ impl<'a> BenchmarkRunner<'a> {
             leftover_processes: std::cell::Cell::new(false),
             resource_counters: vec![],
             hw_counters: vec![],
+            membw_runs: vec![],
             per_run_values: vec![],
             validity: vec![],
             validated_runs: 0,
@@ -373,6 +378,7 @@ impl<'a> BenchmarkRunner<'a> {
             run_workers: vec![],
             pending_worker: None,
             custom_metrics: std::collections::BTreeMap::new(),
+            collector_metrics: std::collections::BTreeMap::new(),
             region_sdk: None,
         }
     }
@@ -643,6 +649,17 @@ impl<'a> BenchmarkRunner<'a> {
             }
         }
         Some((clamped, total))
+    }
+
+    /// Real times of the runs that succeeded. In persistent mode with `-i`, a failed
+    /// iteration is recorded as 0 s and must not enter the warm-up analysis.
+    fn successful_times_real(&self) -> Vec<Second> {
+        self.times_real
+            .iter()
+            .zip(&self.exit_codes)
+            .filter(|(_, code)| **code == Some(0))
+            .map(|(&t, _)| t)
+            .collect()
     }
 
     /// The run times that count for `--target-precision`: without a first run
@@ -987,11 +1004,13 @@ impl<'a> BenchmarkRunner<'a> {
         self.push_instances(&res, run.ids());
         self.resource_counters.push(res.counters);
         self.hw_counters.push(res.hw_counters);
+        self.membw_runs.push(res.membw);
         self.per_run_values.push(
             self.command
                 .per_run_values(&BenchmarkIteration::Benchmark(0)),
         );
         self.push_custom_metrics(&res.custom_metrics);
+        self.push_collector_metrics(&res.collector_metrics);
         if res.region_sdk.is_some() {
             self.region_sdk.clone_from(&res.region_sdk);
         }
@@ -1063,11 +1082,13 @@ impl<'a> BenchmarkRunner<'a> {
         self.push_instances(&res, ids);
         self.resource_counters.push(res.counters);
         self.hw_counters.push(res.hw_counters);
+        self.membw_runs.push(res.membw);
         self.per_run_values.push(
             self.command
                 .per_run_values(&BenchmarkIteration::Benchmark(iteration)),
         );
         self.push_custom_metrics(&res.custom_metrics);
+        self.push_collector_metrics(&res.collector_metrics);
         if res.region_sdk.is_some() {
             self.region_sdk.clone_from(&res.region_sdk);
         }
@@ -1245,6 +1266,28 @@ impl<'a> BenchmarkRunner<'a> {
         self.push_derived_metrics();
     }
 
+    /// Records the collector metrics of the run that was just recorded. A series is aligned
+    /// with `times` (gaps are `null`); the Valgrind run happens once, so its series has one
+    /// entry.
+    fn push_collector_metrics(&mut self, extracted: &std::collections::BTreeMap<String, f64>) {
+        let runs = self.times_real.len();
+        for (key, value) in extracted {
+            let series = self.collector_metrics.entry(key.clone()).or_default();
+            if crate::valgrind::is_key(key) {
+                series.push(Some(*value));
+            } else {
+                series.resize(runs - 1, None);
+                series.push(Some(*value));
+            }
+        }
+        // A plugin that had no value this run leaves a gap
+        for key in crate::collector::plugin_keys() {
+            if let Some(series) = self.collector_metrics.get_mut(&key) {
+                series.resize(runs, None);
+            }
+        }
+    }
+
     /// Efficiency metrics (#373) of the run that was just recorded
     fn push_derived_metrics(&mut self) {
         let Some(&time) = self.times_real.last() else {
@@ -1341,6 +1384,12 @@ impl<'a> BenchmarkRunner<'a> {
             self.hw_counters = keep
                 .iter()
                 .map(|&index| self.hw_counters[index].clone())
+                .collect();
+        }
+        if self.membw_runs.len() == run_count {
+            self.membw_runs = keep
+                .iter()
+                .map(|&index| self.membw_runs[index].clone())
                 .collect();
         }
         if self.per_run_values.len() == run_count {
@@ -1635,6 +1684,12 @@ impl<'a> BenchmarkRunner<'a> {
             crate::simd::export(simd, config.active.len(), &self.hw_counters)
         });
 
+        let membw_export = if self.options.membw && self.membw_runs.len() == self.times_real.len() {
+            crate::membw::export(&self.membw_runs, &self.times_real)
+        } else {
+            None
+        };
+
         let t_num = self.times_real.len();
         let (t_mean, t_stddev, t_median, t_min, t_max, user_mean, system_mean) =
             if self.timed_out && self.times_real.is_empty() {
@@ -1805,6 +1860,23 @@ impl<'a> BenchmarkRunner<'a> {
             (Some(output_metric_series.clone()), Some(summary_map))
         } else {
             (None, None)
+        };
+
+        let (collector_metrics, collector_metrics_summary) = if self.collector_metrics.is_empty() {
+            (None, None)
+        } else {
+            let summary = self
+                .collector_metrics
+                .iter()
+                .filter_map(|(name, values)| {
+                    let present: Vec<f64> = values.iter().flatten().copied().collect();
+                    Some((
+                        name.clone(),
+                        benchmark_result::MetricSummary::from_values(&present)?,
+                    ))
+                })
+                .collect();
+            (Some(self.collector_metrics.clone()), Some(summary))
         };
 
         // --concurrency: per-instance statistics (the primary series is the makespan)
@@ -2123,6 +2195,33 @@ impl<'a> BenchmarkRunner<'a> {
                     }
                 }
 
+                if self.options.persistent {
+                    let report = crate::persistent::IterationsReport::from_times(
+                        &self.successful_times_real(),
+                        self.region_sdk.clone(),
+                    );
+                    let line = match (&report.steady_state, report.status) {
+                        (Some(steady), _) => format!(
+                            "{} warm-up iterations, then {} steady (mean {} ± {})",
+                            report.warmup_iterations.unwrap_or(0),
+                            steady.count,
+                            format_duration(steady.mean, Some(time_unit)),
+                            steady
+                                .stddev
+                                .map_or("n/a".to_string(), |sd| format_duration(
+                                    sd,
+                                    Some(time_unit)
+                                )),
+                        ),
+                        (None, crate::persistent::SteadyStatus::TooFewIterations) => format!(
+                            "no analysis, fewer than {} iterations",
+                            crate::persistent::MIN_ITERATIONS
+                        ),
+                        (None, _) => "no steady state reached".to_string(),
+                    };
+                    crate::outln!("  Persistent:         {}", line.dimmed());
+                }
+
                 if let Some(warmup) = self.warmup.filter(|w| w.auto) {
                     crate::outln!(
                         "  Warmup (auto):      {}",
@@ -2159,6 +2258,10 @@ impl<'a> BenchmarkRunner<'a> {
                     for line in &e.block {
                         crate::outln!("{}", line.dimmed());
                     }
+                }
+
+                if let Some(e) = &membw_export {
+                    crate::outln!("{}", crate::membw::terminal_line(e).dimmed());
                 }
 
                 if self.options.show_resource_usage {
@@ -2451,7 +2554,8 @@ impl<'a> BenchmarkRunner<'a> {
                     > 0,
             };
 
-            if !self.options.suppress_off_cpu_warnings {
+            // persistent mode collects no CPU time, and the warm-up is the first slow iterations
+            if !self.options.suppress_off_cpu_warnings && !self.options.persistent {
                 let total_cpu = user_mean + system_mean;
                 if t_mean >= 0.1 && (total_cpu <= 0.0 || t_mean >= 5.0 * total_cpu) {
                     let ratio = if total_cpu > 0.0 {
@@ -2466,7 +2570,7 @@ impl<'a> BenchmarkRunner<'a> {
             let diag = Diagnostics::compute(&metric_samples, OUTLIER_THRESHOLD);
 
             if !self.options.suppress_outlier_warnings {
-                if scores[0] > OUTLIER_THRESHOLD {
+                if scores[0] > OUTLIER_THRESHOLD && !self.options.persistent {
                     warnings.push(Warnings::SlowInitialRun(
                         metric_samples[0],
                         outlier_warning_options,
@@ -2563,6 +2667,12 @@ impl<'a> BenchmarkRunner<'a> {
             None
         };
 
+        let iterations = self.options.persistent.then(|| {
+            crate::persistent::IterationsReport::from_times(
+                &self.successful_times_real(),
+                self.region_sdk.clone(),
+            )
+        });
         let total_runs = self.times_real.len();
         let mean_net_energy = self.net_energy_mean();
         let energy_domains = domains_series(&self.domain_measurements, total_runs);
@@ -2702,6 +2812,12 @@ impl<'a> BenchmarkRunner<'a> {
                 .as_ref()
                 .and_then(|e| e.frequency.as_ref())
                 .map(|f| f.basis.as_str().to_string()),
+            membw: membw_export.as_ref().and_then(|e| e.bandwidth.clone()),
+            membw_summary: membw_export
+                .as_ref()
+                .map(|e| e.summary.clone())
+                .filter(|s| !s.is_empty()),
+            numa: membw_export.as_ref().and_then(|e| e.numa.clone()),
             simd: simd_export.as_ref().map(|e| e.series.clone()),
             simd_summary: simd_export.as_ref().map(|e| e.summary.clone()),
             simd_scaling: simd_export
@@ -2747,7 +2863,11 @@ impl<'a> BenchmarkRunner<'a> {
             },
             custom_metrics,
             custom_metrics_summary,
+            collector_metrics,
+            collector_metrics_summary,
             regions,
+            mode: self.options.persistent.then(|| "persistent".to_string()),
+            iterations,
         };
         let quality = crate::quality::QualityReport::assess(
             &result,
@@ -3407,6 +3527,20 @@ mod tests {
             .map(|i| if i % 2 == 0 { 0.99 } else { 1.01 })
             .collect();
         assert!(effect_runner_answer(quiet));
+    }
+
+    #[test]
+    fn test_successful_times_real_skips_failed_iterations() {
+        let cmd = Command::new(None, "true");
+        let options = Options {
+            command_output_policies: vec![CommandOutputPolicy::Null],
+            ..Default::default()
+        };
+        let executor = MockExecutor::new(None, None);
+        let mut runner = BenchmarkRunner::new(0, 0, &cmd, &options, &executor);
+        runner.times_real = vec![0.1, 0.0, 0.2];
+        runner.exit_codes = vec![Some(0), Some(1), Some(0)];
+        assert_eq!(runner.successful_times_real(), vec![0.1, 0.2]);
     }
 
     #[test]
