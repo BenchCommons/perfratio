@@ -125,6 +125,11 @@ pub struct BenchmarkRunner<'a> {
     pub timed_out: bool,
     /// `--jobs`: the worker slots that executed at least one run
     pub workers_seen: std::collections::BTreeSet<usize>,
+    /// `--jobs`: the worker slot of every run, aligned with the times (`None`:
+    /// ran on the main thread)
+    pub run_workers: Vec<Option<usize>>,
+    /// Worker slot of the run being recorded (set by the pool)
+    pub pending_worker: Option<usize>,
     /// Extracted custom metrics per run
     pub custom_metrics: std::collections::BTreeMap<String, Vec<Option<f64>>>,
     /// `--region`: SDK identifier the program reported
@@ -294,6 +299,8 @@ impl<'a> BenchmarkRunner<'a> {
             baseline: None,
             timed_out: false,
             workers_seen: std::collections::BTreeSet::new(),
+            run_workers: vec![],
+            pending_worker: None,
             custom_metrics: std::collections::BTreeMap::new(),
             region_sdk: None,
         }
@@ -1006,6 +1013,62 @@ impl<'a> BenchmarkRunner<'a> {
         Ok(Some(false))
     }
 
+    /// The sample hierarchy of this benchmark and the variance at its levels
+    /// (#368): `--jobs` workers hold runs, a `--concurrency` run holds
+    /// instances, a `--region` run holds repetitions. `None` for a plain
+    /// sequence of runs.
+    pub fn hierarchy_report(
+        &self,
+        regions: &[benchmark_result::RegionResult],
+    ) -> Option<crate::stats::hierarchical::HierarchyReport> {
+        use crate::stats::hierarchical::{group_by_key, HierarchyReport};
+        let concurrency = self.concurrency();
+        let jobs = self.options.jobs > 1 && self.run_workers.len() == self.times_real.len();
+        let repetitions: std::collections::BTreeMap<_, _> = regions
+            .iter()
+            .filter(|r| r.count_per_run.iter().flatten().any(|&c| c > 1))
+            .map(|r| (r.name.clone(), r.count_per_run.clone()))
+            .collect();
+        if concurrency <= 1 && !jobs && repetitions.is_empty() {
+            return None;
+        }
+        let mut levels = Vec::new();
+        if jobs {
+            levels.push("worker".to_string());
+        }
+        levels.push("run".to_string());
+        if concurrency > 1 {
+            levels.push("instance".to_string());
+        }
+        if !repetitions.is_empty() {
+            levels.push("repetition".to_string());
+        }
+        let mut report = HierarchyReport {
+            levels,
+            workers: jobs.then(|| self.run_workers.clone()),
+            repetitions,
+            ..Default::default()
+        };
+        let settings = crate::stats::settings::current();
+        let analysis = |level: &str, groups: &[Vec<f64>], report: &mut HierarchyReport| {
+            report.analyze(
+                level,
+                groups,
+                settings.ci_method,
+                settings.confidence_level,
+                settings.bootstrap_resamples,
+                settings.seed,
+            );
+        };
+        if concurrency > 1 && self.instance_times.len() == self.times_real.len() {
+            analysis("run", &self.instance_times, &mut report);
+        } else if jobs {
+            let groups = group_by_key(&self.times_real, &self.run_workers);
+            analysis("worker", &groups, &mut report);
+        }
+        Some(report)
+    }
+
     /// Instances per run of this benchmark (`--concurrency`, possibly `{param}`)
     fn concurrency(&self) -> usize {
         self.command.concurrency_or(self.options.concurrency)
@@ -1014,6 +1077,7 @@ impl<'a> BenchmarkRunner<'a> {
     /// `--concurrency`: remember the instances of the run just measured.
     fn push_instances(&mut self, res: &TimingResult, ids: crate::run_id::RunIds) {
         self.run_ids.push(ids.first);
+        self.run_workers.push(self.pending_worker.take());
         if self.concurrency() > 1 {
             self.instance_run_ids.push(ids.all());
             self.instance_times
@@ -1139,6 +1203,9 @@ impl<'a> BenchmarkRunner<'a> {
         self.exit_codes = select(&self.exit_codes, keep);
         if self.run_ids.len() == run_count {
             self.run_ids = select(&self.run_ids, keep);
+        }
+        if self.run_workers.len() == run_count {
+            self.run_workers = select(&self.run_workers, keep);
         }
         if self.instance_run_ids.len() == run_count {
             self.instance_run_ids = keep
@@ -1606,6 +1673,7 @@ impl<'a> BenchmarkRunner<'a> {
             })
             .collect();
         let regions = (!regions.is_empty()).then_some(regions);
+        let hierarchy = self.hierarchy_report(regions.as_deref().unwrap_or_default());
         let output_metric_series: std::collections::BTreeMap<_, _> = self
             .custom_metrics
             .iter()
@@ -2041,8 +2109,32 @@ impl<'a> BenchmarkRunner<'a> {
                     } else {
                         crate::outln!(
                             "  Energy:             {:>14}",
-                            "RAPL unprivileged/unavailable on host".dimmed()
+                            crate::energy::last_unavailable()
+                                .map_or("RAPL unprivileged/unavailable on host", |r| r.message())
+                                .dimmed()
                         );
+                    }
+                }
+
+                if crate::stats::settings::current().ci_method
+                    == crate::stats::hierarchical::CiMethod::Hierarchical
+                {
+                    if let Some(h) = self.hierarchy_report(&[]) {
+                        if let (Some(ci), Some(v), Some(level)) =
+                            (&h.mean_ci, &h.variance, &h.cluster_level)
+                        {
+                            crate::outln!(
+                                "  Hierarchical {}% CI: [mean: {} … {}]  ({} {}s, ICC {:.2}, flat CI: {} … {})",
+                                crate::stats::settings::current().confidence_percent(),
+                                format_duration(ci.lower, Some(time_unit)),
+                                format_duration(ci.upper, Some(time_unit)),
+                                h.clusters.unwrap_or(0),
+                                level,
+                                v.icc,
+                                format_duration(ci.flat[0], Some(time_unit)),
+                                format_duration(ci.flat[1], Some(time_unit)),
+                            );
+                        }
                     }
                 }
 
@@ -2410,6 +2502,7 @@ impl<'a> BenchmarkRunner<'a> {
             run_ids: Some(self.run_ids).filter(|ids| !ids.is_empty()),
             instance_run_ids: concurrency.map(|_| self.instance_run_ids),
             leftover_processes: self.leftover_processes.get(),
+            hierarchy,
             workers_used: (self.options.jobs > 1).then_some(self.workers_seen.len()),
             contended: (self.options.jobs > 1).then_some(true),
             parameters: self

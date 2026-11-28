@@ -1,6 +1,6 @@
 # Spec: Statistical power, minimum detectable effect and runs needed (#367)
 
-**Status:** Implemented. JSON `schemaVersion` 1.37.
+**Status:** Implemented. JSON `schemaVersion` 1.41.
 
 ## Problem / Motivation
 A non-significant comparison can mean "no difference" or "too few runs". Cohen (1988) and
@@ -48,7 +48,7 @@ break the model, as they break the t-test itself. The runs needed use the standa
 seen so far, which is itself an estimate: it is noisy with few runs, and stopping on it is a
 data-dependent rule (see `sequential-stopping.md` for what that does to an interval).
 
-### JSON (`results[].power`, new in 1.37, MINOR)
+### JSON (`results[].power`, new in 1.41, MINOR)
 `significance_level`, `power`, `runs`, `minimum_detectable_effect` (number or `null` without 2
 runs and a positive mean), `stopping_rule` (bool); with `--target-effect`: `target_effect`,
 `runs_needed`, `met`. `effect.minimum_detectable_effect` of #323 is a different quantity (the

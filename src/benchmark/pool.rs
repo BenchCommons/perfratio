@@ -309,6 +309,7 @@ pub fn run_pool(
             match done.outcome {
                 Ok(Outcome::Run(res, status, ids)) => {
                     runner.workers_seen.insert(done.slot);
+                    runner.pending_worker = Some(done.slot);
                     runner.note_leftovers(&res);
                     match runner.record_run(*res, status, None, done.iteration, ids) {
                         Ok(()) => on_run(runner),

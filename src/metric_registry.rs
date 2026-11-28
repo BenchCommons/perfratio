@@ -484,6 +484,8 @@ pub const NON_METRIC_FIELDS: &[&str] = &[
     "equivalence_p_value",
     "power",
     "precision_metrics",
+    "hierarchy",
+    "paired",
     "relative_speed",
     "relative_speed_stddev",
     "relative_speed_ci",

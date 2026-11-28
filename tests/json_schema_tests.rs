@@ -123,6 +123,19 @@ const CASES: &[(&str, &[&str])] = &[
             "sleep {n}",
         ],
     ),
+    (
+        "roofline",
+        &[
+            "--runs=2",
+            "--roofline",
+            "--roofline-peaks=1,0.1",
+            "sleep 0.1",
+        ],
+    ),
+    (
+        "roofline observed peaks",
+        &["--runs=2", "--roofline", "sleep 0.1", "sleep 0.2"],
+    ),
     ("single run", &["--runs=1", "sleep 0.1"]),
     ("several commands", &["--runs=3", "sleep 0.1", "sleep 0.2"]),
     ("labels", &["--runs=2", "--label", "lang=rust", "sleep 0.1"]),
@@ -353,6 +366,17 @@ const CASES: &[(&str, &[&str])] = &[
         ],
     ),
     ("timeout", &["--runs=2", "--timeout=2s", "-i", "sleep 3"]),
+    (
+        "paired rounds",
+        &[
+            "--runs=4",
+            "--schedule=balanced",
+            "--paired",
+            "--ci-method=hierarchical",
+            "sleep 0.1",
+            "sleep 0.2",
+        ],
+    ),
     (
         "ignored failures",
         &["--runs=3", "-i", "--omit-failed-runs", "sleep 0.1"],

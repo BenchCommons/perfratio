@@ -1,6 +1,6 @@
 # Spec: multi-metric adaptive stopping — `--target-precision-metrics` (#369)
 
-**Status:** Implemented. JSON `schemaVersion` 1.37 (shared with #367, not yet released).
+**Status:** Implemented. JSON `schemaVersion` 1.41 (shared with #367, not yet released).
 
 ## Problem / Motivation
 `--target-precision` (`target-precision.md`) stops on the wall-clock time only. When memory or
@@ -29,12 +29,12 @@ duplicates are ignored. Without the option the behaviour is unchanged.
   `met: false`. Waiting would run until the time budget for a target that cannot be reached.
 - `--duration` and `--runs` keep priority over stopping; the entries are reported anyway.
 
-### JSON (`results[].precision_metrics`, new in 1.37, MINOR, additive)
+### JSON (`results[].precision_metrics`, new in 1.41, MINOR, additive)
 Array with one entry per listed metric, in the order given:
 `metric` (`wall`, `memory`, `energy`; open enum), `target`, `reached` (relative half-width or
 `null` without 2 samples or a positive mean), `runs` (samples of that metric), `met`.
 `results[].precision` is unchanged and stays the wall-clock entry of `--target-precision`.
-The schema (`docs/schema/perfratio-export.schema.json`, snapshot `docs/schema/1.37/`) and
+The schema (`docs/schema/perfratio-export.schema.json`, snapshot `docs/schema/1.41/`) and
 `output-schema-contract.md` list the field.
 
 ## Assumptions
