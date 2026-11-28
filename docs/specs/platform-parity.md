@@ -34,7 +34,7 @@ rejected or ignored. "Warning" is a line on stderr; "reason" is
 | `--resource-usage` | yes | yes (ctx switches, faults, block I/O) | partial: page faults and I/O operation counts; context switches and major faults omitted from JSON, shown as `n/a` |
 | `--energy` | yes: `sysfs_powercap`, else `perf_pmu`; bare metal only | partial: `ioreport`, Apple Silicon only. On the test machine: `energy: unavailable`, reason `ioreport_frozen` (CPU channels read 0 on macOS 27); warning and `Energy:` line name the cause | partial: `windows_emi`; needs an EMI device. Reasons `emi_not_found`, `emi_unreadable`. Not run on hardware |
 | `--energy-backend` of another OS | reason `unsupported_platform` | reason `unsupported_platform` (verified with `sysfs`) | reason `unsupported_platform` |
-| `--counters` | yes (PMU) | partial (#420): `instructions` and `cycles` with `-N` on Apple Silicon (`proc_pid_rusage`); with a shell they are dropped with a warning that suggests `-N`; other events: no | no: warning, `counters: unavailable`, reason `unsupported_platform` |
+| `--counters` | yes (PMU) | partial (#420): `instructions` and `cycles` with `-N` on Apple Silicon (`proc_pid_rusage`); with a shell they are dropped with a warning that suggests `-N`; other events: no | partial (#411): `cycles` only, with `-N` (`QueryProcessCycleTime`, no admin; TSC based, spawned process only); with a shell they are dropped with a warning that suggests `-N`; `instructions` and other events: no. Covered by Windows CI, not run on bare hardware |
 | `--simd` | yes (PMU) | no: warning, `simd: unavailable`, reason `unsupported_platform` | no: same as macOS |
 | `--topdown` | yes, x86_64 only | no: warning, `topdown: unavailable`, reason `unsupported_platform` (`counters-macos-windows.md`) | no: same as macOS |
 | Raw PMU events, `--list-events` (#394) | yes (sysfs `event_source`, `perf_event_open`) | no: `--list-events` prints the built-in names and "No PMUs found ... (only available on Linux)"; raw events warn as `--counters` does elsewhere | no: same as macOS |
@@ -80,8 +80,9 @@ Fixed in this change (small, no JSON change):
 
 Open, tracked as issues (large, or need hardware or a design decision):
 - #411 Hardware counters on macOS and Windows. #420 delivered `instructions` and `cycles` on
-  macOS with `-N`, and `--topdown` now degrades like `--counters`. Missing: Windows, other
-  events on macOS, Intel Macs (`counters-macos-windows.md`).
+  macOS with `-N`, and `--topdown` now degrades like `--counters`. The Windows PR adds `cycles`
+  with `-N` (`QueryProcessCycleTime`). Missing: `instructions` and other events on Windows,
+  other events on macOS, Intel Macs (`counters-macos-windows.md`).
 - #412 Temperature sampling and `--cooldown until-temp` on macOS and Windows. #419 added the
   thermal pressure level on macOS (`--thermal`, `--check-system`). Missing: a temperature in
   °C on macOS (needs root) and any reading on Windows (`thermal-macos-windows.md`).

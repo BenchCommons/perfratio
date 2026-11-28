@@ -661,32 +661,50 @@ fn resolve_native(
     Ok((config, warnings))
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", windows))]
 fn resolve_native(
     requested: Vec<CounterSpec>,
     hidden: Vec<CounterKind>,
     requested_scope: Scope,
     want_simd: bool,
 ) -> Result<(CounterConfig, Vec<String>), String> {
+    #[cfg(target_os = "macos")]
+    use macos::probe;
+    #[cfg(windows)]
+    use windows::probe;
+
+    let had_requested = !requested.is_empty();
     let (mut config, mut warnings) = if requested.is_empty() {
         let (config, _) = unsupported_config(requested, hidden, requested_scope, false);
         (config, Vec::new())
     } else {
-        plan(requested, hidden, requested_scope, None, macos::probe)?
+        plan(requested, hidden, requested_scope, None, probe)?
     };
     if config.is_active() {
-        warnings.push(
+        warnings.push(if cfg!(windows) {
+            "on Windows '--counters' reads cycles of the command process only \
+             (QueryProcessCycleTime, no admin): processes it starts are not counted, and \
+             instructions and the other events have no source."
+                .to_string()
+        } else {
             "on macOS '--counters' reads instructions and cycles of the command process only \
              (task-level counters, no root): processes it starts are not counted."
+                .to_string()
+        });
+    } else if cfg!(windows) && had_requested {
+        // `plan` words its failure for a Linux PMU; say what is true here
+        warnings = vec![
+            "on Windows '--counters' can only read cycles (QueryProcessCycleTime) and none \
+             of the requested events is available; continuing without hardware counters."
                 .to_string(),
-        );
+        ];
     }
     if want_simd {
-        warnings.push(
-            "'--simd' is only supported on Linux (no per-instruction-class counters on macOS); \
-             continuing without the SIMD breakdown."
-                .to_string(),
-        );
+        warnings.push(format!(
+            "'--simd' is only supported on Linux (no per-instruction-class counters on {}); \
+             continuing without the SIMD breakdown.",
+            if cfg!(windows) { "Windows" } else { "macOS" }
+        ));
         config.simd = Some(SimdState::unavailable(
             UnavailableReason::UnsupportedPlatform,
         ));
@@ -694,7 +712,7 @@ fn resolve_native(
     Ok((config, warnings))
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 fn resolve_native(
     requested: Vec<CounterSpec>,
     hidden: Vec<CounterKind>,
@@ -752,24 +770,25 @@ fn unsupported_config(
     )
 }
 
-/// macOS counts the process it spawns and nothing below it, so a shell wrapper
-/// would be measured instead of the command. Called once the shells are known:
-/// with a shell the counters are dropped (`unavailable`, reason `other`) and
-/// the warning says how to get them (`-N`). No-op elsewhere, in `--debug-mode`
-/// and when nothing is active.
+/// macOS and Windows count the process they spawn and nothing below it, so a
+/// shell wrapper would be measured instead of the command. Called once the
+/// shells are known: with a shell the counters are dropped (`unavailable`,
+/// reason `other`) and the warning says how to get them (`-N`). No-op elsewhere,
+/// in `--debug-mode` and when nothing is active.
 pub fn require_no_shell(config: &mut CounterConfig, uses_shell: bool) -> Option<String> {
-    if !cfg!(target_os = "macos") || config.mock || !uses_shell || !config.is_active() {
+    if !cfg!(any(target_os = "macos", windows)) || config.mock || !uses_shell || !config.is_active()
+    {
         return None;
     }
     config.active.clear();
     config.availability = Availability::Unavailable(UnavailableReason::Other);
     config.partial_reason = None;
-    Some(
-        "on macOS '--counters' counts the process perfratio starts, which would be the shell, not \
+    Some(format!(
+        "on {} '--counters' counts the process perfratio starts, which would be the shell, not \
          your command. Use '-N' (or '--shell=none') to count the command; continuing without \
-         hardware counters."
-            .to_string(),
-    )
+         hardware counters.",
+        if cfg!(windows) { "Windows" } else { "macOS" }
+    ))
 }
 
 /// Deterministic values for `--debug-mode`, derived from the simulated time.
@@ -1342,7 +1361,7 @@ pub(crate) fn attr_flags(scope: Scope, for_run: bool) -> u64 {
 pub struct OpenCounters {
     #[cfg(target_os = "linux")]
     inner: linux::Open,
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", windows))]
     kinds: Vec<CounterKind>,
 }
 
@@ -1378,7 +1397,14 @@ pub fn open(config: &CounterConfig) -> Option<OpenCounters> {
             kinds: config.active.iter().map(|s| s.kind).collect(),
         })
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(windows)]
+    {
+        windows::arm();
+        Some(OpenCounters {
+            kinds: config.active.iter().map(|s| s.kind).collect(),
+        })
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
     {
         None
     }
@@ -1483,12 +1509,16 @@ impl RunCounters {
 }
 
 /// Whether calibration runs are needed: some real (non-mock) events are open.
+/// Never on Windows: the calibration command is `true`, which Windows does not
+/// have (a `true.exe` from Git's MSYS tools costs far more cycles than the
+/// command), and the cycles of a process include its own startup.
 pub fn needs_calibration(
     counters: Option<&CounterConfig>,
     topdown: Option<&crate::topdown::TopdownConfig>,
 ) -> bool {
-    counters.is_some_and(|c| c.is_active() && !c.mock)
-        || topdown.is_some_and(|t| t.is_active() && !t.mock)
+    !cfg!(windows)
+        && (counters.is_some_and(|c| c.is_active() && !c.mock)
+            || topdown.is_some_and(|t| t.is_active() && !t.mock))
 }
 
 /// Median overhead of the calibration runs per event of a combined reading.
@@ -1523,7 +1553,11 @@ impl OpenCounters {
         {
             macos::read(&self.kinds)
         }
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        #[cfg(windows)]
+        {
+            windows::read(&self.kinds)
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
         {
             vec![]
         }
@@ -1667,6 +1701,134 @@ pub(crate) mod macos {
             LAST.with(|l| l.set(None));
             crate::timer::unix_timer::wait_with_rusage(&child).unwrap();
             assert!(read(&[CounterKind::Instructions])[0].is_none());
+        }
+    }
+}
+
+/// Windows: `cycles` from `QueryProcessCycleTime`, which needs no admin (ETW
+/// PMC and `SetThreadProfiling` do). It returns the cycles all threads of one
+/// process used, from the cycle counter (on current Windows the TSC, so
+/// reference cycles rather than core clocks). Children of the process are not
+/// included, and a job object has no cycle query, so the number describes the
+/// spawned process only: with `-N` that is the command. The handle that
+/// `std::process::Child` holds stays valid after the process exits, so the
+/// value is read in `CPUTimer::stop` before the `Child` is dropped.
+/// `instructions` and every other event have no source.
+#[cfg(windows)]
+pub(crate) mod windows {
+    use super::{CounterKind, Scope};
+    use crate::pmu_scaling::ScaledCounter;
+    use std::cell::Cell;
+    use windows_sys::Win32::{
+        Foundation::HANDLE, System::Threading::GetCurrentProcess,
+        System::WindowsProgramming::QueryProcessCycleTime,
+    };
+
+    const EOPNOTSUPP: i32 = 95;
+
+    thread_local! {
+        /// Set by `open`: the next child stopped on this thread is read
+        static ARMED: Cell<bool> = const { Cell::new(false) };
+        /// Cycles of the last child read
+        static LAST: Cell<Option<u64>> = const { Cell::new(None) };
+    }
+
+    /// Cycles of the process behind `process`, or `None` when the call fails.
+    fn process_cycles(process: HANDLE) -> Option<u64> {
+        let mut cycles: u64 = 0;
+        // SAFETY: `process` is a process handle with query rights (our own, or
+        // a child's handle from `std::process`); `cycles` is a valid out-pointer.
+        let ok = unsafe { QueryProcessCycleTime(process, &mut cycles) };
+        (ok != 0).then_some(cycles)
+    }
+
+    /// Whether `kind` can be read here: only `cycles`, in the default scope.
+    pub fn probe(kind: CounterKind, scope: Scope) -> Result<(), i32> {
+        if kind != CounterKind::Cycles || scope != Scope::All {
+            return Err(EOPNOTSUPP);
+        }
+        // This process has run code, so a working source reports > 0
+        // SAFETY: GetCurrentProcess returns a pseudo handle and cannot fail
+        match process_cycles(unsafe { GetCurrentProcess() }) {
+            Some(cycles) if cycles > 0 => Ok(()),
+            _ => Err(EOPNOTSUPP),
+        }
+    }
+
+    pub fn arm() {
+        ARMED.with(|a| a.set(true));
+        LAST.with(|l| l.set(None));
+    }
+
+    /// Called once the child exited and before its handle is closed; keeps
+    /// the cycles when armed.
+    pub fn snapshot_child(process: HANDLE) {
+        if ARMED.with(Cell::get) {
+            LAST.with(|l| l.set(process_cycles(process)));
+        }
+    }
+
+    pub fn read(kinds: &[CounterKind]) -> Vec<Option<ScaledCounter>> {
+        ARMED.with(|a| a.set(false));
+        let last = LAST.with(Cell::take);
+        kinds
+            .iter()
+            .map(|kind| {
+                if *kind != CounterKind::Cycles {
+                    return None;
+                }
+                let value = last?;
+                Some(ScaledCounter {
+                    value,
+                    raw: value,
+                    time_enabled: 1,
+                    time_running: 1,
+                })
+            })
+            .collect()
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn only_cycles_in_the_default_scope() {
+            assert_eq!(
+                probe(CounterKind::Instructions, Scope::All),
+                Err(EOPNOTSUPP)
+            );
+            assert_eq!(probe(CounterKind::TaskClock, Scope::All), Err(EOPNOTSUPP));
+            assert_eq!(probe(CounterKind::Cycles, Scope::User), Err(EOPNOTSUPP));
+        }
+
+        #[test]
+        fn reads_a_finished_child_through_its_handle() {
+            use std::os::windows::io::AsRawHandle;
+            let mut child = std::process::Command::new("cmd")
+                .args(["/C", "exit 0"])
+                .spawn()
+                .unwrap();
+            child.wait().unwrap();
+            arm();
+            snapshot_child(child.as_raw_handle() as HANDLE);
+            let reading = read(&[CounterKind::Cycles, CounterKind::Instructions]);
+            assert!(reading[0].unwrap().value > 0);
+            assert!(reading[1].is_none());
+        }
+
+        #[test]
+        fn nothing_is_kept_when_not_armed() {
+            use std::os::windows::io::AsRawHandle;
+            let mut child = std::process::Command::new("cmd")
+                .args(["/C", "exit 0"])
+                .spawn()
+                .unwrap();
+            child.wait().unwrap();
+            ARMED.with(|a| a.set(false));
+            LAST.with(|l| l.set(None));
+            snapshot_child(child.as_raw_handle() as HANDLE);
+            assert!(read(&[CounterKind::Cycles])[0].is_none());
         }
     }
 }

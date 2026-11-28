@@ -1,6 +1,6 @@
 # Spec: `--counters` hardware performance counters on Linux (#49)
 
-**Status:** Implemented on Linux (#49, schemaVersion 1.8; software events and the frequency are in `software-events-migrations.md` and `effective-frequency.md`). macOS and Windows report `unavailable`.
+**Status:** Implemented on Linux (#49, schemaVersion 1.8; software events and the frequency are in `software-events-migrations.md` and `effective-frequency.md`). macOS (`instructions`, `cycles`) and Windows (`cycles`) read task-level counters with `-N` only, see `counters-macos-windows.md`; other events report `unavailable`.
 
 ## Implementation notes (deviations from the proposal)
 - Code: `src/perf_counters.rs`, wired into `run_command_and_measure_common`
@@ -65,7 +65,8 @@ Nothing exists for hardware counters.
   (`--counters=cycles`) or a trailing position so it does not swallow the command; implementer
   must verify clap behaviour and pick one form.
 - Non-Linux targets: no error, one warning and `unavailable` (see Implementation notes). macOS
-  reads `instructions` and `cycles` with `-N` only: `counters-macos-windows.md` (#411).
+  reads `instructions` and `cycles` with `-N` only, Windows `cycles` only (`QueryProcessCycleTime`):
+  `counters-macos-windows.md` (#411).
 - Compatible with `--energy`, `--resource-usage`, `--schedule round-robin`.
 - Interaction with #48: once `--metric` exists, `instructions` and `cycles` become valid metric
   names. Until then `--counters` is report-only.
