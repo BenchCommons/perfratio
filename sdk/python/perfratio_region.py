@@ -1,4 +1,4 @@
-"""perfratio region client for Python (protocol 1, SDK 1.0.0).
+"""perfratio region client for Python (protocol 1, SDK 1.1.0).
 
 License: MIT OR Apache-2.0. One file, standard library only.
 
@@ -14,6 +14,11 @@ Events are buffered in memory and written at interpreter exit (also after an
 uncaught exception or ``sys.exit``) or on :func:`flush`. ``os._exit`` and fatal
 signals skip the exit handlers: call :func:`flush` first when that matters.
 
+Persistent mode (``perfratio --persistent python3 program.py``): ``pr.serve(function)`` calls
+``function()`` once per iteration perfratio requests and reports the time of every call.
+Imports, JIT warm-up and data loading before ``serve`` are paid once. Without perfratio
+``serve`` calls the function once. Protocol: docs/specs/persistent-mode.md.
+
 Thread-safe. Names are 1-64 ASCII letters, digits or ``_``; the default name is
 ``"default"``. Wire format: docs/specs/region-protocol.md.
 """
@@ -27,7 +32,7 @@ import threading
 import time
 
 PROTOCOL = 1
-SDK_VERSION = "1.0.0"
+SDK_VERSION = "1.1.0"
 SDK_ID = "python/" + SDK_VERSION
 DEFAULT_REGION = "default"
 
@@ -147,3 +152,54 @@ def flush():
 def region(name=DEFAULT_REGION):
     """Context manager: the region lasts for the ``with`` block, also on exceptions."""
     return _recorder().region(name)
+
+
+PERSISTENT_ENV = "PERFRATIO_PERSISTENT_PROTOCOL"
+_PREFIX = "@perfratio "
+
+
+def serve(function, input=None, output=None):
+    """Persistent mode: run ``function()`` for every ``run <n>`` perfratio sends.
+
+    Reads requests from stdin and answers on stdout (lines starting with ``@perfratio``,
+    anything else the program prints is ignored by perfratio). Returns on ``quit`` or at end
+    of input. An exception in ``function`` is reported as a failed iteration and the loop
+    goes on. Without ``--persistent`` (``PERFRATIO_PERSISTENT_PROTOCOL`` unset) the function
+    runs once. ``input`` and ``output`` are text streams for tests.
+    """
+    if input is None and output is None and os.environ.get(PERSISTENT_ENV) is None:
+        function()
+        return
+    input = input if input is not None else sys.stdin
+    output = output if output is not None else sys.stdout
+
+    def send(*lines):
+        output.write("".join(_PREFIX + line + "\n" for line in lines))
+        output.flush()
+
+    send("hello %d %s" % (PROTOCOL, SDK_ID))
+    for request in input:
+        words = request.split()
+        if not words:
+            continue
+        if words[0] == "quit":
+            break
+        if words[0] != "run" or len(words) != 2:
+            continue
+        number = words[1]
+        failure = None
+        t0 = _clock()
+        try:
+            function()
+        except Exception as error:  # reported to perfratio, the loop goes on
+            failure = error
+        t1 = _clock()
+        if failure is not None:
+            message = " ".join(("%s: %s" % (type(failure).__name__, failure)).split())
+            send("fail %s %s" % (number, message))
+        else:
+            send(
+                "start iteration %d" % t0,
+                "stop iteration %d" % t1,
+                "done %s" % number,
+            )

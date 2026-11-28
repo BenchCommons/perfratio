@@ -325,7 +325,7 @@ fn removed_variance_fraction(all: &[f64], kept: &[f64]) -> Option<f64> {
 
 /// Complementary error function (Numerical Recipes `erfcc`, relative error
 /// below 1.2e-7 everywhere).
-fn erfc(x: f64) -> f64 {
+pub(crate) fn erfc(x: f64) -> f64 {
     let z = x.abs();
     let t = 1.0 / (1.0 + 0.5 * z);
     let r = t

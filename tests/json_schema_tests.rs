@@ -75,6 +75,14 @@ fn export(args: &[&str]) -> Value {
 const CASES: &[(&str, &[&str])] = &[
     ("default", &["--runs=3", "sleep 0.1"]),
     (
+        "persistent mode",
+        &["--persistent", "--warmup=0", "--runs=20", "sleep 0.1"],
+    ),
+    (
+        "persistent mode too few iterations",
+        &["--persistent", "--warmup=0", "--runs=4", "sleep 0.1"],
+    ),
+    (
         "absolute budgets",
         &[
             "--runs=3",
@@ -269,6 +277,7 @@ const CASES: &[(&str, &[&str])] = &[
         &["--runs=3", "--counters=cycles", "--topdown", "sleep 0.5"],
     ),
     ("simd", &["--runs=3", "--simd", "sleep 0.5"]),
+    ("membw", &["--runs=3", "--membw", "sleep 0.5"]),
     (
         "simd with counters and user scope",
         &[
@@ -335,6 +344,43 @@ const CASES: &[(&str, &[&str])] = &[
             "1",
             "40",
             "sleep {n}",
+        ],
+    ),
+    (
+        "optimize two variables",
+        &[
+            "--runs=3",
+            "--optimize",
+            "a",
+            "1",
+            "6",
+            "--optimize",
+            "b",
+            "1",
+            "6",
+            "--optimize-budget",
+            "6",
+            "--optimize-validate",
+            "sleep 0.0{a}{b}",
+        ],
+    ),
+    (
+        "optimize with successive halving",
+        &[
+            "--runs=3",
+            "--optimize",
+            "a",
+            "1",
+            "6",
+            "--optimize",
+            "b",
+            "1",
+            "6",
+            "--optimize-algorithm",
+            "halving",
+            "--optimize-budget",
+            "6",
+            "sleep 0.0{a}{b}",
         ],
     ),
     (

@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.44 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.48 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.44",
+      "const": "1.48",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -184,6 +184,22 @@
         "region": {
           "$ref": "#/$defs/status",
           "description": "`--region` (1.23): `measured` when requested, otherwise `not_requested`. A run that did not report a region shows as null in `results[].regions[]`."
+        },
+        "membw": {
+          "$ref": "#/$defs/status",
+          "description": "`--membw` memory bandwidth (1.47, #378): `measured`, `unavailable` or `not_requested`."
+        },
+        "membw_unavailable_reason": {
+          "type": "string",
+          "description": "Open enum: unsupported_platform, no_uncore_imc, amd_df_unsupported, perf_paranoid, other, region_scope, concurrency."
+        },
+        "numa": {
+          "$ref": "#/$defs/status",
+          "description": "`--membw` NUMA placement from numa_maps (1.47, #378): `measured`, `unavailable` or `not_requested`."
+        },
+        "numa_unavailable_reason": {
+          "type": "string",
+          "description": "Open enum: unsupported_platform, no_numa_maps, region_scope, concurrency."
         }
       },
       "required": [
@@ -390,6 +406,24 @@
             "numa_nodes": {
               "type": "integer",
               "minimum": 1
+            },
+            "numa_topology": {
+              "type": "array",
+              "description": "New in 1.47 (#378): one entry per NUMA node (Linux), sorted by node number. Not part of the environment fingerprint.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "node": { "type": "integer", "minimum": 0 },
+                  "cpus": { "type": "string", "description": "CPU list of the node as the kernel prints it, e.g. 0-15,32-47." },
+                  "memory_bytes": { "type": "integer", "minimum": 0 },
+                  "distances": {
+                    "type": "array",
+                    "items": { "type": "integer", "minimum": 0 },
+                    "description": "ACPI SLIT distance to every node, in node order (10 is the node itself)."
+                  }
+                },
+                "required": ["node"]
+              }
             },
             "memory_bytes": {
               "type": "integer",
@@ -1835,6 +1869,35 @@
           "type": "boolean",
           "description": "Only present when true (1.19): processes started by the command outlived it in at least one run and were killed."
         },
+        "mode": {
+          "const": "persistent",
+          "description": "`--persistent` (1.46): the command ran as one long-lived process and every run is an iteration. Absent otherwise."
+        },
+        "iterations": {
+          "type": "object",
+          "properties": {
+            "protocol": {"type": "integer", "description": "Persistent protocol version spoken."},
+            "sdk": {"type": "string", "description": "Identifier the SDK sent in its hello line."},
+            "count": {"type": "integer", "minimum": 0, "description": "Measured iterations (the length of `times`)."},
+            "status": {"enum": ["steady_state", "no_steady_state", "too_few_iterations"]},
+            "warmup_iterations": {"type": "integer", "minimum": 0, "description": "Iterations before the steady state. Only with status steady_state."},
+            "steady_state": {
+              "type": "object",
+              "properties": {
+                "first_iteration": {"type": "integer", "minimum": 0},
+                "count": {"type": "integer", "minimum": 1},
+                "mean": {"type": "number"},
+                "stddev": {"type": ["number", "null"]},
+                "min": {"type": "number"},
+                "max": {"type": "number"}
+              },
+              "required": ["first_iteration", "count", "mean", "min", "max"],
+              "description": "Statistics in seconds of the iterations after the warm-up phase."
+            }
+          },
+          "required": ["protocol", "count", "status"],
+          "description": "`--persistent` (1.46): warm-up detection and steady-state statistics of the iterations."
+        },
         "regions": {
           "type": "array",
           "items": {
@@ -1888,6 +1951,49 @@
         "contended": {
           "const": true,
           "description": "Runs were executed in parallel (--jobs N, N > 1) and may have disturbed each other; do not compare with sequential samples (new in 1.22)."
+        },
+        "membw": {
+          "type": "object",
+          "description": "New in 1.47 (#378): memory bandwidth per run (`--membw`), aligned with `times`; null = the run had no reading. Counters are system wide per socket (uncore IMC), so other activity is included.",
+          "properties": {
+            "source": { "type": "string", "description": "uncore_imc (mock with --debug-mode)." },
+            "read_bytes": { "type": "array", "items": { "type": ["integer", "null"], "minimum": 0 } },
+            "write_bytes": { "type": "array", "items": { "type": ["integer", "null"], "minimum": 0 } },
+            "bytes_per_second": {
+              "type": "array",
+              "items": { "type": ["number", "null"], "minimum": 0 },
+              "description": "(read + write) divided by the wall time of the run."
+            }
+          },
+          "required": ["source", "read_bytes", "write_bytes", "bytes_per_second"]
+        },
+        "membw_summary": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/summary"
+          },
+          "description": "New in 1.47 (#378): summary of read_bytes_per_second, write_bytes_per_second and bytes_per_second."
+        },
+        "numa": {
+          "type": "object",
+          "description": "New in 1.47 (#378): resident bytes per NUMA node of the benchmarked process (largest numa_maps sample of each run, `--membw`).",
+          "properties": {
+            "node_bytes": {
+              "type": "array",
+              "items": {
+                "type": ["object", "null"],
+                "additionalProperties": { "type": "integer", "minimum": 0 }
+              },
+              "description": "Per run, keyed by node number; null where no sample could be read."
+            },
+            "mean_node_fraction": {
+              "type": "object",
+              "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 },
+              "description": "Mean share of the resident bytes on each node over the sampled runs."
+            },
+            "dominant_node": { "type": "integer", "minimum": 0 }
+          },
+          "required": ["node_bytes", "mean_node_fraction", "dominant_node"]
         },
         "simd": {
           "type": "object",
@@ -2034,6 +2140,47 @@
                 "max_c"
               ],
               "description": "Hottest CPU temperature sensor in degrees Celsius."
+            },
+            "thermal_pressure": {
+              "type": "object",
+              "properties": {
+                "start": {
+                  "type": "string",
+                  "enum": [
+                    "nominal",
+                    "moderate",
+                    "heavy",
+                    "trapping",
+                    "sleeping"
+                  ]
+                },
+                "end": {
+                  "type": "string",
+                  "enum": [
+                    "nominal",
+                    "moderate",
+                    "heavy",
+                    "trapping",
+                    "sleeping"
+                  ]
+                },
+                "max": {
+                  "type": "string",
+                  "enum": [
+                    "nominal",
+                    "moderate",
+                    "heavy",
+                    "trapping",
+                    "sleeping"
+                  ]
+                }
+              },
+              "required": [
+                "start",
+                "end",
+                "max"
+              ],
+              "description": "New in 1.48 (#412): coarse OS thermal pressure level (macOS, with --thermal), not a temperature. Closed enum: a new level is MAJOR."
             }
           },
           "description": "Environment observed while the runs executed (new in 1.31, #315). A source that cannot be read is omitted, never 0."
@@ -2252,6 +2399,137 @@
             "type": "number"
           },
           "description": "Values run a second time by --optimize-confirm (1.15)."
+        },
+        "vars": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "min": {
+                "type": "integer"
+              },
+              "max": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name",
+              "min",
+              "max"
+            ]
+          },
+          "description": "New in 1.45 (#385): the searched variables, in the order of --optimize. Present for --optimize with several variables or --optimize-algorithm random, halving or bayes."
+        },
+        "best_point": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "New in 1.45 (#385): the best value of every searched variable."
+        },
+        "runner_up_point": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "New in 1.45 (#385): the second best point."
+        },
+        "evaluated_points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "description": "New in 1.45 (#385): every distinct point, in evaluation order."
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "New in 1.45 (#385): the --seed of the random choices."
+        },
+        "cost": {
+          "type": "object",
+          "properties": {
+            "benchmarks": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "points": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "runs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rungs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "runs": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "points": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "runs",
+                  "points"
+                ]
+              }
+            }
+          },
+          "required": [
+            "benchmarks",
+            "points",
+            "runs"
+          ],
+          "description": "New in 1.45 (#385): budget accounting."
+        },
+        "validation": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "description": "confirmed, refuted or inconclusive (open enum)"
+            },
+            "value": {
+              "type": "number"
+            },
+            "search_value": {
+              "type": "number"
+            },
+            "drift": {
+              "type": "number"
+            },
+            "runner_up_value": {
+              "type": "number"
+            },
+            "p_value": {
+              "type": "number"
+            },
+            "runs": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "status",
+            "value",
+            "search_value",
+            "drift",
+            "runs"
+          ],
+          "description": "New in 1.45 (#385): the independent validation round of --optimize-validate."
         }
       },
       "required": [
@@ -2269,7 +2547,7 @@
         "at_boundary",
         "evaluated"
       ],
-      "description": "Result of one --optimize search."
+      "description": "Result of one --optimize search. var, min, max, best, evaluated and unimodal_warning are always present (required since 1.6). For a search over several variables (1.45) they describe the first declared variable: best is its value in the best point, evaluated its value in every distinct point (same order and length as evaluated_points), unimodal_warning is false. vars, best_point and evaluated_points carry all variables."
     },
     "pareto": {
       "type": "object",

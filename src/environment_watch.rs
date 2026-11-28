@@ -13,7 +13,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use crate::cgroup::{Cgroup, Snapshot};
-use crate::thermal::{ThermalMonitor, ThermalTrace};
+use crate::thermal::{PressureMonitor, PressureTrace, ThermalMonitor, ThermalTrace};
 
 /// `interference` of a result
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -30,6 +30,9 @@ pub struct Interference {
     pub cgroup_oom_kills: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thermal: Option<ThermalTrace>,
+    /// Coarse thermal pressure level (macOS, with `--thermal`; new in 1.48, #412)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thermal_pressure: Option<PressureTrace>,
 }
 
 /// State of one benchmark's observation
@@ -86,11 +89,16 @@ impl Watch {
     /// The observations; `None` when nothing could be observed
     pub fn finish(self) -> Option<Interference> {
         let observed_cgroup = self.cgroup.is_some();
+        let (thermal, thermal_pressure) = self
+            .thermal
+            .map(BackgroundThermal::finish)
+            .unwrap_or_default();
         let interference = Interference {
             cgroup_throttled_usec: observed_cgroup.then_some(self.throttled_usec),
             cgroup_throttled_runs: observed_cgroup.then_some(self.throttled_runs),
             cgroup_oom_kills: self.oom_kills,
-            thermal: self.thermal.and_then(BackgroundThermal::finish),
+            thermal,
+            thermal_pressure,
         };
         (interference != Interference::default()).then_some(interference)
     }
@@ -105,10 +113,13 @@ const FIRST_READ_WAIT: Duration = Duration::from_millis(200);
 /// Reads the temperature on its own thread. Some hosts (cloud VMs) take about
 /// a second per read of `/sys/class/thermal` and `/sys/class/hwmon`; reading
 /// them on the benchmark thread delayed the first run by that much.
+/// The temperature and the pressure level traces, each `None` until read
+type Traces = (Option<ThermalTrace>, Option<PressureTrace>);
+
 #[derive(Debug)]
 struct BackgroundThermal {
     stop: Arc<AtomicBool>,
-    latest: Arc<Mutex<Option<ThermalTrace>>>,
+    latest: Arc<Mutex<Traces>>,
     /// Wait in `finish` for a first reading: only for a fixture root (tests),
     /// whose reads are instant; a real host never waits for its sensors.
     wait_first_read: bool,
@@ -117,19 +128,24 @@ struct BackgroundThermal {
 impl BackgroundThermal {
     fn start(root: &Path) -> Self {
         let stop = Arc::new(AtomicBool::new(false));
-        let latest = Arc::new(Mutex::new(None));
+        let latest = Arc::new(Mutex::new((None, None)));
         let (thread_stop, thread_latest) = (Arc::clone(&stop), Arc::clone(&latest));
         let root_is_fixture = root != Path::new("/");
         let root = root.to_path_buf();
         let spawned = std::thread::Builder::new()
             .name("perfratio-thermal".into())
             .spawn(move || {
-                let Some(mut monitor) = ThermalMonitor::start(&root) else {
+                let mut monitor = ThermalMonitor::start(&root);
+                let mut pressure = PressureMonitor::start(&root);
+                if monitor.is_none() && pressure.is_none() {
                     return;
-                };
+                }
                 loop {
                     if let Ok(mut slot) = thread_latest.lock() {
-                        *slot = Some(monitor.trace());
+                        *slot = (
+                            monitor.as_ref().map(ThermalMonitor::trace),
+                            pressure.as_ref().map(PressureMonitor::trace),
+                        );
                     }
                     // sleep in short steps so the thread ends soon after `finish`
                     let mut slept = Duration::ZERO;
@@ -140,7 +156,12 @@ impl BackgroundThermal {
                         std::thread::sleep(Duration::from_millis(20));
                         slept += Duration::from_millis(20);
                     }
-                    monitor.sample();
+                    if let Some(monitor) = monitor.as_mut() {
+                        monitor.sample();
+                    }
+                    if let Some(pressure) = pressure.as_mut() {
+                        pressure.sample();
+                    }
                 }
             });
         if spawned.is_err() {
@@ -155,8 +176,8 @@ impl BackgroundThermal {
     }
 
     /// The last trace the thread recorded; never waits for a sensor read.
-    /// `None` when no sensor could be read (yet).
-    fn finish(self) -> Option<ThermalTrace> {
+    /// Each trace is `None` when its source could not be read (yet).
+    fn finish(self) -> Traces {
         // A benchmark shorter than the first read (e.g. `--debug-mode`) waits
         // briefly for it; this is after the last run, outside every timing.
         let wait = if self.wait_first_read {
@@ -166,8 +187,8 @@ impl BackgroundThermal {
         };
         let deadline = std::time::Instant::now() + wait;
         let trace = loop {
-            let trace = self.latest.lock().ok().and_then(|slot| *slot);
-            if trace.is_some() || std::time::Instant::now() >= deadline {
+            let trace = self.latest.lock().map(|slot| *slot).unwrap_or_default();
+            if trace != (None, None) || std::time::Instant::now() >= deadline {
                 break trace;
             }
             std::thread::sleep(Duration::from_millis(2));

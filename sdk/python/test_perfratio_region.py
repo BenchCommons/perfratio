@@ -44,13 +44,13 @@ class RecorderTests(unittest.TestCase):
         recorder.flush()
         recorder.flush()
         lines = read(self.path).splitlines()
-        self.assertEqual(lines[0], "hello 1 python/1.0.0")
+        self.assertEqual(lines[0], "hello 1 python/1.1.0")
         self.assertEqual([l.split()[0] for l in lines[1:]], ["start", "stop", "start", "stop"])
         self.assertEqual(sum(l.startswith("hello") for l in lines), 1)
 
     def test_hello_alone_marks_an_instrumented_program(self):
         pr.Recorder(self.path).flush()
-        self.assertEqual(read(self.path), "hello 1 python/1.0.0\n")
+        self.assertEqual(read(self.path), "hello 1 python/1.1.0\n")
 
     def test_clock_is_monotonic_and_measures_the_sleep(self):
         # the protocol needs the monotonic clock, never time.time()
@@ -83,7 +83,7 @@ class RecorderTests(unittest.TestCase):
             sys.stderr.close()
             sys.stderr = stderr
         recorder.flush()
-        self.assertEqual(read(self.path), "hello 1 python/1.0.0\n")
+        self.assertEqual(read(self.path), "hello 1 python/1.1.0\n")
 
     def test_unwritable_file_never_raises(self):
         recorder = pr.Recorder(os.path.join(self.dir.name, "missing", "events.log"))
@@ -127,11 +127,57 @@ class ModuleTests(unittest.TestCase):
                 )
                 self.assertNotEqual(result.returncode, 0)
                 lines = read(path).splitlines()
-                self.assertEqual(lines[0], "hello 1 python/1.0.0")
+                self.assertEqual(lines[0], "hello 1 python/1.1.0")
                 self.assertEqual(
                     [l.split()[:2] for l in lines[1:]],
                     [["start", "a"], ["stop", "a"], ["start", "open"]],
                 )
+
+
+class ServeTests(unittest.TestCase):
+    def serve(self, requests, function):
+        import io
+
+        output = io.StringIO()
+        pr.serve(function, io.StringIO(requests), output)
+        return [l[len("@perfratio ") :] for l in output.getvalue().splitlines()]
+
+    def test_every_run_is_answered_with_hello_and_an_iteration_region(self):
+        calls = []
+        lines = self.serve("run 0\nrun 1\nquit\nrun 2\n", lambda: calls.append(1))
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(lines[0], "hello 1 python/1.1.0")
+        kinds = [l.split()[:2] for l in lines[1:]]
+        self.assertEqual(
+            kinds,
+            [["start", "iteration"], ["stop", "iteration"], ["done", "0"]]
+            + [["start", "iteration"], ["stop", "iteration"], ["done", "1"]],
+        )
+
+    def test_the_interval_uses_the_monotonic_clock(self):
+        lines = self.serve("run 0\n", lambda: time.sleep(0.05))
+        start = int(lines[1].split()[2])
+        stop = int(lines[2].split()[2])
+        self.assertGreaterEqual(stop - start, 45_000_000)
+        self.assertLess(stop - start, 1_000_000_000)
+
+    def test_an_exception_is_a_failed_iteration_and_the_loop_goes_on(self):
+        def function():
+            raise ValueError("bad\ninput")
+
+        lines = self.serve("run 0\nrun 1\n", function)
+        self.assertEqual(lines[1:], ["fail 0 ValueError: bad input", "fail 1 ValueError: bad input"])
+
+    def test_without_perfratio_the_function_runs_once(self):
+        calls = []
+        env = dict(os.environ)
+        os.environ.pop(pr.PERSISTENT_ENV, None)
+        try:
+            pr.serve(lambda: calls.append(1))
+        finally:
+            os.environ.clear()
+            os.environ.update(env)
+        self.assertEqual(calls, [1])
 
 
 if __name__ == "__main__":

@@ -16,6 +16,7 @@ use crate::output::progress_bar::{
     format_progress_estimate, get_progress_bar, replace_message_template,
 };
 use crate::parameter::ParameterValue;
+use crate::search::Eval;
 use crate::stats::significance::Significance;
 
 use anyhow::Result;
@@ -32,6 +33,8 @@ pub struct Scheduler<'a> {
     imported_count: usize,
     /// One report per `--optimize` search
     optimize_reports: Vec<OptimizeReport>,
+    /// One report per multi-dimensional or non-golden `--optimize` search
+    search_reports: Vec<crate::search::SearchReport>,
 }
 
 /// `perfratio.schedule` (new in 1.23, #324): the schedule, the seed of a
@@ -48,7 +51,7 @@ fn schedule_json(mode: ScheduleMode, seed: u64, order: Option<&[usize]>) -> serd
 }
 
 /// The `optimize` JSON value: an object for one search, an array for several.
-fn optimize_json(reports: &[OptimizeReport]) -> Option<serde_json::Value> {
+fn optimize_json<T: serde::Serialize>(reports: &[T]) -> Option<serde_json::Value> {
     match reports {
         [] => None,
         [one] => serde_json::to_value(one).ok(),
@@ -70,6 +73,7 @@ impl<'a> Scheduler<'a> {
             reference_index: None,
             imported_count: 0,
             optimize_reports: Vec::new(),
+            search_reports: Vec::new(),
         }
     }
 
@@ -132,12 +136,20 @@ impl<'a> Scheduler<'a> {
                             Vec::new()
                         })
                         .with_concurrency(self.options.concurrency)
+                        .with_persistent(self.options.persistent)
                         .with_validation(self.options.validation.clone()),
                 ),
                 ExecutorKind::Shell(shell) => Box::new(ShellExecutor::new(shell, self.options)),
             };
+            if self.options.persistent && !matches!(kind, ExecutorKind::Mock(_)) {
+                executor = Box::new(crate::persistent::PersistentExecutor::new(
+                    executor,
+                    self.options,
+                ));
+            }
             executor.calibrate()?;
             if self.options.calibrate == crate::calibration::CalibrateMode::Auto
+                && !self.options.persistent
                 && !matches!(kind, ExecutorKind::Mock(_))
             {
                 let floor = crate::calibration::measure_floor(&*executor, self.options);
@@ -652,6 +664,158 @@ impl<'a> Scheduler<'a> {
             }
             self.export_manager
                 .set_optimize(optimize_json(&self.optimize_reports));
+        } else if let Some(spec) = self.options.search.as_ref() {
+            // `--optimize` over several variables, or with random, halving or Bayesian search
+            let options = self.options;
+            let metric = options.metric;
+            let results = &mut self.results;
+            for &(number, base) in &commands_to_run {
+                if crate::util::interrupt::interrupted() {
+                    break;
+                }
+                // Index in `results` of each point: a point benchmarked again on a later rung
+                // replaces its entry, so that `results` keeps one entry per point
+                let slots: std::cell::RefCell<std::collections::HashMap<Vec<i64>, usize>> =
+                    Default::default();
+                let mut evaluate =
+                    |point: &[i64], runs: Option<u64>, record: bool| -> Result<Option<Eval>> {
+                        if crate::util::interrupt::interrupted() {
+                            return Ok(None);
+                        }
+                        let mut cmd = base.clone();
+                        for (dim, x) in spec.dims.iter().zip(point) {
+                            cmd = cmd.with_parameter(&dim.var, ParameterValue::Text(x.to_string()));
+                        }
+                        let tuned;
+                        let run_options = match runs {
+                            Some(n) => {
+                                let mut o = options.clone();
+                                o.run_bounds = crate::options::RunBounds {
+                                    min: n,
+                                    max: Some(n),
+                                };
+                                tuned = o;
+                                &tuned
+                            }
+                            None => options,
+                        };
+                        let index = match slots.borrow().get(point) {
+                            Some(i) if record => *i,
+                            _ => results.len(),
+                        };
+                        let Some(res) =
+                            Benchmark::new(number, index, &cmd, run_options, executor_for(number))
+                                .with_baseline(baseline_for(number))
+                                .run()?
+                        else {
+                            return Ok(None);
+                        };
+                        let value = res
+                            .primary_mean(metric)
+                            .filter(|v| v.is_finite() && *v != 0.0);
+                        let Some(value) = value else {
+                            anyhow::bail!(
+                                "'--optimize': the {} of '{}' is {}, so the search cannot compare \
+                                 it. Is the metric available (e.g. readable energy counters)?",
+                                metric.name(),
+                                cmd.get_command_line(),
+                                res.primary_mean(metric)
+                                    .map_or("missing".to_string(), |v| v.to_string())
+                            );
+                        };
+                        let samples = res.primary_samples(metric);
+                        let se = match (&samples, res.primary_stddev(metric)) {
+                            (Some(s), Some(sd)) if !s.is_empty() => sd / (s.len() as f64).sqrt(),
+                            _ => 0.0,
+                        };
+                        let eval = Eval {
+                            value,
+                            se,
+                            runs: res.times.as_ref().map_or(0, |t| t.len() as u64),
+                            samples,
+                            wall_mean: res.mean,
+                            command: cmd.get_command_line(),
+                        };
+                        if !record {
+                            return Ok(Some(eval));
+                        }
+                        if index < results.len() {
+                            results[index] = res;
+                        } else {
+                            slots.borrow_mut().insert(point.to_vec(), index);
+                            results.push(res);
+                        }
+                        let intermediate: Vec<_> = if options.filter_failed {
+                            results
+                                .iter()
+                                .filter(|r| !r.has_failure())
+                                .cloned()
+                                .collect()
+                        } else {
+                            results.clone()
+                        };
+                        self.export_manager
+                            .write_results(&intermediate, None, true)?;
+                        Ok(Some(eval))
+                    };
+                let outcome = crate::search::run_search(
+                    spec,
+                    options.run_bounds.min,
+                    |p: &[i64], runs: Option<u64>| evaluate(p, runs, true),
+                )?;
+
+                // A fresh round of the winner and the runner-up, apart from the search
+                let mut validation = None;
+                if spec.validate && !outcome.interrupted {
+                    let ranked = crate::search::ranking(&outcome);
+                    if let Some(best) = ranked.first() {
+                        let runs = (spec.algorithm == crate::search::Algorithm::Halving)
+                            .then_some(best.eval.runs);
+                        let search_value = best.eval.value;
+                        let best_point = best.point.clone();
+                        let runner_up_point = ranked.get(1).map(|t| t.point.clone());
+                        let fresh_best = evaluate(&best_point, runs, false)?;
+                        let fresh_runner_up = match &runner_up_point {
+                            Some(p) => evaluate(p, runs, false)?,
+                            None => None,
+                        };
+                        if let Some(fresh_best) = fresh_best {
+                            validation = Some(crate::search::validate(
+                                search_value,
+                                &fresh_best,
+                                fresh_runner_up.as_ref(),
+                            ));
+                        }
+                    }
+                }
+                let fixed = base
+                    .get_parameters()
+                    .iter()
+                    .map(|(name, value)| (name.to_string(), value.to_string()))
+                    .collect();
+                if let Some(report) =
+                    crate::search::analyze(spec, metric, &outcome, validation, fixed)
+                {
+                    if options.output_style != OutputStyleOption::Disabled {
+                        crate::outln!("\n{}", crate::search::summary(spec, metric, &report));
+                    }
+                    if report
+                        .validation
+                        .as_ref()
+                        .is_some_and(|v| v.status == "refuted")
+                    {
+                        eprintln!(
+                            "{} The validation round contradicts the search: the runner-up is \
+                             significantly better than the winner. The search result is probably \
+                             noise.",
+                            colors::yellow("Warning:")
+                        );
+                    }
+                    self.search_reports.push(report);
+                }
+            }
+            self.export_manager
+                .set_optimize(optimize_json(&self.search_reports));
         } else {
             for (number, cmd) in commands_to_run {
                 if crate::util::interrupt::interrupted() {
