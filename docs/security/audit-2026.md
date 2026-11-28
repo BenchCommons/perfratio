@@ -79,7 +79,9 @@ the PR diff, not on `master`.
   (already used for imported JSON). Compare `metadata.len()` with `entry.bytes` first and
   hash with a streaming reader (`io::copy` into the hasher, through `Read::take(bytes + 1)`).
   Cap the manifest size (for example 1 MiB).
-- State: open, in PR #393.
+- State: partly fixed (Refs #22): files are written with `create_new` and `O_NOFOLLOW`, and
+  `verify` opens with `O_NOFOLLOW` and checks the metadata of the open handle (no TOCTOU).
+  The 0700 directory mode and the temp-directory plus `rename` are not done.
 
 ### M3. Secrets in the command line are exported and bundled; warnings and redaction are partial
 
@@ -127,7 +129,9 @@ the PR diff, not on `master`.
   rule of `is_valid_name` and limit it to 64 characters. In persistent mode read with a
   limited reader (as `collector::read_line_limited`), and bound the number of lines kept
   for one iteration.
-- State: open (master and PR #399).
+- State: fixed in master by `fix/evidence-hardening` (Refs #22): every text of the report is
+  escaped with `escape_control_chars`, `is_plain_name` rejects control characters,
+  `manifest.json` is limited to 1 MiB and files are hashed in a stream (`Sha256`).
 
 ## Low
 
