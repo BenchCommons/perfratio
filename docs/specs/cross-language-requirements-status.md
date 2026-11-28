@@ -31,7 +31,7 @@ minor of `schemaVersion`. The final number depends on merge order, so consumers 
 | 3c | PMU RAPL backend without root sysfs (#223) | **Master** (#272), unvalidated on hardware | `--energy-backend auto\|sysfs\|perf` | `perfratio.energy_backend`, `measurements.energy`, `energy_unavailable_reason` | Unit tests in `src/energy/mod.rs` (`classifies_unavailable_reasons`), `tests/export_metadata_tests.rs::measurements_energy_requested_is_measured_or_unavailable_with_reason`, `docs/specs/perf-rapl-backend.md`. No test reads a real power PMU. |
 | 3d | Energy on macOS and Windows (#291) | **Master** (#295) | `--energy-backend ioreport\|emi` | same fields, new reasons | `docs/specs/energy-macos-windows.md` |
 | 3e | Energy validated on bare-metal Linux | **Open**, tracked in #337 | `-E`, `--energy-backend perf` | n/a | `cargo test -- --ignored` and `PERFRATIO_TEST_PERF=1 cargo test` on real hardware. CI covers time and memory only. |
-| 3f | Energy in other domains: GPU, estimated attribution, external meter | **Open PR** #401 (#380), #402 (#381, #382) | `--gpu`, attribution and meter flags per those PRs | additive fields (minor bump) | Not on `master`. Not part of #240's list, listed because they affect cross-language energy comparison. |
+| 3f | Energy in other domains: GPU, estimated attribution, external meter | **Master** (#401 for #380, #402 for #381 and #382) | `--gpu`, `--energy-attribution`, `--power-meter` | `gpu:<n>` domains, `energy_attribution`, meter fields (see the schema) | `docs/specs/gpu-energy.md`, `docs/specs/energy-attribution-and-power-meter.md`. Not part of #240's list, listed because they affect cross-language energy comparison. GPU not run on GPU hardware. |
 | 4 | Short runs for fast languages (#216) | **Master** (#269) | `--duration DURATION` (at least 3 runs; conflicts with `--runs`, `--target-precision`) | duration fields, absent without the flag | `tests/duration_tests.rs`, `docs/specs/duration.md` |
 | 5 | Distribution: binaries or crates.io, pinned version (#93) | **Partly done**, #93 open | n/a | n/a | Release v1.0.0 has archives, `.deb`, SBOM and `SHA256SUMS` (#273, `docs/RELEASING.md`). Not done: crates.io (`CARGO_REGISTRY_TOKEN`), Homebrew tap, winget. README says crates.io and Homebrew are planned. Needs maintainer credentials. |
 | 6 | Optional library crate for a Rust driver (#92) | **Master** (#277), pre-stable | none | none (JSON unchanged) | `docs/specs/library-crate.md`, `src/api.rs`. #92 is closed. |
@@ -39,16 +39,20 @@ minor of `schemaVersion`. The final number depends on merge order, so consumers 
 | 7b | Separate startup from algorithm time | **Master** | `--output-metric NAME=REGEX`, `--region[=NAME]` | `custom_metrics`, `results[].regions` | `tests/output_metric_tests.rs`, `tests/region_tests.rs`, `docs/specs/region-protocol.md`. Region SDKs on `master`: C/C++, Rust, Python (`sdk/`, `tests/sdk_tests.rs`). |
 | 7c | Region SDKs for more languages | **Open PR** #399 (JS/TS, Go, Java, Kotlin) | `--region` | `results[].regions` | #372. Any other language can print a value and use `--output-metric`. |
 
-## Open PRs that touch cross-language runs
-None of the open PRs closes an item of #240. Relevant ones:
-- #393 (#375) `--evidence DIR`, `--verify-evidence`: reproducible bundle of one result. Own versioned manifest, no `schemaVersion` bump.
-- #399 (#370, #372) `--persistent` and region SDKs for JS/TS, Go, Java, Kotlin (`results[].mode`, `iterations`).
+## Also on `master` (not items of #240)
+Merged after the checklist was first written. None of them closes an item of #240.
+- #393 (#375) `--evidence DIR`, `--verify-evidence`: reproducible bundle of one result. Own versioned manifest, no `schemaVersion` bump (`evidence-bundle.md`).
+- #396 (#368) `--ci-method hierarchical`, `--paired` (`results[].hierarchy`, `paired`; `hierarchical-paired.md`).
+- #397 `--roofline`, #398 `--pareto-significance`, `--pareto-probability`, #394 raw PMU events and `--list-events`.
 - #400 (#367, #369) statistical power and multi-metric stopping (`results[].power`, `precision_metrics`).
-- #396 (#368) `--ci-method hierarchical`, `--paired` (`results[].hierarchy`, `paired`).
-- #401, #402, #404 GPU, attribution and memory bandwidth/NUMA energy and memory metrics.
+- #401, #402 GPU energy, estimated attribution and external power meter (row 3f).
 - #406 `--verdict-json`: a separate document with its own `verdictVersion`, no change to the export.
-- #394, #397, #398, #403, #405: counters, roofline, Pareto, collectors, `--optimize` search.
-- #395 (dependency bump) is unrelated.
+
+## Open PRs that touch cross-language runs
+- #399 (#370, #372) `--persistent` and region SDKs for JS/TS, Go, Java, Kotlin (`results[].mode`, `iterations`).
+- #403 collector plugin protocol and Cachegrind/Callgrind adapter.
+- #404 `--membw` memory bandwidth and NUMA metrics.
+- #405 multi-dimensional, successive-halving and Bayesian search for `--optimize`.
 
 ## Requirements found without an issue
 - The `.product` `CONTRACTS.md` link: now #408.
