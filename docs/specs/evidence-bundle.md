@@ -77,7 +77,8 @@ hash rule, raises MAJOR. The manifest does not change the JSON export contract a
 
 - `manifest.json` is missing, is not valid JSON, has another `format` or another MAJOR of `format_version`;
 - a listed file is missing, not a regular file (a symlink, a directory), has another size or another SHA-256;
-- a path is not a plain file name (`/`, `\`, `:`, `..`) or is listed twice;
+- a path is not a plain file name (`/`, `\`, `:`, `..`, control characters) or is listed twice;
+- `manifest.json` is larger than 1 MiB, or a listed file is a symlink or not a regular file;
 - a required file is not listed;
 - `DIR` contains a file that the manifest does not list.
 
@@ -87,6 +88,17 @@ recomputed together with an edited file) is only detected against a pinned manif
 Verification checks integrity, not authenticity: it does not re-run the benchmark and does not
 check a signature.
 
+### 2.5 Hardening (audit M2, L1)
+
+The bundle is untrusted input. Every text in the report that comes from it (names, `format`,
+`format_version`) is printed with control characters escaped as `\u{..}`. Files are opened
+without following symlinks (`O_NOFOLLOW` on Unix), the type and size are checked on the open
+handle (opened with `O_NONBLOCK`, so a FIFO is rejected instead of blocking), and hashing reads in a stream, at most `bytes + 1` bytes per file. `--evidence` creates
+each file with `create_new` and never follows a symlink. The bundle format and the JSON export
+are unchanged.
+On Windows there is no `O_NOFOLLOW`: the symlink check is `symlink_metadata` followed by the
+open, so a symlink planted between the two calls is a TOCTOU window that is not closed.
+
 ## 3. Tests
 
 Unit tests in `src/evidence.rs` (samples, file names). `tests/evidence_tests.rs`: round trip
@@ -94,3 +106,5 @@ Unit tests in `src/evidence.rs` (samples, file names). `tests/evidence_tests.rs`
 against the schema, tamper cases (edited, deleted, added file, size change, bad manifest,
 wrong format and version, path traversal, listed-twice), non-empty directory refused, no host
 name or environment variable in the bundle.
+Hardening tests: escape sequences in names, oversized manifest, symlink planted in place of a
+file and at write time, FIFO in place of a file (fails fast, no hang).
