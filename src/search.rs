@@ -735,19 +735,16 @@ pub struct Cost {
 /// The `optimize` object of a multi-dimensional or non-golden search (additive, 1.37)
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub struct SearchReport {
-    /// Present for one variable, as for the golden-section search
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub var: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub min: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub max: Option<i64>,
+    /// Always present (required since 1.6). With several variables: the first declared one
+    pub var: String,
+    pub min: i64,
+    pub max: i64,
     pub metric: String,
     pub algorithm: &'static str,
     pub budget: usize,
     pub evaluations: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub best: Option<Num>,
+    /// Best value of `var` (the first declared variable)
+    pub best: Num,
     pub best_value: f64,
     pub best_command: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -757,8 +754,10 @@ pub struct SearchReport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub significant: Option<bool>,
     pub at_boundary: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub evaluated: Option<Vec<Num>>,
+    /// Always `false`: these searches do not assume unimodality
+    pub unimodal_warning: bool,
+    /// Value of `var` of every distinct point, in evaluation order (one per `evaluated_points` entry)
+    pub evaluated: Vec<Num>,
     /// The searched variables
     pub vars: Vec<Dim>,
     pub best_point: BTreeMap<String, i64>,
@@ -808,9 +807,9 @@ pub fn analyze(
     let dim = &spec.dims[0];
     let coordinate = |p: &[i64]| Num::Int(p[0]);
     Some(SearchReport {
-        var: single.then(|| dim.var.clone()),
-        min: single.then_some(dim.min),
-        max: single.then_some(dim.max),
+        var: dim.var.clone(),
+        min: dim.min,
+        max: dim.max,
         metric: metric.name().to_string(),
         algorithm: if outcome.exhaustive {
             "exhaustive"
@@ -819,14 +818,15 @@ pub fn analyze(
         },
         budget: spec.budget,
         evaluations: distinct.len(),
-        best: single.then(|| coordinate(&best.point)),
+        best: coordinate(&best.point),
         best_value: best.eval.value,
         best_command: best.eval.command.clone(),
         runner_up: runner_up.filter(|_| single).map(|r| coordinate(&r.point)),
         p_value: comparison,
         significant: comparison.map(|p| p < ALPHA),
         at_boundary: spec.at_boundary(&best.point),
-        evaluated: single.then(|| distinct.iter().map(|p| coordinate(p)).collect()),
+        unimodal_warning: false,
+        evaluated: distinct.iter().map(|p| coordinate(p)).collect(),
         vars: spec.dims.clone(),
         best_point: named(spec, &best.point),
         runner_up_point: runner_up.map(|r| named(spec, &r.point)),
@@ -1160,7 +1160,8 @@ mod tests {
         assert!(r.at_boundary);
         assert_eq!(r.evaluations, 9);
         assert_eq!(r.cost.runs, 36);
-        assert!(r.var.is_none() && r.best.is_none());
+        assert_eq!(r.var, "a");
+        assert_eq!(r.best, Num::Int(1));
         let json = serde_json::to_value(&r).unwrap();
         assert_eq!(json["vars"][1]["name"], "b");
         assert_eq!(json["evaluated_points"].as_array().unwrap().len(), 9);
