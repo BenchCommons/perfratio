@@ -164,7 +164,8 @@ the PR diff, not on `master`.
   shell. Metric values are finite but have no range check (for example `1e308`).
 - Recommendation: use `sync_channel` with a small bound and treat an unsolicited line as a
   protocol error. The trust warning and the environment note already exist.
-- State: open, in PR #403.
+- State: fixed (the reader reports over a channel, `recv_timeout` with the same deadline,
+  the group is killed on expiry; test with a background grandchild).
 
 ### L3. Valgrind adapter: binary chosen by an environment variable, unbounded profile read
 
@@ -201,7 +202,9 @@ the PR diff, not on `master`.
   `/usr/lib/x86_64-linux-gnu/`, `/usr/lib64/`, `/opt/rocm/lib/`) and fall back to the
   soname only with a warning. Refuse to load when running as root and the file is writable
   by group or other. Replace the `assert_eq!` with a compile-time assertion.
-- State: open, in PR #401.
+- State: partly fixed: the `assert_eq!` is now a handled `None` (backend degrades). `dlopen` by
+  soname stays; search order and the `LD_LIBRARY_PATH` risk are documented in
+  `docs/specs/gpu-energy.md`.
 
 ### L5. `--membw`: arithmetic on values read from sysfs and `numa_maps`
 
@@ -258,7 +261,7 @@ the PR diff, not on `master`.
   parsing. Content is validated after parsing (#27) and names are escaped (#24).
 - Recommendation: check `metadata.len()` against a limit (for example 256 MiB) with a clear
   message.
-- State: open (master), minor.
+- State: fixed (256 MiB limit, `MAX_IMPORT_BYTES`, clear error; also in `import_environment`).
 
 ### L9. `PERFRATIO_RUN_DIR`: directory created from the user-supplied artifact path
 
