@@ -642,15 +642,20 @@ pub fn build_command() -> Command {
             Arg::new("thermal")
                 .long("thermal")
                 .action(ArgAction::SetTrue)
-                .help("Sample the CPU temperature while the benchmark runs (Linux only; elsewhere \
-                       it warns and does nothing).")
+                .help(
+                    "Sample the CPU temperature (Linux) or the thermal pressure level (macOS) \
+                     while the benchmark runs (elsewhere it warns and does nothing).",
+                )
                 .long_help(
                     "Sample the hottest CPU temperature sensor (thermal zones and hwmon) on a \
                      background thread while the benchmark runs, and report it as \
                      'interference.thermal' and in the 'environment_stability' quality check. \
                      Off by default: on some hosts (cloud VMs) reading the sensors takes about a \
                      second and slows perfratio down. '--cooldown until-temp' reads the sensors \
-                     either way.",
+                     either way.\n\n\
+                     macOS has no CPU temperature without root: perfratio records the coarse \
+                     thermal pressure level (nominal, moderate, heavy, trapping, sleeping) as \
+                     'interference.thermal_pressure' instead. Windows: not supported yet.",
                 ),
         )
         .arg(
@@ -1812,8 +1817,12 @@ pub fn build_command() -> Command {
                        noisy or irreproducible, with a hint for each problem:\n\
                        Linux: CPU frequency governor, turbo boost, load average, power source, \
                        temperature.\n\
-                       macOS: load average, power source, Low Power Mode, thermal throttling.\n\
-                       Windows: power source, power plan, CPU load, CPU frequency limit.\n\n\
+                       macOS: load average, power source, Low Power Mode, thermal throttling, \
+                       thermal pressure.
+\
+                       Windows: power source, power plan, CPU load, CPU frequency limit.
+
+\
                        '--check-system' (or '=warn') only reports. '--check-system=strict' \
                        aborts with exit code 4 if any check does not pass, which is useful on \
                        dedicated benchmark machines and CI runners.\n\n\

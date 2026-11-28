@@ -353,12 +353,14 @@ pub struct UntilSettings {
     pub match_stderr: bool,
 }
 
-/// `--thermal` reads Linux sysfs sensors; on other systems it cannot sample.
+/// `--thermal` reads Linux sysfs sensors and the macOS thermal pressure level; on other
+/// systems it cannot sample.
 #[cfg(feature = "cli")]
-fn thermal_warning(requested: bool, linux: bool) -> Option<&'static str> {
-    (requested && !linux).then_some(
-        "'--thermal' reads Linux sysfs temperature sensors; on this platform no temperature \
-         is sampled and 'interference.thermal' is absent from the export.",
+fn thermal_warning(requested: bool, supported: bool) -> Option<&'static str> {
+    (requested && !supported).then_some(
+        "'--thermal' reads Linux sysfs temperature sensors and the macOS thermal pressure \
+         level; on this platform nothing is sampled and 'interference.thermal' and \
+         'interference.thermal_pressure' are absent from the export.",
     )
 }
 
@@ -1357,7 +1359,10 @@ impl Options {
             .get_one::<String>("fail-on-quality")
             .and_then(|value| crate::quality::Grade::parse(value));
         options.thermal = matches.get_flag("thermal");
-        if let Some(warning) = thermal_warning(options.thermal, cfg!(target_os = "linux")) {
+        if let Some(warning) = thermal_warning(
+            options.thermal,
+            cfg!(any(target_os = "linux", target_os = "macos")),
+        ) {
             eprintln!("Warning: {warning}");
         }
         options.cooldown = matches
@@ -2149,7 +2154,7 @@ mod thermal_warning_tests {
     use super::thermal_warning;
 
     #[test]
-    fn warns_only_when_requested_off_linux() {
+    fn warns_only_when_requested_where_unsupported() {
         assert!(thermal_warning(true, false).is_some());
         assert!(thermal_warning(true, true).is_none());
         assert!(thermal_warning(false, false).is_none());

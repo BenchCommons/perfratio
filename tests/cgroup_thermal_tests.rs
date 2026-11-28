@@ -231,3 +231,31 @@ fn invalid_cooldown_values_are_rejected() {
         .assert()
         .failure();
 }
+
+/// macOS has no CPU temperature without root: `--thermal` records the coarse
+/// thermal pressure level of the real host (#412,
+/// `docs/specs/thermal-macos-windows.md`). Needs the real executor: the mock
+/// one observes nothing without a fixture root, and a fixture has no level.
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_thermal_records_the_pressure_level() {
+    let out = tempfile::tempdir().unwrap();
+    let path = out.path().join("out.json");
+    perfratio()
+        .args(["--thermal", "--runs=2", "-N", "true", "--export-json"])
+        .arg(&path)
+        .assert()
+        .success();
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let interference = &json["results"][0]["interference"];
+    assert!(interference.get("thermal").is_none());
+    let pressure = &interference["thermal_pressure"];
+    let levels = ["nominal", "moderate", "heavy", "trapping", "sleeping"];
+    for key in ["start", "end", "max"] {
+        assert!(
+            levels.contains(&pressure[key].as_str().unwrap()),
+            "{key}: {pressure}"
+        );
+    }
+}
