@@ -286,6 +286,21 @@ fn run_command_and_measure_common(
     let open_counters = counting
         .then(|| crate::perf_counters::open_run(counters, topdown))
         .flatten();
+    // `--membw`: bandwidth counters around the run, numa_maps sampled while it runs.
+    // The one spawn observer slot belongs to `--region-scope` when that is on.
+    let membw_on = counting && crate::membw::enabled() && !crate::membw::is_mock();
+    let membw_before = membw_on.then(crate::membw::begin).flatten();
+    let numa_sampler = (membw_on
+        && scope_watcher.is_none()
+        && crate::membw::numa_unavailable().is_none())
+    .then(|| {
+        let slot = std::rc::Rc::new(std::cell::RefCell::new(None));
+        let target = std::rc::Rc::clone(&slot);
+        crate::timer::observe_spawn(move |child| {
+            *target.borrow_mut() = Some(crate::membw::Sampler::spawn(child.pid));
+        });
+        slot
+    });
     let measured = execute_and_measure(
         command,
         affinity,
@@ -325,6 +340,17 @@ fn run_command_and_measure_common(
     result.hw_counters = open_counters
         .map(|open| open.read())
         .filter(|_| !result.timed_out);
+    if membw_on {
+        let bytes = crate::membw::end(membw_before);
+        let node_bytes = numa_sampler
+            .and_then(|slot| slot.borrow_mut().take())
+            .and_then(|sampler| sampler.finish());
+        result.membw = (!result.timed_out).then_some(crate::membw::Run {
+            read_bytes: bytes.map(|b| b.0),
+            write_bytes: bytes.map(|b| b.1),
+            node_bytes,
+        });
+    }
 
     // If an interruption occurred while running the command, discard the run
     // regardless of whether the child exited 0 (e.g. child caught SIGINT and exited gracefully).
@@ -746,6 +772,8 @@ pub fn aggregate_batch(instances: Vec<BatchInstance>) -> (TimerResult, Vec<Insta
             .unwrap_or(0),
         counters,
         hw_counters: sum_hw_counters(&instances),
+        // system-wide counters of overlapping instances cannot be told apart
+        membw: None,
         status,
         captured: None,
         timed_out: instances.iter().any(|i| i.result.timed_out),
@@ -853,6 +881,7 @@ impl Executor for RawExecutor<'_> {
                 energy_joules: None,
                 counters: result.counters,
                 hw_counters: result.hw_counters,
+                membw: result.membw,
                 timed_out: result.timed_out,
                 custom_metrics: result.custom_metrics,
                 collector_metrics: result.collector_metrics,
@@ -1021,6 +1050,7 @@ impl Executor for ShellExecutor<'_> {
                 energy_joules: None,
                 counters: result.counters,
                 hw_counters: result.hw_counters,
+                membw: result.membw,
                 timed_out: result.timed_out,
                 custom_metrics: result.custom_metrics,
                 collector_metrics: result.collector_metrics,
@@ -1111,6 +1141,7 @@ impl Executor for ShellExecutor<'_> {
             energy_joules: None,
             counters: None,
             hw_counters: None,
+            membw: None,
             timed_out: false,
             custom_metrics: std::collections::BTreeMap::new(),
             collector_metrics: std::collections::BTreeMap::new(),
@@ -1154,6 +1185,8 @@ pub struct MockExecutor {
     /// `--region-scope`: metrics simulated inside each region
     scoped: Vec<String>,
     validation: Option<crate::validation::ValidationConfig>,
+    /// `--persistent`: simulate a program that warms up over its first iterations
+    persistent: bool,
 }
 
 impl MockExecutor {
@@ -1167,7 +1200,15 @@ impl MockExecutor {
             regions: Vec::new(),
             scoped: Vec::new(),
             validation: None,
+            persistent: false,
         }
+    }
+
+    /// Simulate `--persistent`: the first measured iterations take 4, 2 and 1.5 times as long
+    /// (every `--warmup` iteration 4 times), so the warm-up detection has a known answer.
+    pub fn with_persistent(mut self, persistent: bool) -> Self {
+        self.persistent = persistent;
+        self
     }
 
     /// Simulate `--region-scope`: inside a region the CPU time is 60% user and 20% system
@@ -1314,6 +1355,15 @@ impl Executor for MockExecutor {
         let timed_out = self.timeout.is_some_and(|t| requested > t.as_secs_f64());
         let time_real = if timed_out {
             self.timeout.unwrap().as_secs_f64()
+        } else if self.persistent {
+            requested
+                * match iteration {
+                    BenchmarkIteration::Warmup(_) => 4.0,
+                    BenchmarkIteration::Benchmark(0) => 4.0,
+                    BenchmarkIteration::Benchmark(1) => 2.0,
+                    BenchmarkIteration::Benchmark(2) => 1.5,
+                    _ => 1.0,
+                }
         } else {
             requested
         };
@@ -1354,6 +1404,8 @@ impl Executor for MockExecutor {
                         reading
                     })
                     .filter(|_| !timed_out),
+                membw: (crate::membw::enabled() && !timed_out)
+                    .then(|| crate::membw::mock_run(time_real)),
                 timed_out,
                 collector_metrics: std::collections::BTreeMap::new(),
                 custom_metrics: self
@@ -1379,7 +1431,7 @@ impl Executor for MockExecutor {
                         .chain(scoped)
                     })
                     .collect(),
-                region_sdk: None,
+                region_sdk: self.persistent.then(|| "mock/1.0.0".to_string()),
                 instances,
                 leftover_processes: false,
                 stdout: self
@@ -1488,6 +1540,7 @@ mod batch_tests {
                 memory_usage_byte: memory,
                 counters: None,
                 hw_counters: None,
+                membw: None,
                 status: status(code),
                 captured: None,
                 timed_out: false,

@@ -197,6 +197,9 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR VAR
 .IR MIN
 .IR MAX ]
+.RB [ \-\-optimize\-algorithm
+.IR ALGORITHM ]
+.RB [ \-\-optimize\-validate ]
 .RB [ \-\-optimize\-budget
 .IR N ]
 .RB [ \-\-optimize\-confirm
@@ -489,6 +492,14 @@ Fit O(1), O(log n), O(n), O(n log n), O(n^2) and O(n^3) by least squares to the 
 .IP
 Search the parameter VAR in MIN..MAX (integers, or fractional values in steps of \fB\-D\fR) for the value that minimizes the primary metric (see \fB\-\-metric\fR) instead of benchmarking every value. Replaces '{VAR}' in the command by the current value. Uses a golden-section search and assumes that the metric is unimodal in VAR; perfratio warns if the evaluated points suggest otherwise. Other parameters are combined with the search: one search runs per combination.
 .HP
+\fB\-\-optimize\-algorithm\fR \fIALGORITHM\fP
+.IP
+Search algorithm of \fB\-\-optimize\fR: golden (default for one variable), random, halving (successive halving: the best third of the points get three times as many runs, until two are left) or bayes (Gaussian process, expected improvement). Give \fB\-\-optimize\fR several times to search several integer variables; random is then the default. Random choices follow \fB\-\-seed\fR.
+.HP
+\fB\-\-optimize\-validate\fR
+.IP
+After a random, halving or bayes search, benchmark the winner and the runner-up again in a fresh round and report whether the winner holds up (confirmed, refuted or inconclusive) and how far its value drifted.
+.HP
 \fB\-\-optimize\-budget\fR \fIN\fP
 .IP
 Maximum number of distinct parameter values \fB\-\-optimize\fR evaluates (at least 3, default 12). A range that fits into the budget is evaluated completely.
@@ -560,6 +571,8 @@ Exit with code 5 if the quality grade of any benchmark is worse than GRADE (comp
 \fB\-\-thermal\fR
 .IP
 Sample the hottest CPU temperature sensor (Linux thermal zones and hwmon) on a background thread while the benchmark runs, and report it as interference.thermal and in the environment_stability quality check. Off by default: on some hosts (cloud VMs) reading the sensors takes about a second. \fB\-\-cooldown\fR until\-temp reads the sensors either way.
+.IP
+macOS has no CPU temperature without root: perfratio records the coarse thermal pressure level (nominal, moderate, heavy, trapping, sleeping) as interference.thermal_pressure instead. Windows: not supported yet.
 .HP
 \fB\-\-cooldown\fR \fIDURATION|until\-temp=C\fP
 .IP
@@ -727,6 +740,10 @@ Match the pattern specified by \fB\-\-until\fR against stderr instead of stdout.
 .IP
 Measure only the region(s) the program brackets with the perfratio region SDK (see \fBsdk/\fR and \fBdocs/specs/region-protocol.md\fR). Without NAME the region \fBdefault\fR is measured. Can be given several times. perfratio passes the path of an event file in \fBPERFRATIO_REGION_FILE\fR and the protocol version in \fBPERFRATIO_REGION_PROTOCOL\fR; the SDK appends start and stop events with monotonic timestamps. The JSON export lists \fBregions\fR next to the whole-process times and \fB\-\-metric region:\fINAME\fR\fR ranks on one. CPU time, memory, counters and energy still cover the whole process. A command that reports no region fails. Conflicts with \fB\-\-concurrency\fR and \fB\-\-subtract\fR.
 .HP
+\fB\-\-persistent\fR
+.IP
+Start every command once and drive the runs as iterations of that one process through the persistent protocol (see \fBsdk/\fR and \fBdocs/specs/persistent-mode.md\fR). The program times each iteration itself, so JIT runtimes reach steady state and services can be measured. The JSON export gains \fBmode: persistent\fR and \fBiterations\fR with the detected warm\-up phase and the steady\-state statistics. The command runs without a shell. CPU time and memory are not collected. Use \fB\-w 0\fR and many runs to see the warm\-up. Conflicts with \fB\-\-concurrency\fR, \fB\-\-jobs\fR, \fB\-\-region\fR, \fB\-\-until\fR, \fB\-\-subtract\fR, \fB\-\-energy\fR and the counter options.
+.HP
 \fB\-\-region\-scope\fR
 .IP
 With \fB\-\-region\fR: also report the CPU time, the energy (with \fB\-\-energy\fR) and the hardware counters (with \fB\-\-counters\fR, Linux) spent inside each region, as \fBregions[].metrics[]\fR with scope \fBregion\fR. perfratio reads them when the SDK reports the start and the stop (the SDK writes every marker at once when \fBPERFRATIO_REGION_LIVE\fR is 1), so a thread of perfratio polls while the program runs; the error is bounded by the marker latency (see \fBdocs/specs/region-scope.md\fR). Whole-process values are unchanged. Needs \fB\-\-region\fR or \fB\-\-metric region:\fINAME\fR. Conflicts with \fB\-\-concurrency\fR and \fB\-\-subtract\fR.
@@ -857,7 +874,7 @@ Pin every benchmarked command (and \fB\-\-prepare\fR/\fB\-\-conclude\fR/\fB\-\-s
 .HP
 \fB\-\-check\-system\fR\fI[=MODE]\fP
 .IP
-Before benchmarking, report system conditions that make results noisy or irreproducible, with a hint for each problem. Linux: CPU frequency governor, turbo boost, load average, power source, temperature. macOS: load average, power source, Low Power Mode, thermal throttling. \fB\-\-check\-system\fR (or =warn) only reports. \fB\-\-check\-system\fR=strict aborts with exit code 4 if any check does not pass, which is useful on dedicated benchmark machines and CI runners.
+Before benchmarking, report system conditions that make results noisy or irreproducible, with a hint for each problem. Linux: CPU frequency governor, turbo boost, load average, power source, temperature. macOS: load average, power source, Low Power Mode, thermal throttling, thermal pressure. \fB\-\-check\-system\fR (or =warn) only reports. \fB\-\-check\-system\fR=strict aborts with exit code 4 if any check does not pass, which is useful on dedicated benchmark machines and CI runners.
 .HP
 \fB\-\-priority\fR \fIPOLICY\fP
 .IP
@@ -886,6 +903,9 @@ Collect Top\-down Microarchitecture Analysis level 1 per run (Linux x86_64): the
 .IP
 Collect a floating\-point scalar/vector breakdown per run (Linux, x86_64): retired scalar, 128\-, 256\- and 512\-bit packed floating\-point arithmetic and the vectorization ratio ('simd' and 'simd_summary' in JSON, one terminal block). Intel counts instructions, AMD Zen 4/5 counts uops, so compare ratios only within one vendor. Integer SIMD is not counted. Works with or without \fB\-\-counters\fR and honors \fB\-\-scope\fR (except split). Unsupported CPUs (including AArch64), hybrid Intel CPUs, VMs without a PMU, permissions and other platforms give one warning and status 'unavailable' in perfratio.measurements.simd.
 .HP
+\fB\-\-membw\fR
+.IP
+Measure memory bandwidth and NUMA placement per run (Linux). Bandwidth is the bytes read and written through the memory controllers (Intel uncore_imc PMUs, 'membw' and 'membw_summary' in JSON); the counters are system wide, so other activity on the machine is included. NUMA placement is the largest sample of resident bytes per node from /proc/<pid>/numa_maps ('numa' in JSON); use \fB\-N\fR or \fB\-\-shell=none\fR to sample the command instead of the shell. The NUMA topology is always in perfratio.environment.numa_topology. Bandwidth needs bare metal and kernel.perf_event_paranoid <= 0 or CAP_PERFMON; VMs, Arm, AMD (Data Fabric events are not mapped) and other platforms give one warning and status 'unavailable' in perfratio.measurements.membw, and NUMA sampling still works where /proc/<pid>/numa_maps exists.
 \fB\-\-roofline\fR
 .IP
 Place every command on the roofline (Linux, x86_64): arithmetic intensity (FLOP per byte), GFLOP/s and GB/s, and whether the run is memory\- or compute\-bound. Enables \fB\-\-simd\fR and cache\-misses. FLOPs come from the \fB\-\-simd\fR counts; the bytes are last\-level cache misses times 64, a lower bound of the real traffic (it misses prefetches and write\-backs), so the intensity is an upper bound. Exported as 'roofline' in the JSON file. See \fBdocs/specs/roofline.md\fR.

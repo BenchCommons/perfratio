@@ -73,6 +73,10 @@ pub enum Group {
     Counters,
     Topdown,
     Simd,
+    /// `--membw` bandwidth
+    Membw,
+    /// `--membw` NUMA placement
+    Numa,
     /// Only listed when some result carries one of its fields
     Concurrency,
 }
@@ -439,6 +443,46 @@ pub const REGISTRY: &[Spec] = &[
         &["simd", "simd_summary", "simd_scaling"],
     ),
     spec(
+        "membw.read",
+        "bytes/s",
+        Neutral,
+        Scope::System,
+        "linux.uncore_imc",
+        Measured,
+        Membw,
+        &["membw", "membw_summary"],
+    ),
+    spec(
+        "membw.write",
+        "bytes/s",
+        Neutral,
+        Scope::System,
+        "linux.uncore_imc",
+        Measured,
+        Membw,
+        &["membw", "membw_summary"],
+    ),
+    spec(
+        "membw.total",
+        "bytes/s",
+        Neutral,
+        Scope::System,
+        "linux.uncore_imc",
+        Measured,
+        Membw,
+        &["membw", "membw_summary"],
+    ),
+    spec(
+        "numa.node_bytes",
+        "bytes",
+        Neutral,
+        Scope::Process,
+        "linux.numa_maps",
+        Measured,
+        Numa,
+        &["numa"],
+    ),
+    spec(
         "batch.throughput",
         "runs/s",
         HigherIsBetter,
@@ -466,6 +510,8 @@ pub const REGISTRY: &[Spec] = &[
 /// `$defs/result` in the JSON Schema.
 pub const NON_METRIC_FIELDS: &[&str] = &[
     "command",
+    "mode",
+    "iterations",
     "command_with_unused_parameters",
     "parameters",
     "per_run_parameters",
@@ -578,6 +624,8 @@ fn group_status(group: Group, m: &Measurements) -> (MeasurementStatus, Option<&'
         Counters => (m.counters, m.counters_unavailable_reason),
         Topdown => (m.topdown, m.topdown_unavailable_reason),
         Simd => (m.simd, m.simd_unavailable_reason),
+        Membw => (m.membw, m.membw_unavailable_reason),
+        Numa => (m.numa, m.numa_unavailable_reason),
         Concurrency => (MeasurementStatus::Measured, None),
     }
 }

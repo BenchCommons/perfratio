@@ -152,6 +152,17 @@ pub struct Measurements {
     /// requested (a run that did not report a region shows as `null` in
     /// `results[].regions[]`), otherwise `not_requested`
     pub region: MeasurementStatus,
+    /// `--membw` memory bandwidth (new in 1.47)
+    pub membw: MeasurementStatus,
+    /// Why `membw` is `unavailable`: `unsupported_platform`, `no_uncore_imc`,
+    /// `amd_df_unsupported`, `perf_paranoid` or `other` (open enum)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub membw_unavailable_reason: Option<&'static str>,
+    /// `--membw` NUMA placement from `numa_maps` (new in 1.47)
+    pub numa: MeasurementStatus,
+    /// Why `numa` is `unavailable`: `unsupported_platform` or `no_numa_maps` (open enum)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub numa_unavailable_reason: Option<&'static str>,
 }
 
 impl Measurements {
@@ -185,7 +196,41 @@ impl Measurements {
             simd: NotRequested,
             simd_unavailable_reason: None,
             region: NotRequested,
+            membw: NotRequested,
+            membw_unavailable_reason: None,
+            numa: NotRequested,
+            numa_unavailable_reason: None,
         }
+    }
+
+    /// Records the outcome of `--membw` (`false`: not requested). `blocked` is why no run can
+    /// be read (`region_scope`, `concurrency`): both sources are then `unavailable`.
+    pub fn with_membw(mut self, requested: bool, blocked: Option<&'static str>) -> Self {
+        if !requested {
+            return self;
+        }
+        if let Some(reason) = blocked {
+            self.membw = MeasurementStatus::Unavailable;
+            self.membw_unavailable_reason = Some(reason);
+            self.numa = MeasurementStatus::Unavailable;
+            self.numa_unavailable_reason = Some(reason);
+            return self;
+        }
+        match crate::membw::unavailable() {
+            None => self.membw = MeasurementStatus::Measured,
+            Some(reason) => {
+                self.membw = MeasurementStatus::Unavailable;
+                self.membw_unavailable_reason = Some(reason.as_str());
+            }
+        }
+        match crate::membw::numa_unavailable().filter(|_| !crate::membw::is_mock()) {
+            None => self.numa = MeasurementStatus::Measured,
+            Some(reason) => {
+                self.numa = MeasurementStatus::Unavailable;
+                self.numa_unavailable_reason = Some(reason);
+            }
+        }
+        self
     }
 
     /// Records `--region` (`true`: requested).
@@ -623,6 +668,22 @@ mod tests {
         let m = Measurements::new(Some(Err(crate::energy::Unavailable::RaplUnreadable)), false);
         assert_eq!(m.energy, Unavailable);
         assert_eq!(m.energy_unavailable_reason, Some("rapl_unreadable"));
+    }
+
+    #[test]
+    fn membw_blocked_by_the_run_mode_is_unavailable_with_a_reason() {
+        use MeasurementStatus::*;
+        let m = Measurements::new(None, false).with_membw(true, Some("concurrency"));
+        assert_eq!(
+            (m.membw, m.membw_unavailable_reason),
+            (Unavailable, Some("concurrency"))
+        );
+        assert_eq!(
+            (m.numa, m.numa_unavailable_reason),
+            (Unavailable, Some("concurrency"))
+        );
+        let m = Measurements::new(None, false).with_membw(false, Some("concurrency"));
+        assert_eq!((m.membw, m.numa), (NotRequested, NotRequested));
     }
 
     #[test]
