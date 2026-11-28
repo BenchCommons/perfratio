@@ -513,6 +513,7 @@ pub const DYNAMIC_FIELDS: &[&str] = &[
     "custom_metrics",
     "custom_metrics_summary",
     "energy_domains_joules",
+    "gpu_utilization_percent",
     "regions",
 ];
 

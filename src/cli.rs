@@ -811,6 +811,17 @@ pub fn build_command() -> Command {
                        is the package energy and the other domains must not be added to it."),
         )
         .arg(
+            Arg::new("gpu")
+                .long("gpu")
+                .action(ArgAction::SetTrue)
+                .requires("energy")
+                .help("Also record GPU energy and utilization: NVIDIA (NVML) and AMD (AMD SMI), \
+                       loaded at run time. Energy is reported per device as 'gpu:<index>' in \
+                       'energy_domains_joules' and does not enter the host total; utilization \
+                       (percent, sampled at the end of each run) as 'gpu_utilization_percent'. \
+                       Without a driver library a warning is printed and the run goes on."),
+        )
+        .arg(
             Arg::new("energy-backend")
                 .long("energy-backend")
                 .value_name("BACKEND")

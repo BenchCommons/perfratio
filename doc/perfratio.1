@@ -218,6 +218,7 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .RB [ \-\-energy\-baseline
 .IR DURATION ]
 .RB [ \-\-energy\-domains ]
+.RB [ \-\-gpu ]
 .RB [ \-\-energy\-backend
 .IR BACKEND ]
 .RB [ \-\-metric
@@ -601,6 +602,10 @@ Measure idle power for DURATION (e.g. 2s) before benchmarking and also report ne
 \fB\-\-energy\-domains\fR
 .IP
 Also report energy per RAPL domain (package, core, uncore, dram, psys) where the hardware exposes them. The domains overlap: the total energy is the package energy and the other domains must not be added to it.
+.HP
+\fB\-\-gpu\fR
+.IP
+Also record GPU energy and utilization (requires \fB\-\-energy\fR): NVIDIA through NVML and AMD through AMD SMI, loaded at run time. Energy is reported per device as gpu:<index> in energy_domains_joules and is not added to the host total; utilization (percent, sampled when each run ends) as gpu_utilization_percent. Without a driver library a warning is printed and the run continues. Not validated on hardware.
 .HP
 \fB\-\-energy\-backend\fR \fIBACKEND\fP
 .IP

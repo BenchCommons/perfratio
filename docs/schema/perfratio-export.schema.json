@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.41 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.42 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.41",
+      "const": "1.42",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -253,6 +253,27 @@
         "energy_backend": {
           "type": "string",
           "description": "Backend that produced the energy samples. Open enum: sysfs_powercap, perf_pmu, ioreport, windows_emi."
+        },
+        "gpu": {
+          "type": "object",
+          "description": "New in 1.42 (#380): what --gpu found. Present only with --gpu.",
+          "properties": {
+            "backends": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Open enum: nvml, amd_smi."
+            },
+            "devices": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Devices across all backends, numbered gpu:0, gpu:1, ..."
+            },
+            "unavailable_reason": {
+              "type": "string",
+              "description": "Open enum: gpu_library_not_found, gpu_init_failed, gpu_no_devices, unsupported_platform."
+            }
+          },
+          "required": ["backends", "devices"]
         },
         "region_protocol": {
           "type": "integer",
@@ -1469,7 +1490,15 @@
               "type": "number"
             }
           },
-          "description": "Joules per RAPL domain and run (keys package, core, uncore, dram, psys). Domains overlap and are not additive."
+          "description": "Joules per domain and run. RAPL keys (package, core, uncore, dram, psys) overlap and are not additive. From 1.42 (#380), --gpu adds keys gpu:<index>, the energy of one GPU, which is not part of the RAPL package total and does not overlap with it."
+        },
+        "gpu_utilization_percent": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "number", "minimum": 0, "maximum": 100 }
+          },
+          "description": "New in 1.42 (#380): graphics-engine utilization in percent per GPU (key gpu:<index>) and run, read when the run ends (driver sample window, not exactly the run). Present only with --gpu when every run has it."
         },
         "custom_metrics": {
           "type": "object",

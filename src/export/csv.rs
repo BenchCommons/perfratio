@@ -317,6 +317,7 @@ fn test_csv() {
             idle_watts: None,
             mean_net_energy_joules: None,
             energy_domains_joules: None,
+            gpu_utilization_percent: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: {
                 let mut params = BTreeMap::new();
@@ -367,6 +368,7 @@ fn test_csv() {
             idle_watts: None,
             mean_net_energy_joules: None,
             energy_domains_joules: None,
+            gpu_utilization_percent: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: {
                 let mut params = BTreeMap::new();
@@ -444,6 +446,7 @@ fn test_csv_formula_injection_sanitization() {
         idle_watts: None,
         mean_net_energy_joules: None,
         energy_domains_joules: None,
+        gpu_utilization_percent: None,
         exit_codes: vec![Some(0)],
         parameters: {
             let mut params = BTreeMap::new();
@@ -555,6 +558,7 @@ fn test_csv_with_reference_command() {
             idle_watts: None,
             mean_net_energy_joules: None,
             energy_domains_joules: None,
+            gpu_utilization_percent: None,
             exit_codes: vec![Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
@@ -600,6 +604,7 @@ fn test_csv_with_reference_command() {
             idle_watts: None,
             mean_net_energy_joules: None,
             energy_domains_joules: None,
+            gpu_utilization_percent: None,
             exit_codes: vec![Some(0)],
             parameters: {
                 let mut params = BTreeMap::new();
@@ -677,6 +682,7 @@ fn test_csv_heterogeneous_parameters() {
             idle_watts: None,
             mean_net_energy_joules: None,
             energy_domains_joules: None,
+            gpu_utilization_percent: None,
             exit_codes: vec![Some(0)],
             parameters: {
                 let mut params = BTreeMap::new();
@@ -726,6 +732,7 @@ fn test_csv_heterogeneous_parameters() {
             idle_watts: None,
             mean_net_energy_joules: None,
             energy_domains_joules: None,
+            gpu_utilization_percent: None,
             exit_codes: vec![Some(0)],
             parameters: {
                 let mut params = BTreeMap::new();

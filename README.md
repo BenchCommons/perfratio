@@ -135,6 +135,8 @@ off by default so that `--energy` does not add a delay; `--energy-baseline 2s` i
 when you compare commands of different duration.
 `--metric energy` ranks by energy and turns on `--energy`.
 
+`--gpu` (with `--energy`) also records NVIDIA (NVML) and AMD (AMD SMI) GPU energy as `gpu:<index>` domains and the GPU utilization. The vendor libraries are loaded at run time; without them perfratio warns and goes on. The GPU joules are not added to the host total ([spec](docs/specs/gpu-energy.md); not yet validated on GPU hardware).
+
 `--energy-domains` adds a per-run breakdown (`package`, `core`, `uncore`, `dram`, `psys`) to the
 console and to `energy_domains_joules` in the JSON export. The domains overlap, so the total stays
 the package energy ([spec](docs/specs/rapl-domains.md)). If `energy_uj` is root-only, give your user
@@ -197,7 +199,7 @@ Every benchmark also gets a measurement quality report (`results[].quality` in t
 
 `--export-json <FILE>` (or `-e results.json`) writes the summary statistics and every run's
 timings. perfratio owns this output, and consumers such as `tools-benchmark` read it.
-The current version is `"1.41"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested.
+The current version is `"1.42"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested.
 
 The contract is a top-level `"schemaVersion": "MAJOR.MINOR"` string. Consumers must ignore
 unknown keys and accept any MINOR version of the MAJOR version they support. A removed or
