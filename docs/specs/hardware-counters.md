@@ -64,7 +64,8 @@ Nothing exists for hardware counters.
 - `--counters` without a value uses the default list. It needs `require_equals`
   (`--counters=cycles`) or a trailing position so it does not swallow the command; implementer
   must verify clap behaviour and pick one form.
-- Non-Linux targets: error `hardware counters are only supported on Linux`.
+- Non-Linux targets: no error, one warning and `unavailable` (see Implementation notes). macOS
+  reads `instructions` and `cycles` with `-N` only: `counters-macos-windows.md` (#411).
 - Compatible with `--energy`, `--resource-usage`, `--schedule round-robin`.
 - Interaction with #48: once `--metric` exists, `instructions` and `cycles` become valid metric
   names. Until then `--counters` is report-only.

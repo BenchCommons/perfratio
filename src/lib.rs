@@ -79,11 +79,15 @@ pub mod environment_watch;
 #[doc(hidden)]
 pub mod error;
 #[doc(hidden)]
+pub mod evidence;
+#[doc(hidden)]
 pub mod export;
 #[doc(hidden)]
 pub mod frequency;
 #[doc(hidden)]
 pub mod import;
+#[doc(hidden)]
+pub mod mcp;
 #[doc(hidden)]
 pub mod metric;
 #[doc(hidden)]
@@ -106,6 +110,8 @@ pub mod perf_counters;
 #[doc(hidden)]
 pub mod pmu;
 #[doc(hidden)]
+pub mod pmu_events;
+#[doc(hidden)]
 pub mod pmu_scaling;
 #[doc(hidden)]
 pub mod quality;
@@ -113,6 +119,8 @@ pub mod quality;
 pub mod region;
 /// Region-scoped CPU time, energy and counters.
 pub mod region_scope;
+#[doc(hidden)]
+pub mod roofline;
 #[doc(hidden)]
 pub mod run_id;
 #[doc(hidden)]
@@ -133,3 +141,5 @@ pub mod topdown;
 pub mod util;
 #[doc(hidden)]
 pub mod validation;
+#[doc(hidden)]
+pub mod verdict;

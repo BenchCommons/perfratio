@@ -157,3 +157,57 @@ mod tests {
         assert!(relative_half_width(&[9.0, 11.0, 9.0, 11.0], 0.99).unwrap() > w);
     }
 }
+
+#[cfg(test)]
+mod two_metric_coverage {
+    use super::*;
+    use rand::{rngs::StdRng, Rng, SeedableRng};
+
+    /// Box-Muller standard normal
+    fn normal(rng: &mut StdRng) -> f64 {
+        let (u, v): (f64, f64) = (rng.gen_range(1e-12..1.0), rng.gen());
+        (-2.0 * u.ln()).sqrt() * (std::f64::consts::TAU * v).cos()
+    }
+
+    /// `--target-precision-metrics wall,energy` with the confidence sequence:
+    /// stop when both metrics reach 2%; each mean must be inside its own
+    /// interval at the stop in at least the nominal share of the simulations
+    /// (the sequence is valid at any stopping time, so also for this one).
+    #[test]
+    fn both_metrics_keep_their_coverage_at_the_joint_stop() {
+        let (target, confidence, sims) = (0.02, 0.95, 400);
+        // (mean, sd) of wall time and of energy (noisier)
+        let params = [(1.0_f64, 0.10_f64), (5.0, 0.35)];
+        let mut rng = StdRng::seed_from_u64(369);
+        let mut covered = [0usize; 2];
+        for _ in 0..sims {
+            let mut xs: [Vec<f64>; 2] = [vec![], vec![]];
+            let widths = loop {
+                for (k, &(m, sd)) in params.iter().enumerate() {
+                    xs[k].push(m + sd * normal(&mut rng));
+                }
+                if xs[0].len() < 10 {
+                    continue;
+                }
+                let w: Vec<Option<f64>> = xs
+                    .iter()
+                    .map(|x| relative_half_width(x, confidence))
+                    .collect();
+                if w.iter().all(|w| w.is_some_and(|w| w <= target)) {
+                    break w;
+                }
+            };
+            for k in 0..2 {
+                let n = xs[k].len() as f64;
+                let mean = xs[k].iter().sum::<f64>() / n;
+                if (mean - params[k].0).abs() <= widths[k].unwrap() * mean {
+                    covered[k] += 1;
+                }
+            }
+        }
+        for c in covered {
+            let rate = c as f64 / sims as f64;
+            assert!(rate >= 0.95 - 0.03, "coverage {rate}");
+        }
+    }
+}

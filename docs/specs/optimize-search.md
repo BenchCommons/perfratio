@@ -1,6 +1,6 @@
 # Spec: Multi-dimensional and Bayesian parameter search for `--optimize` (#385)
 
-**Issue:** #385. **Status:** implemented. **Schema:** additive, `schemaVersion` 1.37.
+**Issue:** #385. **Status:** implemented. **Schema:** additive, `schemaVersion` 1.45.
 Extends `optimize.md` (#98). Parent: #303. Related: #297, #336.
 
 ## Problem / Motivation
@@ -95,7 +95,7 @@ Validation in a fresh round: confirmed (wall 1.00 s, +0.2% from the search, p=0.
 ```
 At most 10 points are listed.
 
-### JSON (schemaVersion 1.37, additive)
+### JSON (schemaVersion 1.45, additive)
 The `optimize` object keeps its fields. New: `vars`, `best_point`, `runner_up_point`,
 `evaluated_points`, `seed`, `cost`, `validation`; new `algorithm` values `random`,
 `successive-halving`, `bayesian`. The one-variable fields (`var`, `min`, `max`, `best`,
@@ -103,12 +103,11 @@ The `optimize` object keeps its fields. New: `vars`, `best_point`, `runner_up_po
 `unimodal_warning` is not written by the new algorithms (it needs a one-dimensional curve).
 This is MINOR: no existing file changes, and a consumer that handles the golden-section output
 keeps working. A consumer of the new searches reads `best_point`, which is present for every
-search of 1.37 (golden-section keeps writing `best`).
+search of 1.45 (golden-section keeps writing `best`).
 `docs/schema/perfratio-export.schema.json` makes `var`, `min`, `max`, `best`, `evaluated` and
 `unimodal_warning` optional; see `output-schema-contract.md`.
 
-**Version note:** the open pull requests #393 to #400 also use 1.37. Whichever merges second
-must rebase and take the next free version; this change adds no field that depends on the others.
+**Version note:** 1.45 is the version reserved for this change in the merge order of the schema PRs (#402=1.43, #403=1.44, #405=1.45); this change adds no field that depends on the others.
 
 ## Edge cases
 - Budget larger than the grid: exhaustive. A grid of one point: that point.
