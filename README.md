@@ -127,7 +127,7 @@ Benchmark 1: sleep 0.1
   Energy:             RAPL unprivileged/unavailable on host
 ```
 
-`--energy-backend <auto|sysfs|perf|ioreport|emi>` (or `PERFRATIO_ENERGY_BACKEND`) picks the source (`ioreport` on macOS, `emi` on Windows; `auto` picks the native one). On Linux:
+`--energy-backend <auto|sysfs|perf|ioreport|emi|meter>` (or `PERFRATIO_ENERGY_BACKEND`) picks the source (`ioreport` on macOS, `emi` on Windows; `auto` picks the native one). On Linux:
 `auto`, the default, uses sysfs powercap and falls back to the perf power PMU
 (`power/energy-pkg`) when `energy_uj` is unreadable. `--energy-baseline <DURATION>` measures
 idle power first and also reports net energy (measured minus idle power times run time). It is
@@ -135,6 +135,7 @@ off by default so that `--energy` does not add a delay; `--energy-baseline 2s` i
 when you compare commands of different duration.
 `--metric energy` ranks by energy and turns on `--energy`.
 
+`--power-meter <COMMAND>` reads an external meter (smart plug, bench instrument) instead of RAPL: the command prints the power (`12.5 W`) or, with `--power-meter-mode counter`, a cumulative energy (`2.4 Wh`). The value is what the meter sees, usually the whole machine. `--energy-attribution cpu-time|cgroup` adds an *estimated* energy for the command or its container, from its CPU-time share of the host; it is labelled `kind: "estimated"` in the JSON and never replaces the measurement. See [docs/specs/energy-attribution-and-power-meter.md](docs/specs/energy-attribution-and-power-meter.md).
 `--gpu` (with `--energy`) also records NVIDIA (NVML) and AMD (AMD SMI) GPU energy as `gpu:<index>` domains and the GPU utilization. The vendor libraries are loaded at run time; without them perfratio warns and goes on. The GPU joules are not added to the host total ([spec](docs/specs/gpu-energy.md); not yet validated on GPU hardware).
 
 `--energy-domains` adds a per-run breakdown (`package`, `core`, `uncore`, `dram`, `psys`) to the
@@ -199,7 +200,7 @@ Every benchmark also gets a measurement quality report (`results[].quality` in t
 
 `--export-json <FILE>` (or `-e results.json`) writes the summary statistics and every run's
 timings. perfratio owns this output, and consumers such as `tools-benchmark` read it.
-The current version is `"1.42"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested.
+The current version is `"1.43"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested.
 
 The contract is a top-level `"schemaVersion": "MAJOR.MINOR"` string. Consumers must ignore
 unknown keys and accept any MINOR version of the MAJOR version they support. A removed or

@@ -825,13 +825,62 @@ pub fn build_command() -> Command {
             Arg::new("energy-backend")
                 .long("energy-backend")
                 .value_name("BACKEND")
-                .value_parser(["auto", "sysfs", "perf", "ioreport", "emi"])
+                .value_parser(["auto", "sysfs", "perf", "ioreport", "emi", "meter"])
                 .help(
                     "Energy backend for '--energy': 'auto' (default) picks the native source: \
                      on Linux sysfs powercap, falling back to the perf power PMU when energy_uj \
                      is unreadable; on macOS (Apple Silicon) IOReport; on Windows the Energy \
                      Meter Interface. 'sysfs', 'perf', 'ioreport' and 'emi' force one (only on \
-                     its own OS). Can also be set with PERFRATIO_ENERGY_BACKEND.",
+                     its own OS). 'meter' reads an external power meter (see '--power-meter'). \
+                     Can also be set with PERFRATIO_ENERGY_BACKEND.",
+                ),
+        )
+        .arg(
+            Arg::new("power-meter")
+                .long("power-meter")
+                .value_name("COMMAND")
+                .help(
+                    "Measure energy with an external power meter (wall plug, smart plug, bench \
+                     instrument) instead of RAPL: COMMAND runs through the shell and prints one \
+                     number, the power (e.g. '12.5', '12.5 W', '800 mW') or, with \
+                     '--power-meter-mode counter', a cumulative energy ('2.4 Wh', '8640 J'). \
+                     Needs '--energy'. The value covers the whole machine behind the meter, not \
+                     one process. The command is never exported.",
+                ),
+        )
+        .arg(
+            Arg::new("power-meter-mode")
+                .long("power-meter-mode")
+                .value_name("MODE")
+                .value_parser(["power", "counter"])
+                .requires("power-meter")
+                .help(
+                    "What '--power-meter' prints: 'power' (default, instantaneous Watts, \
+                     integrated over each run) or 'counter' (cumulative energy, read before \
+                     and after each run).",
+                ),
+        )
+        .arg(
+            Arg::new("power-meter-interval")
+                .long("power-meter-interval")
+                .value_name("DURATION")
+                .requires("power-meter")
+                .help(
+                    "How often the power meter command runs in 'power' mode (default: 500ms). \
+                     Runs shorter than the interval get the last reading held over them.",
+                ),
+        )
+        .arg(
+            Arg::new("energy-attribution")
+                .long("energy-attribution")
+                .value_name("MODEL")
+                .value_parser(["cpu-time", "cgroup"])
+                .help(
+                    "Also report an ESTIMATE of the energy of the command (or of the container) \
+                     next to the measured energy, by splitting each run's energy by a CPU-time \
+                     share: 'cpu-time' = command CPU time / busy CPU time of the host (needs \
+                     /proc/stat, Linux); 'cgroup' = CPU time of the own cgroup / busy CPU time \
+                     of the host. The measured energy stays the primary value. Needs '--energy'.",
                 ),
         )
         .arg(
