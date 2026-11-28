@@ -37,7 +37,7 @@ perfratio sets `PERFRATIO_PERSISTENT_PROTOCOL=1` and `PERFRATIO_REGION_PROTOCOL=
 | Request | Meaning |
 |---|---|
 | `run <n>` | Run iteration `n` (0, 1, 2, ... including warm-up) and answer. |
-| `quit` | Exit. Closing stdin has the same meaning. | After `quit`, perfratio waits up to 2 s; whether the program exits by itself or not, its process group (grandchildren) is then killed (Unix).
+| `quit` | Exit. Closing stdin has the same meaning. After `quit`, perfratio waits up to 2 s; whether the program exits by itself or not, its process group (grandchildren) is then killed (Unix). |
 
 The program answers on **stdout**. Only lines that start with `@perfratio ` belong to the
 protocol; every other line is the program's own output and is ignored. After the prefix the

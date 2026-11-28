@@ -320,6 +320,12 @@ perfratio -N --warmup auto --first-run=separate \
   `perfratio.measurements.energy` before using energy fields.
 - Fast implementations: `--min-runs` today, `--duration` once #216 lands.
 
+## Errata (history)
+
+- `roofline` was introduced in schema 1.39. The `description` of `roofline` in the archived
+  snapshots 1.39 to 1.48 (and in the schema that matched them) says 1.37 by mistake. The
+  snapshots are frozen and were not edited; no version bump.
+
 ## Implementation
 - `src/export/json.rs`: add `schema_version: &'static str` serialized as `"schemaVersion"`
   first in `PerfratioSummary`; a `pub const SCHEMA_VERSION: &str = "1.1"`.
