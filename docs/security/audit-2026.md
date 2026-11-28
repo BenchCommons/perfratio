@@ -60,7 +60,7 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   chosen by the user.
 - Recommendation: after a normal exit, kill the process group too, or do not `join` and
   receive the output through a channel with `recv_timeout`.
-- State: **master**. Reclassified from Medium to Low. Corrigido em #427 (PR aberto): the reader reports over a
+- State: **master**. Reclassified from Medium to Low. Corrigido em #427: the reader reports over a
   channel, `recv_timeout` with the same deadline, the group is killed on expiry (test with a
   background grandchild).
 
@@ -82,7 +82,7 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   (already used for imported JSON). Compare `metadata.len()` with `entry.bytes` first and
   hash with a streaming reader (`io::copy` into the hasher, through `Read::take(bytes + 1)`).
   Cap the manifest size (for example 1 MiB).
-- State: **master**. Corrigido em #428 (PR aberto): every text of the report is escaped with
+- State: **master**. Corrigido em #428: every text of the report is escaped with
   `escape_control_chars`, `is_plain_name` rejects control characters, `manifest.json` is
   limited to 1 MiB and files are hashed in a stream (`Sha256`). `verify` opens with
   `O_NOFOLLOW` and checks the metadata of the open handle (no TOCTOU).
@@ -133,7 +133,7 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   rule of `is_valid_name` and limit it to 64 characters. In persistent mode read with a
   limited reader (as `collector::read_line_limited`), and bound the number of lines kept
   for one iteration.
-- State: **master** (`src/region.rs`, `src/persistent.rs`): corrigido em #426 (PR aberto). Program text in error
+- State: **master** (`src/region.rs`, `src/persistent.rs`): corrigido em #426. Program text in error
   messages is escaped and cut to 64 characters, and the SDK id is validated (ASCII letters,
   digits and `_-./+`, at most 64). Line-length bound in persistent mode: corrigido em #433 (64 KiB per protocol line; only protocol lines that are not `fail` above the limit are an error; `fail` is cut; other long lines are skipped).
 
@@ -154,8 +154,8 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   `create_new(true)` (and `O_NOFOLLOW` on Unix). Write into a fresh temporary directory
   next to the target and `rename` it into place at the end, so the final directory appears
   complete or not at all.
-- State: **master**. Corrigido em parte em #428 (PR aberto): files are written with `create_new` and
-  `O_NOFOLLOW`. The 0700 directory mode and the temp-directory plus `rename` are not done.
+- State: **master**. Corrigido em parte em #428: files are written with `create_new` and
+  `O_NOFOLLOW`. The 0700 directory mode for a new directory: corrigido em #436. The temp-directory plus `rename` is not done (open).
 
 ### L2. Collector plugin: path lookup, unbounded reply queue, inherited environment
 
@@ -173,7 +173,10 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   shell. Metric values are finite but have no range check (for example `1e308`).
 - Recommendation: use `sync_channel` with a small bound and treat an unsolicited line as a
   protocol error. The trust warning and the environment note already exist.
-- State: open, **PR aberto #403**.
+- State: **master** (#403 merged). Corrigido em #436: the reply queue is `sync_channel(8)`, so an
+  unsolicited flood blocks the reader thread instead of growing memory. An unsolicited line is
+  not yet reported as a protocol error (replies can still be out of step; the next request
+  fails on the type check).
 
 ### L3. Valgrind adapter: binary chosen by an environment variable, unbounded profile read
 
@@ -190,7 +193,7 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
 - Recommendation: print the resolved binary in verbose mode. Limit the profile read (`take`) and skip entries that are
   not regular files (`symlink_metadata`).
 - State: **master**. Profile read limit and regular-file check corrigidos em #433 (256 MiB,
-  `MAX_PROFILE_BYTES`; symlinks refused). Printing the resolved binary in verbose mode is still open.
+  `MAX_PROFILE_BYTES`; symlinks refused). Printing the resolved binary: corrigido em #436 (there is no verbose mode, so a `Note:` goes to stderr whenever `PERFRATIO_VALGRIND` is set).
 
 ### L4. GPU backends: `dlopen` by soname follows the loader search path
 
@@ -211,7 +214,7 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   `/usr/lib/x86_64-linux-gnu/`, `/usr/lib64/`, `/opt/rocm/lib/`) and fall back to the
   soname only with a warning. Refuse to load when running as root and the file is writable
   by group or other. Replace the `assert_eq!` with a compile-time assertion.
-- State: open, **master**. Corrigido em parte em #427 (PR aberto): the `assert_eq!` is now a handled `None`
+- State: open, **master**. Corrigido em parte em #427: the `assert_eq!` is now a handled `None`
   (backend degrades). `dlopen` by soname stays; search order and the `LD_LIBRARY_PATH` risk
   are documented in `docs/specs/gpu-energy.md`.
 
@@ -260,7 +263,7 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   real machine. `PERFRATIO_ENERGY_BACKEND` is a user-facing variable and is fine.
 - Recommendation: build the hook only under `cfg(test)` or a `test-hooks` feature; if it
   must stay, record `fake_root: true` in the export and print a warning.
-- State: open, **master**. Corrigido em #426 (PR aberto): the variable is read only with the `test-hooks` cargo
+- State: open, **master**. Corrigido em #426: the variable is read only with the `test-hooks` cargo
   feature (`system_check::fake_root`); release builds ignore it. `cargo test` enables the
   feature through a dev-dependency of the crate on itself. No export change.
 
@@ -273,7 +276,7 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   parsing. Content is validated after parsing (#27) and names are escaped (#24).
 - Recommendation: check `metadata.len()` against a limit (for example 256 MiB) with a clear
   message.
-- State: **master**, minor. Corrigido em #427 (PR aberto): 256 MiB limit (`MAX_IMPORT_BYTES`), clear
+- State: **master**, minor. Corrigido em #427: 256 MiB limit (`MAX_IMPORT_BYTES`), clear
   error; also in `import_environment`.
 
 ### L9. `PERFRATIO_RUN_DIR`: directory created from the user-supplied artifact path
@@ -285,6 +288,23 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   codebase were hardened against symlinks (#36).
 - Recommendation: none beyond documenting that the artifact directory should be private.
 - State: **master**, accepted risk unless perfratio runs privileged on a shared directory.
+
+## Remaining after #436
+
+Not fixed, and why. None needs a fix before #22 is closed if each gets its own issue.
+
+| Item | Why it stays |
+|---|---|
+| M3 recommendations 2 and 3 (`--redact-command-line`, table-driven redaction) | New option and contract note for `command_line` and the bundle; needs a design decision |
+| L1 temp directory plus `rename` | Changes how the bundle is written; small gain (attacker already runs as the user) |
+| L2 unsolicited line as protocol error | Behavior change of the plugin protocol; memory is already bounded |
+| L4 `dlopen` by soname | Needs NVIDIA/AMD hardware to test the path order |
+| L5 PID reuse window in `--membw` | Wrong placement data only; needs NUMA hardware |
+| L6 verdict run id, `started_at`, file-name-only `baseline` | Changes the verdict schema: version it |
+| L9 `PERFRATIO_RUN_DIR` | Accepted risk |
+| I1 Windows device names in `is_plain_name` | Only if Windows supports `--verify-evidence` |
+| Enable private vulnerability reporting; winget identifier | Repository settings, external |
+| Energy (RAPL) on bare metal | Hardware (CI covers time and memory only) |
 
 ## Info
 
