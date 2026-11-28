@@ -1,7 +1,7 @@
 # Spec: GPU energy and utilization (`--gpu`) (#380)
 
 **Status:** Implemented, **not validated on GPU hardware** (see "Hardware check"). JSON
-`schemaVersion` 1.37 (additive).
+`schemaVersion` 1.42 (additive).
 
 ## Problem / Motivation
 References: #380 (parent #364), #240, #59, `rapl-domains.md`, `energy-macos-windows.md`;
@@ -46,21 +46,18 @@ Without a library, a driver, or a device, perfratio prints one warning
 goes on with host energy only. `--gpu` is not an error on a machine without a GPU. Non-Unix
 platforms report `unsupported_platform` (the Windows `nvml.dll` loader is not implemented).
 
-### JSON (schemaVersion 1.36 to **1.37**, MINOR, additive)
+### JSON (schemaVersion 1.41 to **1.42**, MINOR, additive)
 | Field | Type | Presence |
 |---|---|---|
 | `perfratio.gpu` { `backends`: string[], `devices`: int, `unavailable_reason`?: string } | open enums: backends `nvml`, `amd_smi`; reasons `gpu_library_not_found`, `gpu_init_failed`, `gpu_no_devices`, `unsupported_platform` | only with `--gpu` |
 | `results[].energy_domains_joules["gpu:<index>"]` | joules per run (new keys of an existing map) | only with `--gpu` |
 | `results[].gpu_utilization_percent["gpu:<index>"]` | percent per run, 0 to 100 | only with `--gpu`, when every run has it |
 
-Nothing is removed or renamed and nothing is written without `--gpu`, so a 1.36 consumer that
+Nothing is removed or renamed and nothing is written without `--gpu`, so a 1.41 consumer that
 ignores unknown keys is unaffected. The description of `energy_domains_joules` now says that
-`gpu:*` keys are not overlapping with RAPL keys. `docs/schema/1.37/` holds the schema snapshot.
+`gpu:*` keys are not overlapping with RAPL keys. `docs/schema/1.42/` holds the schema snapshot.
 
-**Version coordination:** the open pull requests #393 to #400 also claim 1.37. Whichever merges
-second must rebase and renumber (1.38, ...) the `SCHEMA_VERSION` constant, the schema `const`,
-the `docs/schema/<version>/` snapshot, the version references in the docs and the version
-assertions in `tests/`. The fields of this spec do not depend on the number.
+**Version coordination:** this PR was renumbered from 1.37 to 1.42 after #368 (1.37) to #369 (1.41) merged into master.
 
 ## Tests
 - `src/energy/gpu.rs`: `extern "C"` fake NVML and AMD SMI libraries behind the real

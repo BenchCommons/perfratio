@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-evidence-manifest.schema.json",
+  "title": "perfratio evidence bundle manifest (manifest.json)",
+  "description": "Manifest of a bundle written by --evidence, format_version 1.0 (docs/specs/evidence-bundle.md). Versioned separately from the JSON export schema. Unknown keys are allowed.",
+  "type": "object",
+  "required": ["format", "format_version", "perfratio_version", "files"],
+  "properties": {
+    "format": { "const": "perfratio-evidence" },
+    "format_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "description": "MAJOR.MINOR; this schema describes 1.x."
+    },
+    "perfratio_version": { "type": "string" },
+    "results_schema_version": {
+      "type": "string",
+      "description": "schemaVersion of results.json."
+    },
+    "created_at": {
+      "type": "string",
+      "description": "Start of the run, RFC 3339 in UTC."
+    },
+    "files": {
+      "type": "array",
+      "description": "Every file of the bundle except manifest.json, sorted by path.",
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256", "bytes"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "pattern": "^[^/\\\\:]+$",
+            "description": "File name inside the bundle; no directories."
+          },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "bytes": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "allOf": [
+        { "contains": { "type": "object", "properties": { "path": { "const": "results.json" } }, "required": ["path"] } },
+        { "contains": { "type": "object", "properties": { "path": { "const": "samples.jsonl" } }, "required": ["path"] } },
+        { "contains": { "type": "object", "properties": { "path": { "const": "environment.json" } }, "required": ["path"] } },
+        { "contains": { "type": "object", "properties": { "path": { "const": "calibration.json" } }, "required": ["path"] } },
+        { "contains": { "type": "object", "properties": { "path": { "const": "validation.json" } }, "required": ["path"] } },
+        { "contains": { "type": "object", "properties": { "path": { "const": "quality.json" } }, "required": ["path"] } },
+        { "contains": { "type": "object", "properties": { "path": { "const": "command.json" } }, "required": ["path"] } }
+      ]
+    }
+  }
+}

@@ -4,6 +4,8 @@ pub mod deep;
 pub mod diagnostics;
 pub mod dist;
 pub mod effect;
+pub mod hierarchical;
+pub mod power;
 pub mod precision;
 pub mod sequential;
 #[cfg(test)]

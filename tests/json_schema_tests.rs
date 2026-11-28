@@ -92,6 +92,14 @@ const CASES: &[(&str, &[&str])] = &[
         ],
     ),
     (
+        "multi-metric stopping",
+        &[
+            "--target-precision=5%",
+            "--target-precision-metrics=wall,memory,energy",
+            "sleep 0.1",
+        ],
+    ),
+    (
         "randomized order",
         &[
             "--runs=3",
@@ -114,6 +122,19 @@ const CASES: &[(&str, &[&str])] = &[
             "1,2,4,8",
             "sleep {n}",
         ],
+    ),
+    (
+        "roofline",
+        &[
+            "--runs=2",
+            "--roofline",
+            "--roofline-peaks=1,0.1",
+            "sleep 0.1",
+        ],
+    ),
+    (
+        "roofline observed peaks",
+        &["--runs=2", "--roofline", "sleep 0.1", "sleep 0.2"],
     ),
     ("single run", &["--runs=1", "sleep 0.1"]),
     ("several commands", &["--runs=3", "sleep 0.1", "sleep 0.2"]),
@@ -350,6 +371,17 @@ const CASES: &[(&str, &[&str])] = &[
     ),
     ("timeout", &["--runs=2", "--timeout=2s", "-i", "sleep 3"]),
     (
+        "paired rounds",
+        &[
+            "--runs=4",
+            "--schedule=balanced",
+            "--paired",
+            "--ci-method=hierarchical",
+            "sleep 0.1",
+            "sleep 0.2",
+        ],
+    ),
+    (
         "ignored failures",
         &["--runs=3", "-i", "--omit-failed-runs", "sleep 0.1"],
     ),
@@ -479,6 +511,16 @@ fn real_cases() -> Vec<(&'static str, Vec<String>)> {
                 "true",
                 "echo",
                 "pwd",
+            ]),
+        ),
+        (
+            "power analysis",
+            args(&[
+                "--runs=4",
+                "-N",
+                "--power=0.9",
+                "--target-effect=3%",
+                "true",
             ]),
         ),
         (
@@ -706,7 +748,7 @@ fn gpu_fields_match_the_schema() {
     assert_valid("gpu", &document);
 }
 
-/// Without `--gpu` the new fields are absent: the 1.37 change is additive.
+/// Without `--gpu` the new fields are absent: the 1.42 change is additive.
 #[test]
 fn gpu_fields_are_absent_without_the_flag() {
     let document = export(&["--runs=2", "--energy", "sleep 0.1"]);

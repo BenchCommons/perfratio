@@ -251,6 +251,14 @@ pub struct BenchmarkResult {
     /// `--target-precision`: the target and the precision reached
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub precision: Option<PrecisionReached>,
+    /// `--target-precision-metrics`: the precision reached by each listed metric
+    /// (new in 1.41, #369)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub precision_metrics: Option<Vec<MetricPrecision>>,
+    /// `--power` / `--target-effect`: minimum detectable effect and runs needed
+    /// (new in 1.41, #367)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub power: Option<PowerAnalysis>,
 
     /// The shell this command ran in, when commands use different shells
     /// (`--shell` given per command); "none" without a shell
@@ -340,6 +348,11 @@ pub struct BenchmarkResult {
     /// `PERFRATIO_WORKER_ID`
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance_run_ids: Option<Vec<Vec<u64>>>,
+
+    /// Structure of the sample (workers, runs, instances, region repetitions)
+    /// with the variance at each level (new in 1.37, #368)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hierarchy: Option<crate::stats::hierarchical::HierarchyReport>,
 
     /// Processes started by the command (or its prepare/conclude) outlived it
     /// in at least one run; they were killed (`docs/specs/process-tree.md`)
@@ -560,6 +573,85 @@ pub struct Baseline {
 
 fn is_zero(n: &usize) -> bool {
     *n == 0
+}
+
+/// `--power` / `--target-effect`: what the runs made can detect (#367,
+/// `docs/specs/statistical-power.md`). The model is a two-sided two-sample
+/// t-test between this command and an identical one (same standard deviation
+/// and number of runs).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PowerAnalysis {
+    /// Level of the test (`--significance-level`)
+    pub significance_level: f64,
+    /// Probability of detecting the effect (`--power`, default 0.8)
+    pub power: f64,
+    /// Runs that count (without an excluded first run)
+    pub runs: usize,
+    /// Smallest change of the mean the runs made detect with `power`, relative to
+    /// the mean (0.05 = 5%); `null` without at least 2 runs and a positive mean
+    pub minimum_detectable_effect: Option<f64>,
+    /// `--target-effect` as a fraction of the mean
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_effect: Option<f64>,
+    /// Runs per command that detect `target_effect` with `power`, for the
+    /// standard deviation seen
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runs_needed: Option<u64>,
+    /// Whether `runs >= runs_needed`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub met: Option<bool>,
+    /// Whether `--target-effect` decided when the runs stopped
+    pub stopping_rule: bool,
+}
+
+impl PowerAnalysis {
+    /// The line of the human-readable report
+    pub fn summary(&self) -> String {
+        let mut line = match self.minimum_detectable_effect {
+            Some(mde) => format!(
+                "detects ±{:.1}% with {:.0}% power (α={}, {} runs, vs an identical command)",
+                mde * 100.0,
+                self.power * 100.0,
+                self.significance_level,
+                self.runs
+            ),
+            None => "minimum detectable effect not available".to_string(),
+        };
+        if let Some(target) = self.target_effect {
+            match self.runs_needed {
+                Some(needed) => line.push_str(&format!(
+                    "; ±{:.1}% needs {} runs{}",
+                    target * 100.0,
+                    needed,
+                    if self.met == Some(true) {
+                        ""
+                    } else {
+                        " (not reached)"
+                    }
+                )),
+                None => line.push_str(&format!(
+                    "; ±{:.1}% runs needed not available",
+                    target * 100.0
+                )),
+            }
+        }
+        line
+    }
+}
+
+/// `--target-precision-metrics`: how precisely the mean of one metric is known
+/// (#369, `docs/specs/multi-metric-stopping.md`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct MetricPrecision {
+    pub metric: crate::options::PrecisionMetric,
+    /// The target half-width, relative to the mean (the one of `--target-precision`)
+    pub target: f64,
+    /// The half-width reached; `None` without 2 samples or a positive mean
+    pub reached: Option<f64>,
+    /// Samples of the metric that count
+    pub runs: usize,
+    /// Whether the target was reached
+    pub met: bool,
 }
 
 /// `--target-precision`: how precisely the mean is known.

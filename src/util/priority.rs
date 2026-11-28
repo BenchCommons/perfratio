@@ -166,6 +166,72 @@ pub fn windows_priority_class(priority: Priority) -> Option<u32> {
     }
 }
 
+/// Windows priority class (`GetPriorityClass` value) that `priority` requests.
+/// Plain constants, so the comparison below is testable on every platform.
+const WIN_IDLE: u32 = 0x0000_0040;
+const WIN_HIGH: u32 = 0x0000_0080;
+const WIN_REALTIME: u32 = 0x0000_0100;
+
+fn windows_class_name(class: u32) -> Option<&'static str> {
+    match class {
+        WIN_IDLE => Some("IDLE_PRIORITY_CLASS"),
+        WIN_HIGH => Some("HIGH_PRIORITY_CLASS"),
+        WIN_REALTIME => Some("REALTIME_PRIORITY_CLASS"),
+        _ => None,
+    }
+}
+
+/// Warning text when the class read back with `GetPriorityClass` differs from
+/// the one requested with `SetPriorityClass` (Windows lowers REALTIME to HIGH
+/// without administrator rights and reports success). `None` when they match.
+pub fn priority_downgrade_warning(
+    priority: Priority,
+    requested: u32,
+    effective: u32,
+) -> Option<String> {
+    if requested == effective {
+        return None;
+    }
+    let name = |class: u32| {
+        windows_class_name(class).map_or_else(|| format!("class {class:#x}"), str::to_string)
+    };
+    let mut message = format!(
+        "'--priority {}' requested {} but Windows applied {}",
+        priority.as_str(),
+        name(requested),
+        name(effective)
+    );
+    if requested == WIN_REALTIME && effective == WIN_HIGH {
+        message.push_str(": REALTIME needs administrator rights, run perfratio elevated");
+    }
+    Some(message)
+}
+
+/// Windows: read the class back after `SetPriorityClass` and warn (once per
+/// process) if it is not the requested one. NOT TESTED LOCALLY: needs Windows.
+#[cfg(windows)]
+pub fn warn_if_downgraded(
+    child: &std::process::Child,
+    priority: Priority,
+    requested: u32,
+) -> std::io::Result<()> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Foundation::HANDLE;
+    use windows_sys::Win32::System::Threading::GetPriorityClass;
+    static ONCE: std::sync::Once = std::sync::Once::new();
+
+    // SAFETY: the handle belongs to our own child process, which is still alive
+    // (suspended) at this point.
+    let effective = unsafe { GetPriorityClass(child.as_raw_handle() as HANDLE) };
+    if effective == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    if let Some(message) = priority_downgrade_warning(priority, requested, effective) {
+        ONCE.call_once(|| eprintln!("Warning: {message}"));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,6 +249,26 @@ mod tests {
         for p in [Priority::Normal, Priority::High, Priority::Idle] {
             assert_eq!(Priority::parse(p.as_str()).unwrap(), p);
         }
+    }
+
+    #[test]
+    fn downgrade_warning_only_when_class_differs() {
+        let p = Priority::Realtime;
+        assert!(priority_downgrade_warning(p, WIN_REALTIME, WIN_REALTIME).is_none());
+        let w = priority_downgrade_warning(p, WIN_REALTIME, WIN_HIGH).unwrap();
+        assert!(w.contains("REALTIME_PRIORITY_CLASS") && w.contains("HIGH_PRIORITY_CLASS"));
+        assert!(w.contains("administrator"));
+        let w = priority_downgrade_warning(Priority::High, WIN_HIGH, 0x20).unwrap();
+        assert!(w.contains("class 0x20") && !w.contains("administrator"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn class_constants_match_windows_sys() {
+        use windows_sys::Win32::System::Threading::*;
+        assert_eq!(WIN_IDLE, IDLE_PRIORITY_CLASS);
+        assert_eq!(WIN_HIGH, HIGH_PRIORITY_CLASS);
+        assert_eq!(WIN_REALTIME, REALTIME_PRIORITY_CLASS);
     }
 
     #[test]

@@ -70,6 +70,7 @@ fn test_markup_export_auto_ms() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            power: None,
             shell: None,
             baseline: None,
             ..Default::default()
@@ -115,6 +116,7 @@ fn test_markup_export_auto_ms() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            power: None,
             shell: None,
             baseline: None,
             ..Default::default()
@@ -205,6 +207,7 @@ fn test_markup_export_auto_s() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            power: None,
             shell: None,
             baseline: None,
             ..Default::default()
@@ -250,6 +253,7 @@ fn test_markup_export_auto_s() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            power: None,
             shell: None,
             baseline: None,
             ..Default::default()
@@ -340,6 +344,7 @@ fn test_markup_export_manual_ms() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            power: None,
             shell: None,
             baseline: None,
             ..Default::default()
@@ -385,6 +390,7 @@ fn test_markup_export_manual_ms() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            power: None,
             shell: None,
             baseline: None,
             ..Default::default()
@@ -474,6 +480,7 @@ fn test_markup_export_manual_s() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            power: None,
             shell: None,
             baseline: None,
             ..Default::default()
@@ -519,6 +526,7 @@ fn test_markup_export_manual_s() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            power: None,
             shell: None,
             baseline: None,
             ..Default::default()
@@ -607,6 +615,7 @@ fn test_markup_export_zero_mean_displays_na() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            power: None,
             shell: None,
             baseline: None,
             ..Default::default()
@@ -652,6 +661,7 @@ fn test_markup_export_zero_mean_displays_na() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            power: None,
             shell: None,
             baseline: None,
             ..Default::default()

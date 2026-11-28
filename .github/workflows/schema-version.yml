@@ -1,0 +1,22 @@
+name: Schema version
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  schema-version:
+    name: schemaVersion consistency (#366)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check documented schemaVersion, schema snapshot and tests
+        run: scripts/check-schema-version.sh
