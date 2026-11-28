@@ -153,6 +153,9 @@ impl CPUTimer {
     /// until the `Child` is dropped, so per-process queries still work.
     pub fn stop(&self, child: &process::Child) -> (Second, Second, u64, ResourceCounters) {
         let child_handle = child.as_raw_handle() as HANDLE;
+        // Cycles are per process: read now, while the handle is open (no-op unless
+        // `--counters` armed this thread)
+        crate::perf_counters::windows::snapshot_child(child_handle);
         let (page_faults, peak_working_set) = process_memory(child_handle).unzip();
         let peak_memory = peak_working_set.unwrap_or(0);
 

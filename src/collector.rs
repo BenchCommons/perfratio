@@ -274,6 +274,23 @@ fn read_line_limited<R: BufRead>(reader: &mut R) -> Line {
         .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "reply is not UTF-8"))
 }
 
+/// Replies the reader thread may queue. The protocol is strict request and reply, so more than
+/// a few unread lines mean a plugin that talks unprompted: the thread then blocks instead of
+/// growing memory, and ends when the `Session` (the receiver) is dropped.
+const REPLY_QUEUE: usize = 8;
+
+fn spawn_reader<R: BufRead + Send + 'static>(mut input: R) -> Receiver<Line> {
+    let (sender, replies) = mpsc::sync_channel(REPLY_QUEUE);
+    std::thread::spawn(move || loop {
+        let line = read_line_limited(&mut input);
+        let done = !matches!(line, Ok(Some(_)));
+        if sender.send(line).is_err() || done {
+            break;
+        }
+    });
+    replies
+}
+
 /// A running plugin.
 pub struct Session {
     path: PathBuf,
@@ -301,15 +318,8 @@ impl Session {
             .spawn()
             .with_context(|| format!("could not start the collector plugin {path:?}"))?;
         let stdin = child.stdin.take();
-        let mut stdout = BufReader::new(child.stdout.take().expect("stdout is piped"));
-        let (sender, replies) = mpsc::channel();
-        std::thread::spawn(move || loop {
-            let line = read_line_limited(&mut stdout);
-            let done = !matches!(line, Ok(Some(_)));
-            if sender.send(line).is_err() || done {
-                break;
-            }
-        });
+        let stdout = BufReader::new(child.stdout.take().expect("stdout is piped"));
+        let replies = spawn_reader(stdout);
         let mut session = Session {
             path: path.to_path_buf(),
             name: String::new(),
@@ -509,6 +519,33 @@ mod tests {
     const HELLO: &str = r#"{"type":"hello","protocol":1,"name":"gpu","metrics":[
         {"id":"energy","unit":"J"},
         {"id":"util","unit":"percent","direction":"neutral","kind":"estimated","scope":"package"}]}"#;
+
+    #[test]
+    fn unsolicited_lines_do_not_queue_without_bound() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        struct Endless(Arc<AtomicUsize>, &'static [u8]);
+        impl Read for Endless {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                let n = self.1.len().min(buf.len());
+                buf[..n].copy_from_slice(&self.1[..n]);
+                Ok(n)
+            }
+        }
+        impl BufRead for Endless {
+            fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Ok(self.1)
+            }
+            fn consume(&mut self, _: usize) {}
+        }
+        let lines = Arc::new(AtomicUsize::new(0));
+        let replies = spawn_reader(Endless(lines.clone(), b"{\"type\":\"x\"}\n"));
+        std::thread::sleep(Duration::from_millis(300));
+        // queue + the line being sent; not the millions an unbounded channel would hold
+        assert!(lines.load(Ordering::SeqCst) <= REPLY_QUEUE + 2);
+        assert!(matches!(replies.recv(), Ok(Ok(Some(_)))));
+    }
 
     #[test]
     fn plugin_without_a_directory_part_is_rejected() {
