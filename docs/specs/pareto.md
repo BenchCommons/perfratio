@@ -86,7 +86,7 @@ inside `perfratio`, which is written before the run) is present with `--pareto`,
   "objective": { "direction": "lower_is_better", "metric": "energy", "best": 2, "value": 0.9 }
 }
 ```
-`schemaVersion` 1.37 adds four optional fields (MINOR, additive; readers of 1.x ignore them):
+`schemaVersion` 1.38 adds four optional fields (MINOR, additive; readers of 1.x ignore them):
 `significance` { `level`, `correction`?, `tests` } and `not_significant` [{ `command_index`,
 `by` }] with `--pareto-significance`; `bootstrap` { `resamples`, `seed` } and
 `non_dominated_probability` [{ `command_index`, `probability` }] (0 to 1) with

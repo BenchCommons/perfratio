@@ -185,7 +185,7 @@ later combine it with a live run: `perfratio --import-json main.json './target/r
 `--export-json FILE` writes the machine-readable result. It is a versioned contract that other
 tools read; the normative text is [docs/specs/output-schema-contract.md](../docs/specs/output-schema-contract.md)
 and the schema is [docs/schema/perfratio-export.schema.json](../docs/schema/perfratio-export.schema.json)
-(JSON Schema, draft 2020-12, for the current `schemaVersion`, currently `"1.37"`). CSV, Markdown and the other
+(JSON Schema, draft 2020-12, for the current `schemaVersion`, currently `"1.38"`). CSV, Markdown and the other
 exports are not part of the contract.
 
 ### Units and rules

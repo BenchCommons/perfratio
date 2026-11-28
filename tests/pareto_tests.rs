@@ -101,7 +101,7 @@ fn json_and_markdown_exports() {
         .success();
     let doc: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&json).unwrap()).unwrap();
-    assert_eq!(doc["schemaVersion"], "1.37");
+    assert_eq!(doc["schemaVersion"], "1.38");
     assert_eq!(doc["pareto"]["metrics"][0]["metric"], "wall");
     assert!(doc["pareto"]["frontier"]
         .as_array()

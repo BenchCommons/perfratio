@@ -234,23 +234,29 @@ fn the_sequential_method_has_requirements() {
     }
 }
 
-#[cfg(unix)]
 #[test]
 fn the_sequential_method_needs_more_runs_on_noisy_commands() {
-    // Random 10-50 ms sleeps: the confidence sequence is wider than the fixed interval
-    let noisy = "sleep 0.0$((RANDOM % 4 + 1))";
-    let shell = ["--shell=bash", "--max-runs=400", "--min-runs=5"];
-    let fixed = run_count(&[&shell[..], &["--target-precision=15%", noisy]].concat());
-    let sequential = run_count(
-        &[
-            &shell[..],
-            &[
-                "--target-precision=15%",
-                "--target-precision-method=sequential",
-                noisy,
-            ],
-        ]
-        .concat(),
-    );
+    // Simulated noise: `--aggregate-parameter-runs` pools the 10, 20, 30 and
+    // 40 ms runs into one result, so the spread is fixed by construction and
+    // the run counts don't depend on the machine's load (real random sleeps
+    // were flaky on macOS CI). The confidence sequence is wider than the
+    // fixed interval, so it needs more runs to reach the same target.
+    let noisy = [
+        "--debug-mode",
+        "--max-runs=400",
+        "--min-runs=5",
+        "--target-precision=15%",
+        "--parameter-list",
+        "d",
+        "0.01,0.02,0.03,0.04",
+        "--aggregate-parameter-runs",
+        "sleep {d}",
+    ];
+    let fixed = result(&noisy);
+    let sequential = result(&[&noisy[..], &["--target-precision-method=sequential"]].concat());
+    assert_eq!(fixed["precision"]["met"], true);
+    assert_eq!(sequential["precision"]["met"], true);
+    let runs = |r: &Value| r["times"].as_array().unwrap().len();
+    let (fixed, sequential) = (runs(&fixed), runs(&sequential));
     assert!(sequential > fixed, "{sequential} vs {fixed}");
 }

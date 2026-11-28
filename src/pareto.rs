@@ -459,7 +459,7 @@ pub struct Analysis {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub significance: Option<SignificanceInfo>,
     /// `--pareto-significance`: on the frontier because the commands that are better in the
-    /// estimates are not significantly better on every such metric (new in 1.37, #376)
+    /// estimates are not significantly better on every such metric (new in 1.38, #376)
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub not_significant: Vec<Dominated>,
     /// `--pareto-probability`: resamples and seed of the bootstrap

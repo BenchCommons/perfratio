@@ -28,8 +28,11 @@ files (`--import-json`).
 
 ## Install
 
-perfratio is not yet on crates.io or Homebrew. Both are planned (see
-[#93](https://github.com/BenchCommons/perfratio/issues/93)).
+perfratio is not yet published to crates.io, and there is no Homebrew tap yet (see
+[#93](https://github.com/BenchCommons/perfratio/issues/93)). The repository is public and
+release v1.0.0 exists, so use one of the methods below. `cargo install perfratio`,
+`cargo binstall perfratio` and a Homebrew formula will work only after the maintainers
+publish the crate and the tap; do not run them yet.
 
 **From source** (Rust 1.88 or newer):
 
@@ -41,8 +44,9 @@ cargo install --path .
 
 **GitHub release assets.** Each release at
 <https://github.com/BenchCommons/perfratio/releases> contains one archive per target, named
-`perfratio-v<version>-<target>.tar.gz` (`.zip` on Windows), and Debian packages. Unpack the
-archive and put the `perfratio` binary on your `PATH`.
+`perfratio-v<version>-<target>.tar.gz` (`.zip` on Windows), Debian packages, a `SHA256SUMS`
+file and a CycloneDX SBOM (`perfratio-<version>.cdx.json`). Unpack the archive and put the
+`perfratio` binary on your `PATH`. Verify it against `SHA256SUMS` first.
 
 ## Quick start
 
@@ -98,7 +102,7 @@ how to reduce noise. The manual page is [doc/perfratio.1](doc/perfratio.1).
 **Memory.** Peak memory (RSS) of each run is always measured and shown as `Peak Memory`.
 `--resource-usage` adds context switches, page faults and block I/O per run. Windows reports
 page faults and I/O operation counts only; the other counters show as `n/a` ([spec](docs/specs/windows-resource-usage.md)).
-`--counters` (Linux) adds hardware counters (instructions, cycles, cache and branch misses), IPC and the effective CPU frequency per run, and with `--counters=default,sw` CPU migrations and context switches (a warning points to `--affinity` when migrations slow runs down); see `docs/specs/hardware-counters.md`, `docs/specs/software-events-migrations.md` and `docs/specs/effective-frequency.md`. `--scope user|kernel|all|split` and per-event `:u` / `:k` modifiers (`--counters=instructions:u,instructions:k`) choose the privilege level; see `docs/specs/counter-scope-modifiers.md`.
+`--counters` (Linux; macOS Apple Silicon with `-N`, instructions and cycles only, see `docs/specs/counters-macos-windows.md`) adds hardware counters (instructions, cycles, cache and branch misses), IPC and the effective CPU frequency per run, and with `--counters=default,sw` CPU migrations and context switches (a warning points to `--affinity` when migrations slow runs down); see `docs/specs/hardware-counters.md`, `docs/specs/software-events-migrations.md` and `docs/specs/effective-frequency.md`. `--scope user|kernel|all|split` and per-event `:u` / `:k` modifiers (`--counters=instructions:u,instructions:k`) choose the privilege level; see `docs/specs/counter-scope-modifiers.md`.
 `scripts/perf_parity.py` checks the counters against `perf stat` on bare-metal Linux ([spec](docs/specs/perf-parity-harness.md)).
 `--topdown` (Linux x86_64; Intel Ice Lake or later, AMD Zen 4 or later) adds Top-down level 1: the share of pipeline slots that retire work or are lost to bad speculation, frontend stalls or backend stalls. The largest stall class is a hypothesis about the bottleneck, not a diagnosis; see `docs/specs/topdown-tma.md`.
 `--simd` (Linux, Intel and AMD Zen 4/5) adds a floating-point breakdown (scalar, 128-, 256- and 512-bit) and a vectorization ratio per run; see `docs/specs/simd-breakdown.md`.
@@ -185,13 +189,15 @@ alone does not fail the gate. When the command did not get slower, the same gate
 `-2.3%  p = 0.401  ~` and exits 0. `--export-diff-markdown <FILE>` writes the table for a pull
 request comment. A GitHub Actions example is in [doc/ci.md](doc/ci.md).
 
-Every benchmark also gets a measurement quality report (`results[].quality` in the JSON, a summary in the terminal when a check warns or fails): sample sufficiency, CI precision, outliers, trend, clusters, counter and energy coverage, workload validation. `--fail-on-quality with_caveats` exits with code 5 if a measurement is `unreliable`, next to `--fail-if-regressed` ([spec](docs/specs/measurement-quality.md)). Exports carry an environment block and a fingerprint (`perfratio.environment_fingerprint`); `--compare` and `--import-json` warn when the hardware class differs, `--meta git` records the commit ([spec](docs/specs/environment-fingerprint.md)). A command within the runner floor (measured at start with a trivial command, `--calibrate`) is flagged as below resolution, `--below-floor fail` exits with code 6 ([spec](docs/specs/measurement-floor.md)). Cgroup throttling and thermal readings during the runs are reported as `interference` and a quality check; `--cooldown` waits before every run ([spec](docs/specs/cgroup-thermal.md)).
+`--verdict-json <FILE>` writes a compact verdict for scripts and agents: per command and metric `improved`, `regressed`, `unchanged`, `equivalent` or `inconclusive` with the change, its confidence interval and the p-value, an overall `improved`, `regressed`, `trade_off`, `unchanged` or `inconclusive`, and the result of `--budget` ([spec](docs/specs/verdict-json.md), schema `docs/schema/verdict.schema.json`). An MCP server is not built yet; the open questions are in the spec.
+
+Every benchmark also gets a measurement quality report (`results[].quality` in the JSON, a summary in the terminal when a check warns or fails): sample sufficiency, CI precision, outliers, trend, clusters, counter and energy coverage, workload validation. `--fail-on-quality with_caveats` exits with code 5 if a measurement is `unreliable`, next to `--fail-if-regressed` ([spec](docs/specs/measurement-quality.md)). Exports carry an environment block and a fingerprint (`perfratio.environment_fingerprint`); `--compare` and `--import-json` warn when the hardware class differs, `--meta git` records the commit ([spec](docs/specs/environment-fingerprint.md)). A command within the runner floor (measured at start with a trivial command, `--calibrate`) is flagged as below resolution, `--below-floor fail` exits with code 6 ([spec](docs/specs/measurement-floor.md)). `--evidence DIR` writes a hashed bundle (results, every sample, environment, calibration, validation, quality, command line) and `perfratio --verify-evidence DIR` checks it ([spec](docs/specs/evidence-bundle.md)). Cgroup throttling and thermal readings during the runs are reported as `interference` and a quality check; `--cooldown` waits before every run ([spec](docs/specs/cgroup-thermal.md)).
 
 ## JSON export and the `schemaVersion` contract
 
 `--export-json <FILE>` (or `-e results.json`) writes the summary statistics and every run's
 timings. perfratio owns this output, and consumers such as `tools-benchmark` read it.
-The current version is `"1.37"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested.
+The current version is `"1.38"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested.
 
 The contract is a top-level `"schemaVersion": "MAJOR.MINOR"` string. Consumers must ignore
 unknown keys and accept any MINOR version of the MAJOR version they support. A removed or
@@ -259,6 +265,7 @@ The CI builds and tests these targets and attaches them to releases. Features di
 |---|---|---|---|
 | Time, CPU time, peak memory | yes | yes | yes |
 | Energy (`--energy`) | bare metal RAPL, via sysfs `energy_uj` or the perf power PMU | Apple Silicon via IOReport (unavailable where CPU counters are frozen, e.g. macOS 27) | Energy Meter Interface (EMI), needs a meter driver and usually admin |
+| `--counters` | yes | Apple Silicon, `-N` only, instructions and cycles | no (`unavailable`) |
 | `--resource-usage` | yes | yes | partial (page faults, I/O operations; no context switches) |
 | `--affinity` | yes | `p-cores`/`e-cores` only (scheduling preference) | yes |
 | `--priority realtime` | yes (`SCHED_FIFO`) | nice -20 + foreground role (not real-time) | yes |

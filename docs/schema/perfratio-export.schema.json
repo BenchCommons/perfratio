@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.37 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.38 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.37",
+      "const": "1.38",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -514,6 +514,14 @@
               "exclusiveMinimum": 0,
               "exclusiveMaximum": 1,
               "description": "New in 1.36 (#323): --equivalence-margin as a fraction. Present only when set."
+            },
+            "ci_method": {
+              "type": "string",
+              "description": "New in 1.37 (#368): --ci-method, how results[].hierarchy.mean_ci is chosen: flat or hierarchical (open enum)."
+            },
+            "paired": {
+              "const": true,
+              "description": "New in 1.37 (#368): --paired was given. Present only then."
             },
             "correction": {
               "type": "object",
@@ -1345,6 +1353,23 @@
           "maximum": 1,
           "description": "New in 1.36 (#323): p-value of the equivalence test (TOST); only with --equivalence-margin and the mean estimator."
         },
+        "paired": {
+          "type": "object",
+          "description": "New in 1.37 (#368): paired comparison with the reference over the rounds of an interleaved schedule (round i of both commands is one pair). Present only with --paired, for the commands other than the reference, with at least 3 common rounds and no omitted runs.",
+          "properties": {
+            "reference": { "type": "string", "description": "The command it was compared with." },
+            "rounds": { "type": "integer", "minimum": 3 },
+            "mean_difference": { "type": "number", "description": "Mean of command - reference over the rounds, in seconds." },
+            "difference_ci": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "Student t interval of mean_difference at level." },
+            "level": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 },
+            "relative_change": { "type": "number", "description": "mean_difference over the mean of the reference." },
+            "relative_change_ci": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+            "p_value": { "type": "number", "minimum": 0, "maximum": 1, "description": "Two-sided p-value of the paired t-test." },
+            "correlation": { "type": "number", "minimum": -1, "maximum": 1, "description": "Pearson correlation of the two commands across the rounds; omitted when a command has no variance." },
+            "variance_reduction": { "type": "number", "maximum": 1, "description": "1 - var(differences) / (var(command) + var(reference)): what pairing gained over an unpaired design." }
+          },
+          "required": ["reference", "rounds", "mean_difference", "difference_ci", "level", "p_value"]
+        },
         "p_value_adjusted": {
           "type": "number",
           "minimum": 0,
@@ -1682,6 +1707,44 @@
             "$ref": "#/$defs/region"
           },
           "description": "`--region` (1.23): time inside each instrumented region. `mean`, `times` and the other time fields keep measuring the whole process."
+        },
+        "hierarchy": {
+          "type": "object",
+          "description": "New in 1.37 (#368): the structure of the sample and the variance at each level. Present with --jobs > 1, --concurrency > 1 or --region repetitions (Kalibera and Jones 2013).",
+          "properties": {
+            "levels": { "type": "array", "items": { "type": "string" }, "description": "Outermost first: worker (--jobs), run (one process each), instance (--concurrency), repetition (--region pairs inside a run). Open enum." },
+            "cluster_level": { "type": "string", "description": "The level whose members are the clusters of clusters, units, variance and mean_ci: worker, or run with --concurrency." },
+            "clusters": { "type": "integer", "minimum": 0 },
+            "units": { "type": "integer", "minimum": 0 },
+            "workers": { "type": "array", "items": { "type": ["integer", "null"], "minimum": 0 }, "description": "--jobs: the worker slot of every run, aligned with times; null for the initial measurement." },
+            "repetitions": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": ["integer", "null"], "minimum": 0 } }, "description": "--region: start/stop pairs per run, by region name, for regions with more than one pair in some run." },
+            "variance": {
+              "type": "object",
+              "description": "One-way random effects estimate; omitted with fewer than two clusters.",
+              "properties": {
+                "between": { "type": "number", "minimum": 0, "description": "Variance between clusters, in seconds squared." },
+                "within": { "type": "number", "minimum": 0, "description": "Variance of the units inside a cluster, in seconds squared." },
+                "icc": { "type": "number", "minimum": 0, "maximum": 1, "description": "between / (between + within)." },
+                "design_effect": { "type": "number", "minimum": 1, "description": "1 + (mean cluster size - 1) * icc: how much the variance of the mean exceeds the one of independent units." },
+                "effective_n": { "type": "number", "exclusiveMinimum": 0, "description": "units / design_effect." }
+              },
+              "required": ["between", "within", "icc", "design_effect", "effective_n"]
+            },
+            "mean_ci": {
+              "type": "object",
+              "description": "Interval of the mean of the wall time, in seconds, with both methods.",
+              "properties": {
+                "level": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 },
+                "method": { "type": "string", "description": "statistics.ci_method: flat or hierarchical." },
+                "lower": { "type": "number" },
+                "upper": { "type": "number" },
+                "flat": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "Student t over every unit, as if independent." },
+                "hierarchical": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "Two-level bootstrap (clusters, then units), widened for the number of clusters." }
+              },
+              "required": ["level", "method", "lower", "upper", "flat", "hierarchical"]
+            }
+          },
+          "required": ["levels"]
         },
         "workers_used": {
           "type": "integer",
@@ -2226,7 +2289,7 @@
             "level",
             "tests"
           ],
-          "description": "Tests behind --pareto-significance (1.37, #376)."
+          "description": "Tests behind --pareto-significance (1.38, #376)."
         },
         "not_significant": {
           "type": "array",
@@ -2252,7 +2315,7 @@
               "by"
             ]
           },
-          "description": "Frontier members whose better-in-estimate commands are not significantly better on every such metric (1.37, #376)."
+          "description": "Frontier members whose better-in-estimate commands are not significantly better on every such metric (1.38, #376)."
         },
         "bootstrap": {
           "type": "object",
@@ -2292,7 +2355,7 @@
               "probability"
             ]
           },
-          "description": "Bootstrap probability of not being dominated (1.37, #376)."
+          "description": "Bootstrap probability of not being dominated (1.38, #376)."
         }
       },
       "required": [
