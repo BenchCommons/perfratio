@@ -259,3 +259,46 @@ fn macos_thermal_records_the_pressure_level() {
         );
     }
 }
+
+/// Windows reads the "Thermal Zone Information" performance counter without admin
+/// rights (#412, `docs/specs/thermal-macos-windows.md`). Many hosts (VMs, desktops)
+/// have no instance, so both outcomes pass: a sensor gives a plausible °C value in
+/// `interference.thermal`; no sensor gives the one-time warning and no field.
+#[cfg(windows)]
+#[test]
+fn windows_thermal_records_a_temperature_or_warns() {
+    let out = tempfile::tempdir().unwrap();
+    let path = out.path().join("out.json");
+    let assert = perfratio()
+        .args([
+            "--thermal",
+            "--runs=2",
+            "-N",
+            "cmd /C exit 0",
+            "--export-json",
+        ])
+        .arg(&path)
+        .assert()
+        .success();
+    let stderr = String::from_utf8_lossy(&assert.get_output().stderr).into_owned();
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let interference = &json["results"][0]["interference"];
+    assert!(interference.get("thermal_pressure").is_none());
+    match interference.get("thermal") {
+        Some(thermal) => {
+            for key in ["start_c", "end_c", "max_c"] {
+                let c = thermal[key].as_f64().unwrap();
+                assert!(c > 0.0 && c < 150.0, "{key}: {thermal}");
+            }
+            assert!(!stderr.contains("Thermal Zone Information"), "{stderr}");
+        }
+        None => {
+            assert_eq!(
+                stderr.matches("Thermal Zone Information").count(),
+                1,
+                "{stderr}"
+            );
+        }
+    }
+}

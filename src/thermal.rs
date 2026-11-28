@@ -1,4 +1,5 @@
-//! CPU temperature and thermal throttling counters from Linux sysfs, and the
+//! CPU temperature and thermal throttling counters from Linux sysfs, ACPI thermal
+//! zone temperatures on Windows (PDH performance counter, no admin rights) and the
 //! coarse thermal pressure level on macOS. One reader serves `--check-system`,
 //! the in-run monitoring of `interference.thermal` / `interference.thermal_pressure`
 //! and `--cooldown`. See `docs/specs/cgroup-thermal.md` and
@@ -33,11 +34,155 @@ pub fn temperatures(root: &Path) -> Vec<f64> {
         .into_iter()
         .flat_map(|dir| entries_of(&dir, "temp"))
         .filter(|p| p.to_string_lossy().ends_with("_input"));
-    zones
+    let mut found: Vec<f64> = zones
         .chain(hwmon)
         .filter_map(|path| std::fs::read_to_string(path).ok())
         .filter_map(|text| parse_millidegrees(&text))
+        .collect();
+    // Only the real host has the Windows counter: a fixture root (tests) does not
+    if root == Path::new("/") {
+        found.extend(host_zone_temperatures());
+    }
+    found
+}
+
+/// `Thermal Zone Information\Temperature` is in Kelvin (a whole number). 300 K -> `26.85`;
+/// `None` for a reading that is not a plausible temperature (0 K for a zone without
+/// data, NaN, a value already in °C).
+pub fn kelvin_to_celsius(kelvin: f64) -> Option<f64> {
+    let celsius = kelvin - 273.15;
+    (celsius > 0.0 && celsius < 150.0).then_some(celsius)
+}
+
+/// Temperatures in °C from the Kelvin readings of every thermal zone instance,
+/// implausible ones left out
+pub fn celsius_from_kelvin_readings(readings: &[f64]) -> Vec<f64> {
+    readings
+        .iter()
+        .copied()
+        .filter_map(kelvin_to_celsius)
         .collect()
+}
+
+/// ACPI thermal zone temperatures of the Windows host in °C: empty when the
+/// counter or its instances do not exist (many desktops and VMs)
+#[cfg(windows)]
+fn host_zone_temperatures() -> Vec<f64> {
+    celsius_from_kelvin_readings(&pdh::zone_kelvin_readings())
+}
+
+#[cfg(not(windows))]
+fn host_zone_temperatures() -> Vec<f64> {
+    Vec::new()
+}
+
+/// Reads `\Thermal Zone Information(*)\Temperature` through PDH. It needs no
+/// administrator rights, unlike `MSAcpi_ThermalZoneTemperature` over WMI.
+#[cfg(windows)]
+mod pdh {
+    use std::sync::{Mutex, OnceLock};
+    use windows_sys::Win32::System::Performance::{
+        PdhAddEnglishCounterW, PdhCloseQuery, PdhCollectQueryData, PdhGetFormattedCounterArrayW,
+        PdhOpenQueryW, PDH_CSTATUS_NEW_DATA, PDH_CSTATUS_VALID_DATA, PDH_FMT_COUNTERVALUE_ITEM_W,
+        PDH_FMT_DOUBLE, PDH_MORE_DATA,
+    };
+
+    /// Handles of a PDH query and its one counter, kept for the life of the process
+    struct Query {
+        query: isize,
+        counter: isize,
+    }
+
+    static QUERY: OnceLock<Option<Mutex<Query>>> = OnceLock::new();
+
+    fn open() -> Option<Mutex<Query>> {
+        let mut query: isize = 0;
+        // SAFETY: a null data source means the live counters; `query` is a valid out-pointer.
+        if unsafe { PdhOpenQueryW(std::ptr::null(), 0, &mut query) } != 0 {
+            return None;
+        }
+        let path: Vec<u16> = r"\Thermal Zone Information(*)\Temperature"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        let mut counter: isize = 0;
+        // SAFETY: `query` was opened above, `path` is NUL-terminated and outlives the call,
+        // `counter` is a valid out-pointer.
+        let status = unsafe { PdhAddEnglishCounterW(query, path.as_ptr(), 0, &mut counter) };
+        if status != 0 {
+            // SAFETY: `query` is open and not used after this.
+            unsafe { PdhCloseQuery(query) };
+            return None;
+        }
+        Some(Mutex::new(Query { query, counter }))
+    }
+
+    /// One Kelvin reading per thermal zone instance; empty when there is no
+    /// counter, no instance or no valid data
+    pub fn zone_kelvin_readings() -> Vec<f64> {
+        let Some(shared) = QUERY.get_or_init(open) else {
+            return Vec::new();
+        };
+        let Ok(guard) = shared.lock() else {
+            return Vec::new();
+        };
+        let (query, counter) = (guard.query, guard.counter);
+        // SAFETY: `query` is open (see `open`).
+        if unsafe { PdhCollectQueryData(query) } != 0 {
+            return Vec::new();
+        }
+        let mut bytes: u32 = 0;
+        let mut count: u32 = 0;
+        // SAFETY: the sizing call: a null buffer with size 0 is how PDH reports the size needed.
+        let status = unsafe {
+            PdhGetFormattedCounterArrayW(
+                counter,
+                PDH_FMT_DOUBLE,
+                &mut bytes,
+                &mut count,
+                std::ptr::null_mut(),
+            )
+        };
+        if status != PDH_MORE_DATA || bytes == 0 {
+            return Vec::new();
+        }
+        // u64 elements: the items hold pointers and an f64, they need 8-byte alignment
+        let mut buffer: Vec<u64> = vec![0; (bytes as usize).div_ceil(8)];
+        let items = buffer.as_mut_ptr().cast::<PDH_FMT_COUNTERVALUE_ITEM_W>();
+        // SAFETY: `buffer` holds at least `bytes` bytes, aligned for the items.
+        let status = unsafe {
+            PdhGetFormattedCounterArrayW(counter, PDH_FMT_DOUBLE, &mut bytes, &mut count, items)
+        };
+        if status != 0 {
+            return Vec::new();
+        }
+        // SAFETY: PDH filled `count` items at the start of `buffer`, which lives to the
+        // end of this function; the values are read as f64 because of PDH_FMT_DOUBLE.
+        let items = unsafe { std::slice::from_raw_parts(items, count as usize) };
+        items
+            .iter()
+            .filter(|item| {
+                item.FmtValue.CStatus == PDH_CSTATUS_VALID_DATA
+                    || item.FmtValue.CStatus == PDH_CSTATUS_NEW_DATA
+            })
+            // SAFETY: `doubleValue` is the member set for PDH_FMT_DOUBLE.
+            .map(|item| unsafe { item.FmtValue.Anonymous.doubleValue })
+            .collect()
+    }
+}
+
+/// Warns once that `--thermal` finds no sensor on Windows; other platforms stay silent
+/// (Linux without sensors always was, macOS has its own pressure level)
+pub fn warn_no_sensor_once(root: &Path) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static WARNED: AtomicBool = AtomicBool::new(false);
+    if cfg!(windows) && root == Path::new("/") && !WARNED.swap(true, Ordering::SeqCst) {
+        eprintln!(
+            "Warning: '--thermal': this Windows host has no 'Thermal Zone Information' \
+             temperature counter instance (common on desktops and VMs); nothing is sampled and \
+             'interference.thermal' is absent from the export."
+        );
+    }
 }
 
 fn entries_of(dir: &Path, prefix: &str) -> Vec<PathBuf> {
@@ -253,8 +398,8 @@ fn read_pressure_level() -> Option<PressureLevel> {
     PressureLevel::from_raw(state)
 }
 
-/// No coarse thermal state is read on Linux (it has temperatures) nor, for now,
-/// on Windows (see `docs/specs/thermal-macos-windows.md`).
+/// No coarse thermal state is read on Linux and Windows (they have temperatures,
+/// see `docs/specs/thermal-macos-windows.md`).
 #[cfg(not(target_os = "macos"))]
 fn read_pressure_level() -> Option<PressureLevel> {
     None
@@ -366,6 +511,45 @@ mod tests {
     #[test]
     fn macos_reports_a_pressure_level() {
         assert!(pressure_level(Path::new("/")).is_some());
+    }
+
+    #[test]
+    fn kelvin_readings_become_celsius() {
+        assert!((kelvin_to_celsius(300.0).unwrap() - 26.85).abs() < 1e-9);
+        assert!((kelvin_to_celsius(373.0).unwrap() - 99.85).abs() < 1e-9);
+        // 0 K (no data), a value already in °C, NaN and an absurd one are not temperatures
+        for bad in [0.0, 27.0, 273.15, 500.0, f64::NAN, f64::INFINITY, -5.0] {
+            assert_eq!(kelvin_to_celsius(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn zone_readings_leave_out_the_implausible_ones() {
+        let found = celsius_from_kelvin_readings(&[0.0, 310.0, 303.15, 1.0]);
+        assert_eq!(found.len(), 2);
+        assert!((found[0] - 36.85).abs() < 1e-9);
+        assert!((found[1] - 30.0).abs() < 1e-9);
+        assert!(celsius_from_kelvin_readings(&[]).is_empty());
+    }
+
+    /// The Windows counter is read for the real host only: a fixture root has none
+    #[test]
+    fn a_fixture_root_reads_no_host_zone() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(temperatures(dir.path()).is_empty());
+    }
+
+    /// The PDH counter may be absent (VMs, desktops) or present, and the read must
+    /// not fail either way. A present sensor gives a plausible temperature.
+    #[cfg(windows)]
+    #[test]
+    fn windows_zone_counter_is_absent_or_plausible() {
+        let readings = pdh::zone_kelvin_readings();
+        let celsius = max_temperature(Path::new("/"));
+        match celsius {
+            Some(c) => assert!(c > 0.0 && c < 150.0, "{c} °C from {readings:?}"),
+            None => assert!(celsius_from_kelvin_readings(&readings).is_empty()),
+        }
     }
 
     #[test]
