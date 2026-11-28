@@ -182,6 +182,19 @@ fn validate(res: &BenchmarkResult) -> Result<()> {
     if res.min > res.max {
         bail!("'min' ({}) is larger than 'max' ({})", res.min, res.max);
     }
+    // Summary statistics must lie within [min, max] (small float tolerance).
+    let close = |a: f64, b: f64| (a - b).abs() <= 1e-9 * a.abs().max(b.abs()).max(1.0);
+    for (name, value) in [("mean", res.mean), ("median", res.median)] {
+        if (value < res.min && !close(value, res.min))
+            || (value > res.max && !close(value, res.max))
+        {
+            bail!(
+                "'{name}' ({value}) is outside the range of 'min' ({}) and 'max' ({})",
+                res.min,
+                res.max
+            );
+        }
+    }
 
     let arrays: [(&str, Option<&[f64]>); 4] = [
         ("times", res.times.as_deref()),
@@ -201,7 +214,6 @@ fn validate(res: &BenchmarkResult) -> Result<()> {
     // with `times`. (Energy is excluded: samples can be missing.)
     if let Some(times) = res.times.as_deref().filter(|t| !t.is_empty()) {
         // `min`/`max` are computed from `times` by perfratio and hyperfine alike.
-        let close = |a: f64, b: f64| (a - b).abs() <= 1e-9 * a.abs().max(b.abs()).max(1.0);
         let t_min = times.iter().copied().fold(f64::INFINITY, f64::min);
         let t_max = times.iter().copied().fold(f64::NEG_INFINITY, f64::max);
         if !close(t_min, res.min) || !close(t_max, res.max) {
@@ -337,6 +349,32 @@ mod tests {
         let err =
             import_str(&format!(r#"{{"results":[{{{VALID},"times":[1,-2]}}]}}"#)).unwrap_err();
         assert!(format!("{err:#}").contains("'times[1]'"));
+    }
+
+    #[test]
+    fn test_import_json_rejects_mean_or_median_outside_min_max() {
+        for (field, json) in [
+            ("mean", r#""mean":5,"median":1.5"#),
+            ("mean", r#""mean":0.5,"median":1.5"#),
+            ("median", r#""mean":1.5,"median":5"#),
+            ("median", r#""mean":1.5,"median":0.5"#),
+        ] {
+            let err = import_str(&format!(
+                r#"{{"results":[{{"command":"a",{json},"stddev":0,"user":0,"system":0,"min":1,"max":2}}]}}"#
+            ))
+            .unwrap_err();
+            let msg = format!("{err:#}");
+            assert!(
+                msg.contains(&format!("'{field}'")) && msg.contains("outside"),
+                "{msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_import_json_accepts_mean_on_boundary_within_tolerance() {
+        let json = r#"{"results":[{"command":"a","mean":2.0000000001,"median":1,"stddev":0,"user":0,"system":0,"min":1,"max":2}]}"#;
+        assert!(import_str(json).is_ok());
     }
 
     #[test]

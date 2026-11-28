@@ -27,6 +27,7 @@ Currently, comparing benchmarks requires running all commands simultaneously in 
 - Backfills `command_with_unused_parameters` with `command` if missing from on-disk schema.
 - Displays imported benchmarks in console output as `Benchmark N: <cmd> (imported)`.
 - Re-indexes subsequent live benchmarks so display numbers follow seamlessly.
+- Validates input on import (#425): `mean` and `median` must lie within `[min, max]`, with a relative tolerance of 1e-9. Otherwise the import fails with an error naming the field. This validates input only. The JSON export and its schema version are unchanged.
 - Allows invocations with zero live commands (pure conversion/comparison mode).
 
 ## 3. Test & Verification Plan
@@ -34,6 +35,7 @@ Currently, comparing benchmarks requires running all commands simultaneously in 
    - JSON serialization and deserialization round-trip.
    - Graceful fallback for missing optional fields.
    - Non-existent file error handling.
+   - `mean`/`median` below `min` or above `max` rejected; value on the boundary (within tolerance) accepted.
 2. **Integration tests in `tests/integration_tests.rs`**:
    - Live benchmark + imported benchmark comparison.
    - Pure format conversion without live commands (`--import-json ... --export-markdown ...`).
