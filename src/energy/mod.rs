@@ -1,3 +1,4 @@
+pub mod gpu;
 pub mod ioreport;
 pub mod perf_rapl;
 pub mod rapl;
@@ -21,6 +22,12 @@ pub trait EnergySampler: Send + Sync {
     /// by the last `stop()`. The domains overlap, so they must not be added to each other
     /// or to the total (`rapl-domains.md`). `None` if unsupported or the read failed.
     fn domain_energy(&self) -> Option<Vec<(String, f64)>> {
+        None
+    }
+
+    /// Utilization in percent per GPU (`gpu:<index>`) read at the last `stop()`; only the
+    /// GPU wrapper of `--gpu` provides it (`gpu-energy.md`).
+    fn gpu_utilization(&self) -> Option<Vec<(String, f64)>> {
         None
     }
 }
@@ -138,6 +145,39 @@ impl Unavailable {
     }
 }
 
+impl Unavailable {
+    /// Human-readable cause, for the terminal warning and the `Energy:` line.
+    /// The RAPL reasons keep the Linux wording; the others name their own backend.
+    pub fn message(self) -> &'static str {
+        match self {
+            Self::UnsupportedPlatform => {
+                "the requested energy backend does not exist on this operating system"
+            }
+            Self::RaplNotFound | Self::RaplUnreadable => "RAPL unprivileged/unavailable on host",
+            Self::UnsupportedCpu => {
+                "no energy source without root on Intel Macs (Apple Silicon only)"
+            }
+            Self::IoreportNotFound => {
+                "IOReport 'Energy Model' channels not found (virtual machine or old macOS)"
+            }
+            Self::IoreportFrozen => {
+                "IOReport CPU energy counters read 0 on this macOS version; no joules reported"
+            }
+            Self::EmiNotFound => "no Windows EMI energy meter device found",
+            Self::EmiUnreadable => {
+                "Windows EMI energy meter devices cannot be read (try an administrator shell)"
+            }
+        }
+    }
+}
+
+static LAST_UNAVAILABLE: std::sync::OnceLock<Unavailable> = std::sync::OnceLock::new();
+
+/// Why the energy backend selection of this process failed, if it did.
+pub fn last_unavailable() -> Option<Unavailable> {
+    LAST_UNAVAILABLE.get().copied()
+}
+
 type Selected = (Box<dyn EnergySampler>, EnergyBackend);
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 type PerfOpener<'a> = &'a dyn Fn() -> Result<Box<dyn EnergySampler>, perf_rapl::PerfRaplError>;
@@ -235,7 +275,9 @@ pub fn get_energy_sampler(pref: BackendPreference) -> Box<dyn EnergySampler> {
     match select_sampler_detailed(pref) {
         Ok((sampler, _)) => sampler,
         Err(reason) => {
+            let _ = LAST_UNAVAILABLE.set(reason);
             warn_unreadable(reason);
+            warn_unavailable(reason);
             Box::new(DummySampler::new())
         }
     }
@@ -248,6 +290,23 @@ fn warn_unreadable(reason: Unavailable) {
         if let Some(path) = rapl::first_unreadable(std::path::Path::new(rapl::SYSFS_ROOT)) {
             ONCE.call_once(|| eprintln!("Warning: {}", rapl::permission_message(&path)));
         }
+    }
+}
+
+/// One warning per process for the reasons that have no dedicated message
+/// (everything except the RAPL ones, which keep their Linux behaviour).
+fn warn_unavailable(reason: Unavailable) {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    if !matches!(
+        reason,
+        Unavailable::RaplNotFound | Unavailable::RaplUnreadable
+    ) {
+        ONCE.call_once(|| {
+            eprintln!(
+                "Warning: '--energy': {}; continuing without energy (see 'energy_unavailable_reason' in the JSON export).",
+                reason.message()
+            )
+        });
     }
 }
 
@@ -592,5 +651,28 @@ mod baseline_tests {
     fn net_energy_clamps_at_zero() {
         assert!((net_energy(1.0, 3.0, 0.1) - 0.7).abs() < 1e-12);
         assert_eq!(net_energy(0.1, 3.0, 1.0), 0.0);
+    }
+
+    #[test]
+    fn every_reason_has_a_message_and_only_rapl_ones_mention_rapl() {
+        use Unavailable::*;
+        for reason in [
+            UnsupportedPlatform,
+            RaplNotFound,
+            RaplUnreadable,
+            UnsupportedCpu,
+            IoreportNotFound,
+            IoreportFrozen,
+            EmiNotFound,
+            EmiUnreadable,
+        ] {
+            let message = reason.message();
+            assert!(!message.is_empty(), "{reason:?}");
+            assert_eq!(
+                message.contains("RAPL"),
+                matches!(reason, RaplNotFound | RaplUnreadable),
+                "{reason:?}: {message}"
+            );
+        }
     }
 }

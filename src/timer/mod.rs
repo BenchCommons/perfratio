@@ -7,7 +7,7 @@ pub mod tree;
 mod windows_timer;
 
 #[cfg(not(windows))]
-mod unix_timer;
+pub(crate) mod unix_timer;
 
 #[cfg(target_os = "linux")]
 use nix::fcntl::{splice, SpliceFFlags};
@@ -560,6 +560,7 @@ pub fn execute_and_measure(
     #[cfg(windows)]
     if let Some(class) = crate::util::priority::windows_priority_class(priority) {
         self::windows_timer::set_priority_class(&child, class)?;
+        crate::util::priority::warn_if_downgraded(&child, priority, class)?;
     }
 
     #[cfg(windows)]

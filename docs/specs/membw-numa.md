@@ -1,6 +1,6 @@
 # Spec: memory bandwidth and NUMA metrics (#378)
 
-**Status:** Implemented (schemaVersion 1.37, additive). The fixture tests run in CI. Not run on
+**Status:** Implemented (schemaVersion 1.47, additive). The fixture tests run in CI. Not run on
 hardware: the uncore counters and a real `numa_maps` sample need bare-metal Linux (bare-metal
 check in #337).
 
@@ -84,7 +84,7 @@ the NUMA part and the topology only.
   Memory:             3.0 GB/s (read 2.0 GB/s, write 1.0 GB/s); NUMA node0 80%, node1 20%
 ```
 
-### JSON (schemaVersion 1.37, additive: MINOR)
+### JSON (schemaVersion 1.47, additive: MINOR)
 Per result (all optional, present with `--membw` when there is data):
 ```jsonc
 "membw": {
@@ -109,10 +109,10 @@ Per result (all optional, present with `--membw` when there is data):
 `perfratio.metrics[]` gains `membw.read`, `membw.write`, `membw.total` (`bytes/s`, scope `system`,
 direction `neutral`) and `numa.node_bytes` (`bytes`, scope `process`).
 
-Versioning: all fields are new and optional, so this is MINOR: **1.36 to 1.37**. Other open pull
-requests (#393 to #400) also use 1.37; whichever merges second rebases and takes the next number,
-and the schema snapshot `docs/schema/1.37/` and the version line in `output-schema-contract.md`
-are the places to renumber. `tools-benchmark` reads any 1.x and ignores unknown keys. With
+Versioning: all fields are new and optional, so this is MINOR: **1.46 to 1.47**. The number was
+reserved for this change among several open pull requests; the schema snapshot
+`docs/schema/1.47/` and the version line in `output-schema-contract.md` carry it.
+`tools-benchmark` reads any 1.x and ignores unknown keys. With
 `--debug-mode` the values are synthetic (`source: "mock"`).
 
 ## Edge cases

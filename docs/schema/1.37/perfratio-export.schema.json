@@ -180,22 +180,6 @@
         "region": {
           "$ref": "#/$defs/status",
           "description": "`--region` (1.23): `measured` when requested, otherwise `not_requested`. A run that did not report a region shows as null in `results[].regions[]`."
-        },
-        "membw": {
-          "$ref": "#/$defs/status",
-          "description": "`--membw` memory bandwidth (1.37, #378): `measured`, `unavailable` or `not_requested`."
-        },
-        "membw_unavailable_reason": {
-          "type": "string",
-          "description": "Open enum: unsupported_platform, no_uncore_imc, amd_df_unsupported, perf_paranoid, other, region_scope, concurrency."
-        },
-        "numa": {
-          "$ref": "#/$defs/status",
-          "description": "`--membw` NUMA placement from numa_maps (1.37, #378): `measured`, `unavailable` or `not_requested`."
-        },
-        "numa_unavailable_reason": {
-          "type": "string",
-          "description": "Open enum: unsupported_platform, no_numa_maps, region_scope, concurrency."
         }
       },
       "required": [
@@ -382,24 +366,6 @@
               "type": "integer",
               "minimum": 1
             },
-            "numa_topology": {
-              "type": "array",
-              "description": "New in 1.37 (#378): one entry per NUMA node (Linux), sorted by node number. Not part of the environment fingerprint.",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "node": { "type": "integer", "minimum": 0 },
-                  "cpus": { "type": "string", "description": "CPU list of the node as the kernel prints it, e.g. 0-15,32-47." },
-                  "memory_bytes": { "type": "integer", "minimum": 0 },
-                  "distances": {
-                    "type": "array",
-                    "items": { "type": "integer", "minimum": 0 },
-                    "description": "ACPI SLIT distance to every node, in node order (10 is the node itself)."
-                  }
-                },
-                "required": ["node"]
-              }
-            },
             "memory_bytes": {
               "type": "integer",
               "minimum": 0
@@ -548,6 +514,14 @@
               "exclusiveMinimum": 0,
               "exclusiveMaximum": 1,
               "description": "New in 1.36 (#323): --equivalence-margin as a fraction. Present only when set."
+            },
+            "ci_method": {
+              "type": "string",
+              "description": "New in 1.37 (#368): --ci-method, how results[].hierarchy.mean_ci is chosen: flat or hierarchical (open enum)."
+            },
+            "paired": {
+              "const": true,
+              "description": "New in 1.37 (#368): --paired was given. Present only then."
             },
             "correction": {
               "type": "object",
@@ -1343,6 +1317,23 @@
           "maximum": 1,
           "description": "New in 1.36 (#323): p-value of the equivalence test (TOST); only with --equivalence-margin and the mean estimator."
         },
+        "paired": {
+          "type": "object",
+          "description": "New in 1.37 (#368): paired comparison with the reference over the rounds of an interleaved schedule (round i of both commands is one pair). Present only with --paired, for the commands other than the reference, with at least 3 common rounds and no omitted runs.",
+          "properties": {
+            "reference": { "type": "string", "description": "The command it was compared with." },
+            "rounds": { "type": "integer", "minimum": 3 },
+            "mean_difference": { "type": "number", "description": "Mean of command - reference over the rounds, in seconds." },
+            "difference_ci": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "Student t interval of mean_difference at level." },
+            "level": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 },
+            "relative_change": { "type": "number", "description": "mean_difference over the mean of the reference." },
+            "relative_change_ci": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+            "p_value": { "type": "number", "minimum": 0, "maximum": 1, "description": "Two-sided p-value of the paired t-test." },
+            "correlation": { "type": "number", "minimum": -1, "maximum": 1, "description": "Pearson correlation of the two commands across the rounds; omitted when a command has no variance." },
+            "variance_reduction": { "type": "number", "maximum": 1, "description": "1 - var(differences) / (var(command) + var(reference)): what pairing gained over an unpaired design." }
+          },
+          "required": ["reference", "rounds", "mean_difference", "difference_ci", "level", "p_value"]
+        },
         "p_value_adjusted": {
           "type": "number",
           "minimum": 0,
@@ -1681,6 +1672,44 @@
           },
           "description": "`--region` (1.23): time inside each instrumented region. `mean`, `times` and the other time fields keep measuring the whole process."
         },
+        "hierarchy": {
+          "type": "object",
+          "description": "New in 1.37 (#368): the structure of the sample and the variance at each level. Present with --jobs > 1, --concurrency > 1 or --region repetitions (Kalibera and Jones 2013).",
+          "properties": {
+            "levels": { "type": "array", "items": { "type": "string" }, "description": "Outermost first: worker (--jobs), run (one process each), instance (--concurrency), repetition (--region pairs inside a run). Open enum." },
+            "cluster_level": { "type": "string", "description": "The level whose members are the clusters of clusters, units, variance and mean_ci: worker, or run with --concurrency." },
+            "clusters": { "type": "integer", "minimum": 0 },
+            "units": { "type": "integer", "minimum": 0 },
+            "workers": { "type": "array", "items": { "type": ["integer", "null"], "minimum": 0 }, "description": "--jobs: the worker slot of every run, aligned with times; null for the initial measurement." },
+            "repetitions": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": ["integer", "null"], "minimum": 0 } }, "description": "--region: start/stop pairs per run, by region name, for regions with more than one pair in some run." },
+            "variance": {
+              "type": "object",
+              "description": "One-way random effects estimate; omitted with fewer than two clusters.",
+              "properties": {
+                "between": { "type": "number", "minimum": 0, "description": "Variance between clusters, in seconds squared." },
+                "within": { "type": "number", "minimum": 0, "description": "Variance of the units inside a cluster, in seconds squared." },
+                "icc": { "type": "number", "minimum": 0, "maximum": 1, "description": "between / (between + within)." },
+                "design_effect": { "type": "number", "minimum": 1, "description": "1 + (mean cluster size - 1) * icc: how much the variance of the mean exceeds the one of independent units." },
+                "effective_n": { "type": "number", "exclusiveMinimum": 0, "description": "units / design_effect." }
+              },
+              "required": ["between", "within", "icc", "design_effect", "effective_n"]
+            },
+            "mean_ci": {
+              "type": "object",
+              "description": "Interval of the mean of the wall time, in seconds, with both methods.",
+              "properties": {
+                "level": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 },
+                "method": { "type": "string", "description": "statistics.ci_method: flat or hierarchical." },
+                "lower": { "type": "number" },
+                "upper": { "type": "number" },
+                "flat": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "Student t over every unit, as if independent." },
+                "hierarchical": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "Two-level bootstrap (clusters, then units), widened for the number of clusters." }
+              },
+              "required": ["level", "method", "lower", "upper", "flat", "hierarchical"]
+            }
+          },
+          "required": ["levels"]
+        },
         "workers_used": {
           "type": "integer",
           "minimum": 0,
@@ -1689,49 +1718,6 @@
         "contended": {
           "const": true,
           "description": "Runs were executed in parallel (--jobs N, N > 1) and may have disturbed each other; do not compare with sequential samples (new in 1.22)."
-        },
-        "membw": {
-          "type": "object",
-          "description": "New in 1.37 (#378): memory bandwidth per run (`--membw`), aligned with `times`; null = the run had no reading. Counters are system wide per socket (uncore IMC), so other activity is included.",
-          "properties": {
-            "source": { "type": "string", "description": "uncore_imc (mock with --debug-mode)." },
-            "read_bytes": { "type": "array", "items": { "type": ["integer", "null"], "minimum": 0 } },
-            "write_bytes": { "type": "array", "items": { "type": ["integer", "null"], "minimum": 0 } },
-            "bytes_per_second": {
-              "type": "array",
-              "items": { "type": ["number", "null"], "minimum": 0 },
-              "description": "(read + write) divided by the wall time of the run."
-            }
-          },
-          "required": ["source", "read_bytes", "write_bytes", "bytes_per_second"]
-        },
-        "membw_summary": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/$defs/summary"
-          },
-          "description": "New in 1.37 (#378): summary of read_bytes_per_second, write_bytes_per_second and bytes_per_second."
-        },
-        "numa": {
-          "type": "object",
-          "description": "New in 1.37 (#378): resident bytes per NUMA node of the benchmarked process (largest numa_maps sample of each run, `--membw`).",
-          "properties": {
-            "node_bytes": {
-              "type": "array",
-              "items": {
-                "type": ["object", "null"],
-                "additionalProperties": { "type": "integer", "minimum": 0 }
-              },
-              "description": "Per run, keyed by node number; null where no sample could be read."
-            },
-            "mean_node_fraction": {
-              "type": "object",
-              "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 },
-              "description": "Mean share of the resident bytes on each node over the sampled runs."
-            },
-            "dominant_node": { "type": "integer", "minimum": 0 }
-          },
-          "required": ["node_bytes", "mean_node_fraction", "dominant_node"]
         },
         "simd": {
           "type": "object",

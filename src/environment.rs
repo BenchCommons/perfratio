@@ -86,7 +86,7 @@ impl Backends {
     }
 }
 
-/// One NUMA node of the topology (`perfratio.environment.numa_topology[]`, new in 1.37)
+/// One NUMA node of the topology (`perfratio.environment.numa_topology[]`, new in 1.47)
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct NumaNode {

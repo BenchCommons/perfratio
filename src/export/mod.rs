@@ -88,6 +88,8 @@ trait Exporter {
 
     /// The `complexity` array (`--complexity`); only the JSON export has a place for it
     fn set_complexity(&self, _value: Option<&serde_json::Value>) {}
+    /// The `roofline` object (`--roofline`); only the JSON export has a place for it
+    fn set_roofline(&self, _value: Option<&serde_json::Value>) {}
 
     /// The Pareto analysis (`--pareto`) of the results about to be serialized
     fn set_pareto(&self, _analysis: Option<(&ParetoConfig, &Analysis)>) {}
@@ -98,6 +100,8 @@ trait Exporter {
 
 pub enum ExportTarget {
     File(String),
+    /// `--evidence DIR`: a bundle directory, written once by the final call
+    Evidence(PathBuf),
     Stdout,
 }
 
@@ -184,6 +188,14 @@ impl ExportManager {
         );
         metadata.region_protocol = region.then_some(crate::region::PROTOCOL_VERSION);
         metadata.energy_backend = energy.and_then(Result::ok).map(|b| b.as_str());
+        if matches.get_flag("gpu") {
+            let info = crate::energy::gpu::probe();
+            metadata.gpu = Some(metadata::GpuMetadata {
+                backends: info.backends,
+                devices: info.devices,
+                unavailable_reason: info.unavailable_reason,
+            });
+        }
         let environment = &mut metadata.environment;
         environment.backends.energy = metadata.energy_backend.map(str::to_string);
         if matches!(
@@ -222,7 +234,7 @@ impl ExportManager {
             metric,
             metadata,
             delta_table: matches.try_get_one::<bool>("delta-table").ok().flatten() == Some(&true),
-            pareto: ParetoConfig::parse(
+            pareto: ParetoConfig::parse_with(
                 matches
                     .try_get_one::<String>("pareto")
                     .ok()
@@ -245,9 +257,23 @@ impl ExportManager {
                     .ok()
                     .flatten()
                     .map(String::as_str),
+                matches
+                    .try_get_one::<bool>("pareto-significance")
+                    .ok()
+                    .flatten()
+                    == Some(&true),
+                matches
+                    .try_get_one::<bool>("pareto-probability")
+                    .ok()
+                    .flatten()
+                    == Some(&true),
             )
             .map_err(|e| anyhow::anyhow!("Invalid Pareto option: {e}"))?,
         };
+
+        if let Some(dir) = matches.try_get_one::<String>("evidence").ok().flatten() {
+            export_manager.add_evidence(Path::new(dir))?;
+        }
 
         if let Some(args) = matches.get_many::<String>("export") {
             for filename in args {
@@ -279,6 +305,22 @@ impl ExportManager {
     /// The environment of this run (`perfratio.environment`)
     pub fn environment(&self) -> &crate::environment::Environment {
         &self.metadata.environment
+    }
+
+    /// `--evidence DIR`: a JSON export that is written as an evidence bundle (#375). The
+    /// directory is created now, so that a bad one fails before the benchmarks run.
+    pub fn add_evidence(&mut self, dir: &Path) -> Result<()> {
+        crate::evidence::prepare(dir)?;
+        self.exporters.push(ExporterWithTarget {
+            exporter: Box::new(JsonExporter {
+                metadata: Some(self.metadata.clone()),
+                ..Default::default()
+            }),
+            target: ExportTarget::Evidence(dir.to_path_buf()),
+            append_delta_table: false,
+            append_pareto: false,
+        });
+        Ok(())
     }
 
     /// Add an additional exporter to the ExportManager
@@ -341,6 +383,13 @@ impl ExportManager {
         }
     }
 
+    /// Hand the result of `--roofline` to the exporters that include it.
+    pub fn set_roofline(&self, value: Option<serde_json::Value>) {
+        for e in &self.exporters {
+            e.exporter.set_roofline(value.as_ref());
+        }
+    }
+
     /// Hand the measured runner floor to the exporters that include it.
     pub fn set_calibration(&self, floor: Option<crate::calibration::Floor>) {
         for e in &self.exporters {
@@ -368,10 +417,17 @@ impl ExportManager {
         reference: Option<&BenchmarkResult>,
         intermediate: bool,
     ) -> Result<()> {
-        let analysis = self
+        // The tests and the bootstrap of '--pareto-significance' and '--pareto-probability'
+        // run once, for the final export
+        let intermediate_config = self
             .pareto
             .as_ref()
-            .map(|config| (config, pareto::analyze(config, results)));
+            .filter(|_| intermediate)
+            .map(ParetoConfig::without_uncertainty);
+        let analysis = self.pareto.as_ref().map(|config| {
+            let used = intermediate_config.as_ref().unwrap_or(config);
+            (config, pareto::analyze(used, results))
+        });
         for e in &self.exporters {
             e.exporter
                 .set_pareto(analysis.as_ref().map(|(config, a)| (*config, a)));
@@ -396,6 +452,11 @@ impl ExportManager {
                 ExportTarget::File(ref filename) => {
                     if !(intermediate && is_special_file(Path::new(filename))) {
                         write_to_file(filename, &content()?)?;
+                    }
+                }
+                ExportTarget::Evidence(ref dir) => {
+                    if !intermediate {
+                        crate::evidence::write(dir, &content()?)?;
                     }
                 }
                 ExportTarget::Stdout => {

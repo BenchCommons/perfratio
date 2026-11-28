@@ -234,23 +234,88 @@ fn the_sequential_method_has_requirements() {
     }
 }
 
-#[cfg(unix)]
 #[test]
 fn the_sequential_method_needs_more_runs_on_noisy_commands() {
-    // Random 10-50 ms sleeps: the confidence sequence is wider than the fixed interval
-    let noisy = "sleep 0.0$((RANDOM % 4 + 1))";
-    let shell = ["--shell=bash", "--max-runs=400", "--min-runs=5"];
-    let fixed = run_count(&[&shell[..], &["--target-precision=15%", noisy]].concat());
-    let sequential = run_count(
-        &[
-            &shell[..],
-            &[
-                "--target-precision=15%",
-                "--target-precision-method=sequential",
-                noisy,
-            ],
-        ]
-        .concat(),
-    );
+    // Simulated noise: `--aggregate-parameter-runs` pools the 10, 20, 30 and
+    // 40 ms runs into one result, so the spread is fixed by construction and
+    // the run counts don't depend on the machine's load (real random sleeps
+    // were flaky on macOS CI). The confidence sequence is wider than the
+    // fixed interval, so it needs more runs to reach the same target.
+    let noisy = [
+        "--debug-mode",
+        "--max-runs=400",
+        "--min-runs=5",
+        "--target-precision=15%",
+        "--parameter-list",
+        "d",
+        "0.01,0.02,0.03,0.04",
+        "--aggregate-parameter-runs",
+        "sleep {d}",
+    ];
+    let fixed = result(&noisy);
+    let sequential = result(&[&noisy[..], &["--target-precision-method=sequential"]].concat());
+    assert_eq!(fixed["precision"]["met"], true);
+    assert_eq!(sequential["precision"]["met"], true);
+    let runs = |r: &Value| r["times"].as_array().unwrap().len();
+    let (fixed, sequential) = (runs(&fixed), runs(&sequential));
     assert!(sequential > fixed, "{sequential} vs {fixed}");
+}
+
+#[test]
+fn metrics_are_reported_and_a_metric_that_cannot_be_measured_is_not_waited_for() {
+    // --debug-mode: constant wall time and memory, no energy sensor
+    let r = result(&[
+        "--debug-mode",
+        "--target-precision=1%",
+        "--target-precision-metrics=wall,memory,energy",
+        "sleep 0.1",
+    ]);
+    let metrics = r["precision_metrics"].as_array().unwrap();
+    assert_eq!(metrics.len(), 3);
+    assert_eq!(metrics[0]["metric"], "wall");
+    assert_eq!(metrics[0]["met"], true);
+    assert_eq!(metrics[0]["reached"], 0.0);
+    assert_eq!(metrics[1]["metric"], "memory");
+    assert_eq!(metrics[1]["runs"], 10);
+    assert_eq!(metrics[2]["metric"], "energy");
+    assert_eq!(metrics[2]["runs"], 0);
+    assert_eq!(metrics[2]["met"], false);
+    // stops at --min-runs instead of waiting for energy until the time budget
+    assert_eq!(r["times"].as_array().unwrap().len(), 10);
+    // the single-metric field is unchanged
+    assert_eq!(r["precision"]["met"], true);
+}
+
+#[test]
+fn metrics_are_only_reported_when_requested() {
+    assert!(
+        result(&["--debug-mode", "--target-precision=1%", "sleep 0.1"])
+            .get("precision_metrics")
+            .is_none()
+    );
+}
+
+#[test]
+fn metrics_dedupe_and_reject_unknown_names() {
+    let r = result(&[
+        "--debug-mode",
+        "--target-precision=1%",
+        "--target-precision-metrics=memory,memory",
+        "sleep 0.1",
+    ]);
+    assert_eq!(r["precision_metrics"].as_array().unwrap().len(), 1);
+
+    perfratio()
+        .args([
+            "--target-precision=1%",
+            "--target-precision-metrics=wall,cpu",
+            "true",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--target-precision-metrics"));
+    perfratio()
+        .args(["--target-precision-metrics=wall", "true"])
+        .assert()
+        .failure();
 }

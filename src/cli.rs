@@ -46,7 +46,7 @@ pub fn build_command() -> Command {
         .next_line_help(true)
         .hide_possible_values(true)
         // `--scope` applies to both of these
-        .group(ArgGroup::new("pmu-request").args(["counters", "simd"]).multiple(true))
+        .group(ArgGroup::new("pmu-request").args(["counters", "simd", "roofline"]).multiple(true))
         .about("A multi-dimensional command-line benchmarking tool with Performance per Watt, Hardware Counter Ratios, and Deep Statistics.")
         .help_expected(true)
         .max_term_width(80)
@@ -58,7 +58,13 @@ pub fn build_command() -> Command {
                        '--shell=none'. If multiple commands are given, perfratio will show a \
                        comparison of the respective runtimes. A single '-' reads one command per line from \
                        stdin (blank lines and lines starting with '#' are ignored).")
-                .required_unless_present_any(["generate-completions", "import-json", "argv"])
+                .required_unless_present_any([
+                    "generate-completions",
+                    "verify-evidence",
+                    "import-json",
+                    "argv",
+                    "list-events",
+                ])
                 .action(ArgAction::Append)
                 .value_hint(ValueHint::CommandString)
                 .value_parser(NonEmptyStringValueParser::new()),
@@ -187,6 +193,20 @@ pub fn build_command() -> Command {
                 .requires("compare")
                 .help("With '--compare': write the comparison as a Markdown table to FILE, \
                        e.g. for a pull request comment or a CI job summary."),
+        )
+        .arg(
+            Arg::new("verdict-json")
+                .long("verdict-json")
+                .action(ArgAction::Set)
+                .value_name("FILE")
+                .value_hint(ValueHint::FilePath)
+                .requires("compare")
+                .help("With '--compare': write a compact JSON verdict to FILE: per command and \
+                       metric whether it improved, regressed or is unchanged or inconclusive, \
+                       with the change, its confidence interval and the p-value, one overall \
+                       verdict (improved, regressed, trade_off, unchanged, inconclusive), and \
+                       the result of '--budget'. Meant for scripts and agents. The file is \
+                       written even when a budget fails."),
         )
         .arg(
             Arg::new("warmup")
@@ -590,7 +610,8 @@ pub fn build_command() -> Command {
             Arg::new("thermal")
                 .long("thermal")
                 .action(ArgAction::SetTrue)
-                .help("Sample the CPU temperature while the benchmark runs (Linux).")
+                .help("Sample the CPU temperature while the benchmark runs (Linux only; elsewhere \
+                       it warns and does nothing).")
                 .long_help(
                     "Sample the hottest CPU temperature sensor (thermal zones and hwmon) on a \
                      background thread while the benchmark runs, and report it as \
@@ -790,6 +811,17 @@ pub fn build_command() -> Command {
                        is the package energy and the other domains must not be added to it."),
         )
         .arg(
+            Arg::new("gpu")
+                .long("gpu")
+                .action(ArgAction::SetTrue)
+                .requires("energy")
+                .help("Also record GPU energy and utilization: NVIDIA (NVML) and AMD (AMD SMI), \
+                       loaded at run time. Energy is reported per device as 'gpu:<index>' in \
+                       'energy_domains_joules' and does not enter the host total; utilization \
+                       (percent, sampled at the end of each run) as 'gpu_utilization_percent'. \
+                       Without a driver library a warning is printed and the run goes on."),
+        )
+        .arg(
             Arg::new("energy-backend")
                 .long("energy-backend")
                 .value_name("BACKEND")
@@ -963,14 +995,51 @@ pub fn build_command() -> Command {
                        the runs. Assumes independent runs with finite variance."),
         )
         .arg(
+            Arg::new("target-precision-metrics")
+                .long("target-precision-metrics")
+                .action(ArgAction::Set)
+                .value_name("METRICS")
+                .requires("target-precision")
+                .help("Metrics that '--target-precision' waits for, comma-separated from \
+                       'wall', 'memory' and 'energy' (default: wall). Each command runs until \
+                       every listed metric has the precision of '--target-precision', by \
+                       '--target-precision-method'. A metric without samples (energy without \
+                       a sensor) is not waited for and is reported as not reached."),
+        )
+        .arg(
+            Arg::new("power")
+                .long("power")
+                .action(ArgAction::Set)
+                .value_name("P")
+                .help("Statistical power for the power report and '--target-effect' (default: \
+                       0.8; a fraction between 0 and 1). Adds a 'Power' line with the smallest \
+                       change of the mean that a two-sided t-test at '--significance-level' \
+                       detects with this probability when this command is compared with an \
+                       identical one that has the same number of runs. Assumes independent runs \
+                       and approximately normal means."),
+        )
+        .arg(
+            Arg::new("target-effect")
+                .long("target-effect")
+                .action(ArgAction::Set)
+                .value_name("PCT")
+                .help("The smallest change of the mean to detect, as a percentage of the mean \
+                       (e.g. '3%'), with the '--power' (default 0.8). Reports the runs needed. \
+                       Without '--runs' and '--duration' it is also a stopping rule: each \
+                       command runs until that many runs have been made, within '--min-runs', \
+                       '--max-runs' and '--max-benchmarking-time'. The runs needed are computed \
+                       from the standard deviation seen so far."),
+        )
+        .group(ArgGroup::new("adaptive-stop").args(["target-precision", "target-effect"]).multiple(true))
+        .arg(
             Arg::new("max-benchmarking-time")
                 .long("max-benchmarking-time")
                 .action(ArgAction::Set)
                 .value_name("SECONDS")
-                .requires("target-precision")
-                .help("Time budget per command for '--target-precision' (default: 60). If \
-                       the target is not reached within it, a warning shows the precision \
-                       that was reached."),
+                .requires("adaptive-stop")
+                .help("Time budget per command for '--target-precision' and '--target-effect' \
+                       (default: 60). If the target is not reached within it, a warning shows \
+                       what was reached."),
         )
         .arg(
             Arg::new("duration")
@@ -1256,6 +1325,26 @@ pub fn build_command() -> Command {
                        assets; light and dark themes. Also chosen by '--export FILE.html'."),
         )
         .arg(
+            Arg::new("evidence")
+                .long("evidence")
+                .action(ArgAction::Set)
+                .value_name("DIR")
+                .value_hint(ValueHint::DirPath)
+                .help("Write an evidence bundle to the new or empty directory DIR: the JSON results, \
+                       the samples of every run, environment, calibration, validation, quality and the \
+                       command line, with SHA-256 hashes in manifest.json. No host name or \
+                       environment variables. The commands are recorded as typed: keep secrets out of them. Check it with '--verify-evidence'"),
+        )
+        .arg(
+            Arg::new("verify-evidence")
+                .long("verify-evidence")
+                .action(ArgAction::Set)
+                .value_name("DIR")
+                .value_hint(ValueHint::DirPath)
+                .conflicts_with_all(["evidence", "command"])
+                .help("Check the hashes of the evidence bundle in DIR and exit (0: intact, 1: not)"),
+        )
+        .arg(
             Arg::new("export-json")
                 .long("export-json")
                 .action(ArgAction::Set)
@@ -1366,6 +1455,56 @@ pub fn build_command() -> Command {
                      only if another is better by more than PERCENT of the value on some \
                      metric and not worse beyond it; otherwise it stays on the frontier as \
                      'not dominated (within noise)'. Default: off.",
+                ),
+        )
+        .arg(
+            Arg::new("pareto-significance")
+                .long("pareto-significance")
+                .action(ArgAction::SetTrue)
+                .help(
+                    "With '--pareto': a command is dominated only when the commands that are \
+                     better in the estimates are significantly better on every such metric \
+                     (per-run samples, '--estimator', '--significance-level', '--correction', \
+                     '--bootstrap-resamples', '--noise-threshold'). Otherwise it stays on the \
+                     frontier as 'not dominated (difference not significant)'. Metrics without \
+                     3 runs of samples never show a difference.",
+                ),
+        )
+        .arg(
+            Arg::new("pareto-probability")
+                .long("pareto-probability")
+                .action(ArgAction::SetTrue)
+                .help(
+                    "With '--pareto': report, per command, the bootstrap probability of not \
+                     being dominated (share of '--bootstrap-resamples' resamples of the runs in \
+                     which no other command dominates it).",
+                ),
+        )
+        .arg(
+            Arg::new("ci-method")
+                .long("ci-method")
+                .value_name("METHOD")
+                .value_parser(["flat", "hierarchical"])
+                .help(
+                    "Interval of the mean when the runs have a hierarchy ('--jobs' workers, \
+                     '--concurrency' instances): 'flat' treats every run as independent (default), \
+                     'hierarchical' resamples the clusters and then the runs inside them \
+                     (Kalibera & Jones 2013), which is wider when the clusters differ. Shown in \
+                     the summary of the run and in 'results[].hierarchy' of the JSON export, \
+                     together with the variance at each level. It does not change \
+                     '--target-precision' or the tests.",
+                ),
+        )
+        .arg(
+            Arg::new("paired")
+                .long("paired")
+                .action(ArgAction::SetTrue)
+                .help(
+                    "Paired analysis of every command against the reference: the runs of one \
+                     round of an interleaved schedule ('--schedule round-robin', 'randomized', \
+                     'balanced') are paired, and the mean difference, its interval and a \
+                     paired t-test are reported. Pairing removes the drift the commands share \
+                     in a round.",
                 ),
         )
         .arg(
@@ -1531,7 +1670,8 @@ pub fn build_command() -> Command {
                        noisy or irreproducible, with a hint for each problem:\n\
                        Linux: CPU frequency governor, turbo boost, load average, power source, \
                        temperature.\n\
-                       macOS: load average, power source, Low Power Mode, thermal throttling.\n\n\
+                       macOS: load average, power source, Low Power Mode, thermal throttling.\n\
+                       Windows: power source, power plan, CPU load, CPU frequency limit.\n\n\
                        '--check-system' (or '=warn') only reports. '--check-system=strict' \
                        aborts with exit code 4 if any check does not pass, which is useful on \
                        dedicated benchmark machines and CI runners.\n\n\
@@ -1554,7 +1694,8 @@ pub fn build_command() -> Command {
                        'high': nice -20 (Linux, macOS), HIGH_PRIORITY_CLASS (Windows).\n\
                        'idle': SCHED_IDLE (Linux), nice 19 (macOS), IDLE_PRIORITY_CLASS (Windows).\n\
                        'realtime': SCHED_FIFO at the maximum priority (Linux), \
-                       REALTIME_PRIORITY_CLASS (Windows). Not available on macOS.\n\n\
+                       REALTIME_PRIORITY_CLASS (Windows). On macOS: nice -20 plus the \
+                       foreground task role, not a real-time policy.\n\n\
                        'high' and 'realtime' need privileges: root or \
                        'sudo setcap cap_sys_nice+ep \"$(command -v perfratio)\"' on Linux, root on \
                        macOS, administrator rights on Windows (otherwise 'realtime' silently \
@@ -1584,7 +1725,10 @@ pub fn build_command() -> Command {
                 .help("Collect performance counters per run (Linux). LIST is \
                        comma-separated: instructions, cycles, cache-references, cache-misses, \
                        branches, branch-misses (default: all), plus the software events \
-                       cpu-migrations, context-switches, page-faults and task-clock. Use \
+                       cpu-migrations, context-switches, page-faults and task-clock, and raw \
+                       PMU events: 'raw:r01c2' (hex config), 'cpu/event=0x3c,umask=0x01/' \
+                       (terms placed by the PMU's sysfs format) and named events such as \
+                       'cpu/mem-loads/' (see '--list-events'). Use \
                        '--counters=cycles' to give a list. Shorthands: 'default' (hardware \
                        list), 'sw' (cpu-migrations, context-switches), 'frequency' (cycles). \
                        An event takes a ':u' (user) or ':k' (kernel) modifier, e.g. \
@@ -1596,6 +1740,14 @@ pub fn build_command() -> Command {
                        (perf_event_paranoid <= 1) and are otherwise reported as unavailable. \
                        Unavailable counters give one warning, never an error. Not available on \
                        macOS and Windows."),
+        )
+        .arg(
+            Arg::new("list-events")
+                .long("list-events")
+                .action(ArgAction::SetTrue)
+                .help("List the events '--counters' accepts and exit: the built-in names, the \
+                       raw syntax and the named events and terms of the PMUs the kernel \
+                       exposes under /sys/bus/event_source/devices (Linux), like 'perf list'."),
         )
         .arg(
             Arg::new("scope")
@@ -1646,6 +1798,52 @@ pub fn build_command() -> Command {
                        where a source is missing, one warning is printed and the other source \
                        still works. Use '-N' or '--shell=none' for NUMA placement of the \
                        command itself instead of the shell."),
+        )
+        .arg(
+            Arg::new("roofline")
+                .long("roofline")
+                .action(ArgAction::SetTrue)
+                .conflicts_with("import-json")
+                .help("Place every command on the roofline (Linux, x86_64): arithmetic intensity \
+                       (FLOP per byte), GFLOP/s and GB/s, and whether the run is memory- or \
+                       compute-bound. Enables '--simd' and 'cache-misses'. FLOPs come from the \
+                       '--simd' counts; the bytes are last-level cache misses × 64, a lower bound \
+                       of the real traffic (it misses prefetches and write-backs), so the \
+                       intensity is an upper bound. Exported as 'roofline' in the JSON file.")
+                .long_help("Place every command on the roofline (Williams et al., CACM 2009).\n\n\
+                       FLOPs come from '--simd': retired scalar and packed floating-point \
+                       arithmetic, with each packed count multiplied by its lanes ('--roofline-precision'). \
+                       Intel counts an FMA twice; AMD counts uops, so an FMA uop is one FLOP \
+                       there (a lower bound). Integer SIMD is not counted.\n\n\
+                       Memory traffic is the 'cache-misses' counter (last-level cache misses) × \
+                       64 bytes, until bandwidth counters exist (#378). It misses hardware \
+                       prefetches and write-backs: the bytes are a lower bound and the \
+                       arithmetic intensity an upper bound.\n\n\
+                       Enables '--simd' and the 'cache-misses' counter. Linux with a supported \
+                       PMU only; elsewhere the result is 'unavailable'.\n\n\
+                       Example:  perfratio --roofline --roofline-peaks 48,20 './stream'"),
+        )
+        .arg(
+            Arg::new("roofline-peaks")
+                .long("roofline-peaks")
+                .value_name("GFLOPS,GBPS")
+                .requires("roofline")
+                .value_parser(|v: &str| parse_roofline_peaks(v).map(|_| v.to_string()))
+                .help("The roofs of '--roofline': peak GFLOP/s and peak memory bandwidth in GB/s of \
+                       this machine, e.g. '48,20'. Or 'observed' (default): the best values over \
+                       the benchmarked commands, which needs two commands and is only a lower \
+                       bound of the real ceilings."),
+        )
+        .arg(
+            Arg::new("roofline-precision")
+                .long("roofline-precision")
+                .value_name("PRECISION")
+                .requires("roofline")
+                .value_parser(["single", "double"])
+                .default_value("double")
+                .help("Element size of the packed floating-point counts: 'double' (64-bit, \
+                       default) or 'single' (32-bit, twice the FLOPs per packed instruction). \
+                       '--simd' does not tell them apart."),
         )
         .arg(
             Arg::new("first-run")
@@ -1757,6 +1955,8 @@ pub fn build_command() -> Command {
 fn verify_app() {
     build_command().debug_assert();
 }
+
+include!("roofline_peaks.rs");
 
 /// Validates `--metric`. Mirrors `Metric::from_str` (`src/metric.rs`), which this
 /// file cannot use because `build.rs` compiles it standalone.

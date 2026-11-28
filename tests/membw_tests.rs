@@ -24,7 +24,7 @@ fn export(args: &[&str]) -> serde_json::Value {
 #[test]
 fn exports_bandwidth_numa_and_status() {
     let json = export(&["--runs=3", "--membw", "sleep 0.5"]);
-    assert_eq!(json["schemaVersion"], "1.37");
+    assert_eq!(json["schemaVersion"], "1.47");
     let m = &json["perfratio"]["measurements"];
     assert_eq!(m["membw"], "measured");
     assert_eq!(m["numa"], "measured");
