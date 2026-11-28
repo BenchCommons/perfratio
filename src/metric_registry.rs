@@ -73,6 +73,10 @@ pub enum Group {
     Counters,
     Topdown,
     Simd,
+    /// `--membw` bandwidth
+    Membw,
+    /// `--membw` NUMA placement
+    Numa,
     /// Only listed when some result carries one of its fields
     Concurrency,
 }
@@ -202,6 +206,17 @@ pub const REGISTRY: &[Spec] = &[
         Derived,
         Energy,
         &["mean_net_energy_joules"],
+    ),
+    // Only listed with `--energy-attribution` (an estimate: model in `energy_attribution`)
+    spec(
+        "energy.attributed",
+        "J",
+        LowerIsBetter,
+        Scope::Process,
+        "energy_attribution",
+        Estimated,
+        Concurrency,
+        &["energy_attribution"],
     ),
     spec(
         "power.average",
@@ -428,6 +443,46 @@ pub const REGISTRY: &[Spec] = &[
         &["simd", "simd_summary", "simd_scaling"],
     ),
     spec(
+        "membw.read",
+        "bytes/s",
+        Neutral,
+        Scope::System,
+        "linux.uncore_imc",
+        Measured,
+        Membw,
+        &["membw", "membw_summary"],
+    ),
+    spec(
+        "membw.write",
+        "bytes/s",
+        Neutral,
+        Scope::System,
+        "linux.uncore_imc",
+        Measured,
+        Membw,
+        &["membw", "membw_summary"],
+    ),
+    spec(
+        "membw.total",
+        "bytes/s",
+        Neutral,
+        Scope::System,
+        "linux.uncore_imc",
+        Measured,
+        Membw,
+        &["membw", "membw_summary"],
+    ),
+    spec(
+        "numa.node_bytes",
+        "bytes",
+        Neutral,
+        Scope::Process,
+        "linux.numa_maps",
+        Measured,
+        Numa,
+        &["numa"],
+    ),
+    spec(
         "batch.throughput",
         "runs/s",
         HigherIsBetter,
@@ -455,6 +510,8 @@ pub const REGISTRY: &[Spec] = &[
 /// `$defs/result` in the JSON Schema.
 pub const NON_METRIC_FIELDS: &[&str] = &[
     "command",
+    "mode",
+    "iterations",
     "command_with_unused_parameters",
     "parameters",
     "per_run_parameters",
@@ -512,6 +569,8 @@ pub const DYNAMIC_FIELDS: &[&str] = &[
     "counters_summary",
     "custom_metrics",
     "custom_metrics_summary",
+    "collector_metrics",
+    "collector_metrics_summary",
     "energy_domains_joules",
     "gpu_utilization_percent",
     "regions",
@@ -565,6 +624,8 @@ fn group_status(group: Group, m: &Measurements) -> (MeasurementStatus, Option<&'
         Counters => (m.counters, m.counters_unavailable_reason),
         Topdown => (m.topdown, m.topdown_unavailable_reason),
         Simd => (m.simd, m.simd_unavailable_reason),
+        Membw => (m.membw, m.membw_unavailable_reason),
+        Numa => (m.numa, m.numa_unavailable_reason),
         Concurrency => (MeasurementStatus::Measured, None),
     }
 }
@@ -763,6 +824,45 @@ pub fn descriptors(
             },
             reason: missing.then(|| "no_match_in_some_runs".to_string()),
             fields: vec!["custom_metrics".into(), "custom_metrics_summary".into()],
+        });
+    }
+
+    // `--collector` and `--collector-plugin`: `collector.<name>.<id>`, declared by the collector
+    for key in keys_of(results, |r| {
+        r.collector_metrics
+            .as_ref()
+            .map(|c| c.keys().cloned().collect())
+            .unwrap_or_default()
+    }) {
+        let missing = results
+            .iter()
+            .filter_map(|r| r.collector_metrics.as_ref()?.get(&key))
+            .any(|runs| runs.iter().any(Option::is_none));
+        // Metrics of an imported file have no declaration in this run
+        let meta = crate::collector::meta(&key).unwrap_or_else(|| crate::collector::Meta {
+            unit: "unitless".into(),
+            direction: Neutral,
+            kind: Measured,
+            scope: Scope::Process,
+            source: "collector".into(),
+        });
+        out.push(MetricDescriptor {
+            id: format!("collector.{key}"),
+            unit: meta.unit,
+            direction: meta.direction,
+            scope: meta.scope,
+            source: meta.source,
+            kind: meta.kind,
+            status: if missing {
+                Status::Partial
+            } else {
+                Status::Available
+            },
+            reason: missing.then(|| "no_value_in_some_runs".to_string()),
+            fields: vec![
+                "collector_metrics".into(),
+                "collector_metrics_summary".into(),
+            ],
         });
     }
 

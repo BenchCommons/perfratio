@@ -47,6 +47,8 @@ pub struct TimerResult {
     pub counters: Option<crate::benchmark::timing_result::ResourceCounters>,
     /// Hardware counter totals (`--counters`), filled by the executor
     pub hw_counters: Option<crate::perf_counters::HwReading>,
+    /// Memory bandwidth and NUMA placement (`--membw`)
+    pub membw: Option<crate::membw::Run>,
     /// The exit status of the process
     pub status: ExitStatus,
     /// The tail of stdout and stderr (`--show-output-on-failure`)
@@ -57,6 +59,8 @@ pub struct TimerResult {
     pub until_matched: Option<bool>,
     /// Extracted custom metrics
     pub custom_metrics: std::collections::BTreeMap<String, f64>,
+    /// Metrics of the collectors of this run (`<collector>.<id>`)
+    pub collector_metrics: std::collections::BTreeMap<String, f64>,
     /// Identifier of the region SDK that reported (`--region`)
     pub region_sdk: Option<String>,
     /// Descendants of the command were still running when it exited (they
@@ -800,11 +804,13 @@ pub fn execute_and_measure(
         memory_usage_byte,
         counters,
         hw_counters: None,
+        membw: None,
         status,
         captured,
         timed_out,
         until_matched,
         custom_metrics: std::collections::BTreeMap::new(),
+        collector_metrics: std::collections::BTreeMap::new(),
         region_sdk: None,
         leftover_processes,
         validation_stdout: None,

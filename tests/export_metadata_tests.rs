@@ -283,7 +283,9 @@ fn schema_1_1_layout_snapshot() {
     measurements:
       counters: not_requested
       energy: not_requested
+      membw: not_requested
       memory: measured
+      numa: not_requested
       region: not_requested
       resources: not_requested
       simd: not_requested

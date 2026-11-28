@@ -141,7 +141,7 @@
         },
         "energy_unavailable_reason": {
           "type": "string",
-          "description": "Why energy is unavailable. Open enum: unsupported_platform, rapl_not_found, rapl_unreadable, unsupported_cpu, ioreport_not_found, ioreport_frozen, emi_not_found, emi_unreadable, other."
+          "description": "Why energy is unavailable. Open enum: unsupported_platform, rapl_not_found, rapl_unreadable, unsupported_cpu, ioreport_not_found, ioreport_frozen, emi_not_found, emi_unreadable, meter_not_configured, meter_unreadable, other."
         },
         "resources": {
           "$ref": "#/$defs/status"
@@ -184,6 +184,22 @@
         "region": {
           "$ref": "#/$defs/status",
           "description": "`--region` (1.23): `measured` when requested, otherwise `not_requested`. A run that did not report a region shows as null in `results[].regions[]`."
+        },
+        "membw": {
+          "$ref": "#/$defs/status",
+          "description": "`--membw` memory bandwidth (1.47, #378): `measured`, `unavailable` or `not_requested`."
+        },
+        "membw_unavailable_reason": {
+          "type": "string",
+          "description": "Open enum: unsupported_platform, no_uncore_imc, amd_df_unsupported, perf_paranoid, other, region_scope, concurrency."
+        },
+        "numa": {
+          "$ref": "#/$defs/status",
+          "description": "`--membw` NUMA placement from numa_maps (1.47, #378): `measured`, `unavailable` or `not_requested`."
+        },
+        "numa_unavailable_reason": {
+          "type": "string",
+          "description": "Open enum: unsupported_platform, no_numa_maps, region_scope, concurrency."
         }
       },
       "required": [
@@ -252,7 +268,7 @@
         },
         "energy_backend": {
           "type": "string",
-          "description": "Backend that produced the energy samples. Open enum: sysfs_powercap, perf_pmu, ioreport, windows_emi."
+          "description": "Backend that produced the energy samples. Open enum: sysfs_powercap, perf_pmu, ioreport, windows_emi, external_meter (1.43, #382: the values then cover the machine behind the meter, e.g. wall-plug energy)."
         },
         "gpu": {
           "type": "object",
@@ -390,6 +406,24 @@
             "numa_nodes": {
               "type": "integer",
               "minimum": 1
+            },
+            "numa_topology": {
+              "type": "array",
+              "description": "New in 1.47 (#378): one entry per NUMA node (Linux), sorted by node number. Not part of the environment fingerprint.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "node": { "type": "integer", "minimum": 0 },
+                  "cpus": { "type": "string", "description": "CPU list of the node as the kernel prints it, e.g. 0-15,32-47." },
+                  "memory_bytes": { "type": "integer", "minimum": 0 },
+                  "distances": {
+                    "type": "array",
+                    "items": { "type": "integer", "minimum": 0 },
+                    "description": "ACPI SLIT distance to every node, in node order (10 is the node itself)."
+                  }
+                },
+                "required": ["node"]
+              }
             },
             "memory_bytes": {
               "type": "integer",
@@ -1519,6 +1553,26 @@
             "$ref": "#/$defs/summary"
           }
         },
+        "collector_metrics": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "description": "Metrics of collectors (`--collector`, `--collector-plugin`) by `<collector>.<id>` (new in 1.44). A plugin has one entry per run (null where it had no value); the Valgrind run is deterministic and has one entry."
+        },
+        "collector_metrics_summary": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/summary"
+          },
+          "description": "Summary of `collector_metrics` (new in 1.44)."
+        },
         "parameters": {
           "type": "object",
           "additionalProperties": {
@@ -1739,6 +1793,51 @@
           "type": "number",
           "description": "No longer written since 1.19: package energy is not divided per instance."
         },
+        "energy_attribution": {
+          "type": "object",
+          "description": "New in 1.43 (#381): ESTIMATED energy of the command or its cgroup, from a CPU-time share model (--energy-attribution). Never a measurement: mean_energy_joules stays the primary value.",
+          "properties": {
+            "kind": {
+              "const": "estimated"
+            },
+            "model": {
+              "type": "string",
+              "description": "Open enum: cpu-time-share, cgroup-cpu-share."
+            },
+            "scope": {
+              "type": "string",
+              "description": "Open enum: process, cgroup."
+            },
+            "samples": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Runs with an estimate."
+            },
+            "clamped_runs": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Runs whose share exceeded 1 and was clamped to 1."
+            },
+            "mean_share": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "mean_joules": {
+              "type": "number",
+              "minimum": 0
+            },
+            "joules": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0
+              },
+              "description": "Estimate per run; only when every run has one."
+            }
+          },
+          "required": ["kind", "model", "scope", "samples", "clamped_runs", "mean_share", "mean_joules"]
+        },
         "energy_scope": {
           "type": "string",
           "description": "Scope of the energy values (1.19): `system` (package counter, covers the whole machine) or `batch` (--concurrency: energy of the whole batch over the makespan).",
@@ -1769,6 +1868,35 @@
         "leftover_processes": {
           "type": "boolean",
           "description": "Only present when true (1.19): processes started by the command outlived it in at least one run and were killed."
+        },
+        "mode": {
+          "const": "persistent",
+          "description": "`--persistent` (1.46): the command ran as one long-lived process and every run is an iteration. Absent otherwise."
+        },
+        "iterations": {
+          "type": "object",
+          "properties": {
+            "protocol": {"type": "integer", "description": "Persistent protocol version spoken."},
+            "sdk": {"type": "string", "description": "Identifier the SDK sent in its hello line."},
+            "count": {"type": "integer", "minimum": 0, "description": "Measured iterations (the length of `times`)."},
+            "status": {"enum": ["steady_state", "no_steady_state", "too_few_iterations"]},
+            "warmup_iterations": {"type": "integer", "minimum": 0, "description": "Iterations before the steady state. Only with status steady_state."},
+            "steady_state": {
+              "type": "object",
+              "properties": {
+                "first_iteration": {"type": "integer", "minimum": 0},
+                "count": {"type": "integer", "minimum": 1},
+                "mean": {"type": "number"},
+                "stddev": {"type": ["number", "null"]},
+                "min": {"type": "number"},
+                "max": {"type": "number"}
+              },
+              "required": ["first_iteration", "count", "mean", "min", "max"],
+              "description": "Statistics in seconds of the iterations after the warm-up phase."
+            }
+          },
+          "required": ["protocol", "count", "status"],
+          "description": "`--persistent` (1.46): warm-up detection and steady-state statistics of the iterations."
         },
         "regions": {
           "type": "array",
@@ -1823,6 +1951,49 @@
         "contended": {
           "const": true,
           "description": "Runs were executed in parallel (--jobs N, N > 1) and may have disturbed each other; do not compare with sequential samples (new in 1.22)."
+        },
+        "membw": {
+          "type": "object",
+          "description": "New in 1.47 (#378): memory bandwidth per run (`--membw`), aligned with `times`; null = the run had no reading. Counters are system wide per socket (uncore IMC), so other activity is included.",
+          "properties": {
+            "source": { "type": "string", "description": "uncore_imc (mock with --debug-mode)." },
+            "read_bytes": { "type": "array", "items": { "type": ["integer", "null"], "minimum": 0 } },
+            "write_bytes": { "type": "array", "items": { "type": ["integer", "null"], "minimum": 0 } },
+            "bytes_per_second": {
+              "type": "array",
+              "items": { "type": ["number", "null"], "minimum": 0 },
+              "description": "(read + write) divided by the wall time of the run."
+            }
+          },
+          "required": ["source", "read_bytes", "write_bytes", "bytes_per_second"]
+        },
+        "membw_summary": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/summary"
+          },
+          "description": "New in 1.47 (#378): summary of read_bytes_per_second, write_bytes_per_second and bytes_per_second."
+        },
+        "numa": {
+          "type": "object",
+          "description": "New in 1.47 (#378): resident bytes per NUMA node of the benchmarked process (largest numa_maps sample of each run, `--membw`).",
+          "properties": {
+            "node_bytes": {
+              "type": "array",
+              "items": {
+                "type": ["object", "null"],
+                "additionalProperties": { "type": "integer", "minimum": 0 }
+              },
+              "description": "Per run, keyed by node number; null where no sample could be read."
+            },
+            "mean_node_fraction": {
+              "type": "object",
+              "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 },
+              "description": "Mean share of the resident bytes on each node over the sampled runs."
+            },
+            "dominant_node": { "type": "integer", "minimum": 0 }
+          },
+          "required": ["node_bytes", "mean_node_fraction", "dominant_node"]
         },
         "simd": {
           "type": "object",
@@ -2228,24 +2399,149 @@
             "type": "number"
           },
           "description": "Values run a second time by --optimize-confirm (1.15)."
+        },
+        "vars": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "min": {
+                "type": "integer"
+              },
+              "max": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name",
+              "min",
+              "max"
+            ]
+          },
+          "description": "New in 1.45 (#385): the searched variables, in the order of --optimize. Present for --optimize with several variables or --optimize-algorithm random, halving or bayes."
+        },
+        "best_point": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "New in 1.45 (#385): the best value of every searched variable."
+        },
+        "runner_up_point": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "description": "New in 1.45 (#385): the second best point."
+        },
+        "evaluated_points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer"
+            }
+          },
+          "description": "New in 1.45 (#385): every distinct point, in evaluation order."
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "New in 1.45 (#385): the --seed of the random choices."
+        },
+        "cost": {
+          "type": "object",
+          "properties": {
+            "benchmarks": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "points": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "runs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "rungs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "runs": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "points": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "runs",
+                  "points"
+                ]
+              }
+            }
+          },
+          "required": [
+            "benchmarks",
+            "points",
+            "runs"
+          ],
+          "description": "New in 1.45 (#385): budget accounting."
+        },
+        "validation": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "description": "confirmed, refuted or inconclusive (open enum)"
+            },
+            "value": {
+              "type": "number"
+            },
+            "search_value": {
+              "type": "number"
+            },
+            "drift": {
+              "type": "number"
+            },
+            "runner_up_value": {
+              "type": "number"
+            },
+            "p_value": {
+              "type": "number"
+            },
+            "runs": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "status",
+            "value",
+            "search_value",
+            "drift",
+            "runs"
+          ],
+          "description": "New in 1.45 (#385): the independent validation round of --optimize-validate."
         }
       },
       "required": [
-        "var",
-        "min",
-        "max",
         "metric",
         "algorithm",
         "budget",
         "evaluations",
-        "best",
         "best_value",
         "best_command",
-        "unimodal_warning",
-        "at_boundary",
-        "evaluated"
+        "at_boundary"
       ],
-      "description": "Result of one --optimize search."
+      "description": "Result of one --optimize search. var, min, max, best, evaluated and unimodal_warning describe the one-variable golden-section search (1.6) and, in 1.45, a one-variable search with another algorithm; a search over several variables has vars and best_point instead (and no unimodal_warning)."
     },
     "pareto": {
       "type": "object",

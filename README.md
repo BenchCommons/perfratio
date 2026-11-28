@@ -85,6 +85,7 @@ Common options:
 | `-s, --setup <CMD>` / `-c, --cleanup <CMD>` | Run CMD once before or after all runs of a command. |
 | `-P`, `-L`, `-F` | Parameter scans over a range, a list or a file. |
 | `--optimize <VAR> <MIN> <MAX>` | Search a parameter for the value that minimizes `--metric` (golden-section search, assumes a unimodal metric; `--optimize-budget <N>` caps the evaluations; `-D <DELTA>` allows fractional values; the best candidates are re-run once and pooled, `--optimize-confirm <N>`; the HTML report marks the best value). |
+| `--optimize-algorithm golden\|random\|halving\|bayes`, `--optimize-validate` | Give `--optimize` several times to search several integer variables at once (default `random`), or pick successive halving or Bayesian optimization. `--optimize-validate` benchmarks the winner and runner-up again in a fresh round (`docs/specs/optimize-search.md`). |
 | `-e, --export <FILE>` | Export results. The format follows the file extension. |
 | `--deep-stats` | Bootstrapped confidence intervals and hypothesis tests. |
 | `--estimator <mean\|median\|pNN>`, `--confidence-level`, `--significance-level`, `--bootstrap-resamples`, `--seed` | Choose the central value behind ranking, ratios and tests (default `mean`), and the levels and bootstrap settings of intervals and tests (see `docs/specs/statistics-settings.md`). |
@@ -107,6 +108,8 @@ page faults and I/O operation counts only; the other counters show as `n/a` ([sp
 `--topdown` (Linux x86_64; Intel Ice Lake or later, AMD Zen 4 or later) adds Top-down level 1: the share of pipeline slots that retire work or are lost to bad speculation, frontend stalls or backend stalls. The largest stall class is a hypothesis about the bottleneck, not a diagnosis; see `docs/specs/topdown-tma.md`.
 `--simd` (Linux, Intel and AMD Zen 4/5) adds a floating-point breakdown (scalar, 128-, 256- and 512-bit) and a vectorization ratio per run; see `docs/specs/simd-breakdown.md`.
 
+`--membw` (Linux) adds memory bandwidth (Intel uncore IMC, bare metal) and the resident bytes per NUMA node of the benchmarked process; the NUMA topology is always in `perfratio.environment`. See `docs/specs/membw-numa.md`.
+
 **Energy.** `-E, --energy` measures energy in joules and average power in watts. It reads RAPL
 counters through Linux powercap sysfs, so it needs **bare-metal Linux with a readable
 `energy_uj`** (`/sys/class/powercap/intel-rapl`). Containers and virtual machines usually cannot
@@ -127,7 +130,7 @@ Benchmark 1: sleep 0.1
   Energy:             RAPL unprivileged/unavailable on host
 ```
 
-`--energy-backend <auto|sysfs|perf|ioreport|emi>` (or `PERFRATIO_ENERGY_BACKEND`) picks the source (`ioreport` on macOS, `emi` on Windows; `auto` picks the native one). On Linux:
+`--energy-backend <auto|sysfs|perf|ioreport|emi|meter>` (or `PERFRATIO_ENERGY_BACKEND`) picks the source (`ioreport` on macOS, `emi` on Windows; `auto` picks the native one). On Linux:
 `auto`, the default, uses sysfs powercap and falls back to the perf power PMU
 (`power/energy-pkg`) when `energy_uj` is unreadable. `--energy-baseline <DURATION>` measures
 idle power first and also reports net energy (measured minus idle power times run time). It is
@@ -135,6 +138,7 @@ off by default so that `--energy` does not add a delay; `--energy-baseline 2s` i
 when you compare commands of different duration.
 `--metric energy` ranks by energy and turns on `--energy`.
 
+`--power-meter <COMMAND>` reads an external meter (smart plug, bench instrument) instead of RAPL: the command prints the power (`12.5 W`) or, with `--power-meter-mode counter`, a cumulative energy (`2.4 Wh`). The value is what the meter sees, usually the whole machine. `--energy-attribution cpu-time|cgroup` adds an *estimated* energy for the command or its container, from its CPU-time share of the host; it is labelled `kind: "estimated"` in the JSON and never replaces the measurement. See [docs/specs/energy-attribution-and-power-meter.md](docs/specs/energy-attribution-and-power-meter.md).
 `--gpu` (with `--energy`) also records NVIDIA (NVML) and AMD (AMD SMI) GPU energy as `gpu:<index>` domains and the GPU utilization. The vendor libraries are loaded at run time; without them perfratio warns and goes on. The GPU joules are not added to the host total ([spec](docs/specs/gpu-energy.md); not yet validated on GPU hardware).
 
 `--energy-domains` adds a per-run breakdown (`package`, `core`, `uncore`, `dram`, `psys`) to the

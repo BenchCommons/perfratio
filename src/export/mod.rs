@@ -149,7 +149,7 @@ impl ExportManager {
                 .map(String::as_str),
         )?;
         let energy = if matches.get_flag("energy") || metric == Metric::Energy {
-            let pref = crate::energy::BackendPreference::resolve(
+            let mut pref = crate::energy::BackendPreference::resolve(
                 matches
                     .get_one::<String>("energy-backend")
                     .map(String::as_str),
@@ -159,20 +159,36 @@ impl ExportManager {
             )
             .map_err(|v| {
                 anyhow::anyhow!(
-                    "Invalid energy backend '{v}': expected auto, sysfs, perf, ioreport or emi"
+                    "Invalid energy backend '{v}': expected auto, sysfs, perf, ioreport, emi or meter"
                 )
             })?;
+            // `--power-meter` selects the meter backend (checked by the option parser)
+            if matches.get_one::<String>("power-meter").is_some() {
+                pref = crate::energy::BackendPreference::Meter;
+            }
             Some(crate::energy::select_sampler_detailed(pref).map(|(_, backend)| backend))
         } else {
             None
         };
         let region = matches.get_many::<String>("region").is_some() || metric.is_region();
+        let membw_blocked = if matches.get_flag("region-scope") {
+            Some("region_scope")
+        } else if matches
+            .get_one::<String>("concurrency")
+            .and_then(|v| v.parse::<usize>().ok())
+            .is_some_and(|n| n > 1)
+        {
+            Some("concurrency")
+        } else {
+            None
+        };
         let mut metadata = ExportMetadata::new(
             labels,
             Measurements::new(energy, matches.get_flag("resource-usage"))
                 .with_counters(counters)
                 .with_topdown(topdown)
-                .with_region(region),
+                .with_region(region)
+                .with_membw(crate::membw::enabled(), membw_blocked),
         );
         metadata.region_protocol = region.then_some(crate::region::PROTOCOL_VERSION);
         metadata.energy_backend = energy.and_then(Result::ok).map(|b| b.as_str());

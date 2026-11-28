@@ -152,6 +152,17 @@ pub struct Measurements {
     /// requested (a run that did not report a region shows as `null` in
     /// `results[].regions[]`), otherwise `not_requested`
     pub region: MeasurementStatus,
+    /// `--membw` memory bandwidth (new in 1.47)
+    pub membw: MeasurementStatus,
+    /// Why `membw` is `unavailable`: `unsupported_platform`, `no_uncore_imc`,
+    /// `amd_df_unsupported`, `perf_paranoid` or `other` (open enum)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub membw_unavailable_reason: Option<&'static str>,
+    /// `--membw` NUMA placement from `numa_maps` (new in 1.47)
+    pub numa: MeasurementStatus,
+    /// Why `numa` is `unavailable`: `unsupported_platform` or `no_numa_maps` (open enum)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub numa_unavailable_reason: Option<&'static str>,
 }
 
 impl Measurements {
@@ -185,7 +196,41 @@ impl Measurements {
             simd: NotRequested,
             simd_unavailable_reason: None,
             region: NotRequested,
+            membw: NotRequested,
+            membw_unavailable_reason: None,
+            numa: NotRequested,
+            numa_unavailable_reason: None,
         }
+    }
+
+    /// Records the outcome of `--membw` (`false`: not requested). `blocked` is why no run can
+    /// be read (`region_scope`, `concurrency`): both sources are then `unavailable`.
+    pub fn with_membw(mut self, requested: bool, blocked: Option<&'static str>) -> Self {
+        if !requested {
+            return self;
+        }
+        if let Some(reason) = blocked {
+            self.membw = MeasurementStatus::Unavailable;
+            self.membw_unavailable_reason = Some(reason);
+            self.numa = MeasurementStatus::Unavailable;
+            self.numa_unavailable_reason = Some(reason);
+            return self;
+        }
+        match crate::membw::unavailable() {
+            None => self.membw = MeasurementStatus::Measured,
+            Some(reason) => {
+                self.membw = MeasurementStatus::Unavailable;
+                self.membw_unavailable_reason = Some(reason.as_str());
+            }
+        }
+        match crate::membw::numa_unavailable().filter(|_| !crate::membw::is_mock()) {
+            None => self.numa = MeasurementStatus::Measured,
+            Some(reason) => {
+                self.numa = MeasurementStatus::Unavailable;
+                self.numa_unavailable_reason = Some(reason);
+            }
+        }
+        self
     }
 
     /// Records `--region` (`true`: requested).
@@ -487,7 +532,25 @@ fn command_line(args: impl IntoIterator<Item = std::ffi::OsString>) -> Vec<Strin
             *program = name.to_string_lossy().into_owned();
         }
     }
+    redact_power_meter(&mut args);
     args
+}
+
+/// The `--power-meter` command may carry credentials (a token in a URL, a password), so
+/// the export keeps the option but not its value.
+fn redact_power_meter(args: &mut [String]) {
+    const REDACTED: &str = "<redacted>";
+    let mut previous_is_option = false;
+    for arg in args.iter_mut().skip(1) {
+        if previous_is_option {
+            *arg = REDACTED.into();
+            previous_is_option = false;
+        } else if arg == "--power-meter" {
+            previous_is_option = true;
+        } else if arg.starts_with("--power-meter=") {
+            *arg = format!("--power-meter={REDACTED}");
+        }
+    }
 }
 
 /// Parse `--label KEY=VALUE` arguments. Keys may contain letters, digits,
@@ -554,6 +617,38 @@ mod tests {
     }
 
     #[test]
+    fn command_line_hides_the_power_meter_command() {
+        let args = [
+            "perfratio",
+            "--power-meter",
+            "curl http://m/?token=abc",
+            "--energy",
+            "true",
+        ]
+        .map(std::ffi::OsString::from);
+        assert_eq!(
+            command_line(args),
+            vec![
+                "perfratio",
+                "--power-meter",
+                "<redacted>",
+                "--energy",
+                "true"
+            ]
+        );
+        let args = [
+            "perfratio",
+            "--power-meter=curl http://m/?token=abc",
+            "true",
+        ]
+        .map(std::ffi::OsString::from);
+        assert_eq!(
+            command_line(args),
+            vec!["perfratio", "--power-meter=<redacted>", "true"]
+        );
+    }
+
+    #[test]
     fn measurements_reflect_requests_and_energy_availability() {
         use MeasurementStatus::*;
         let m = Measurements::new(None, false);
@@ -573,6 +668,22 @@ mod tests {
         let m = Measurements::new(Some(Err(crate::energy::Unavailable::RaplUnreadable)), false);
         assert_eq!(m.energy, Unavailable);
         assert_eq!(m.energy_unavailable_reason, Some("rapl_unreadable"));
+    }
+
+    #[test]
+    fn membw_blocked_by_the_run_mode_is_unavailable_with_a_reason() {
+        use MeasurementStatus::*;
+        let m = Measurements::new(None, false).with_membw(true, Some("concurrency"));
+        assert_eq!(
+            (m.membw, m.membw_unavailable_reason),
+            (Unavailable, Some("concurrency"))
+        );
+        assert_eq!(
+            (m.numa, m.numa_unavailable_reason),
+            (Unavailable, Some("concurrency"))
+        );
+        let m = Measurements::new(None, false).with_membw(false, Some("concurrency"));
+        assert_eq!((m.membw, m.numa), (NotRequested, NotRequested));
     }
 
     #[test]
