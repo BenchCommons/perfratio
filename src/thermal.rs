@@ -546,6 +546,7 @@ mod tests {
     fn windows_zone_counter_is_absent_or_plausible() {
         let readings = pdh::zone_kelvin_readings();
         let celsius = max_temperature(Path::new("/"));
+        panic!("DIAG readings={readings:?} celsius={celsius:?}");
         match celsius {
             Some(c) => assert!(c > 0.0 && c < 150.0, "{c} °C from {readings:?}"),
             None => assert!(celsius_from_kelvin_readings(&readings).is_empty()),
