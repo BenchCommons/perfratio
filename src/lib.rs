@@ -91,6 +91,8 @@ pub mod import;
 #[doc(hidden)]
 pub mod mcp;
 #[doc(hidden)]
+pub mod membw;
+#[doc(hidden)]
 pub mod metric;
 #[doc(hidden)]
 pub mod metric_registry;
@@ -129,7 +131,6 @@ pub mod roofline;
 pub mod run_id;
 #[doc(hidden)]
 pub mod search;
-#[doc(hidden)]
 pub mod simd;
 #[doc(hidden)]
 pub mod stats;

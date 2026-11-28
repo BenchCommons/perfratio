@@ -108,6 +108,8 @@ page faults and I/O operation counts only; the other counters show as `n/a` ([sp
 `--topdown` (Linux x86_64; Intel Ice Lake or later, AMD Zen 4 or later) adds Top-down level 1: the share of pipeline slots that retire work or are lost to bad speculation, frontend stalls or backend stalls. The largest stall class is a hypothesis about the bottleneck, not a diagnosis; see `docs/specs/topdown-tma.md`.
 `--simd` (Linux, Intel and AMD Zen 4/5) adds a floating-point breakdown (scalar, 128-, 256- and 512-bit) and a vectorization ratio per run; see `docs/specs/simd-breakdown.md`.
 
+`--membw` (Linux) adds memory bandwidth (Intel uncore IMC, bare metal) and the resident bytes per NUMA node of the benchmarked process; the NUMA topology is always in `perfratio.environment`. See `docs/specs/membw-numa.md`.
+
 **Energy.** `-E, --energy` measures energy in joules and average power in watts. It reads RAPL
 counters through Linux powercap sysfs, so it needs **bare-metal Linux with a readable
 `energy_uj`** (`/sys/class/powercap/intel-rapl`). Containers and virtual machines usually cannot
@@ -201,7 +203,7 @@ Every benchmark also gets a measurement quality report (`results[].quality` in t
 
 `--export-json <FILE>` (or `-e results.json`) writes the summary statistics and every run's
 timings. perfratio owns this output, and consumers such as `tools-benchmark` read it.
-The current version is `"1.46"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested.
+The current version is `"1.47"`. The `perfratio` key holds run metadata and `perfratio.measurements` says whether time, memory, energy and resource counters were measured, unavailable or not requested.
 
 The contract is a top-level `"schemaVersion": "MAJOR.MINOR"` string. Consumers must ignore
 unknown keys and accept any MINOR version of the MAJOR version they support. A removed or

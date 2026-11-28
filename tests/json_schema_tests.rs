@@ -277,6 +277,7 @@ const CASES: &[(&str, &[&str])] = &[
         &["--runs=3", "--counters=cycles", "--topdown", "sleep 0.5"],
     ),
     ("simd", &["--runs=3", "--simd", "sleep 0.5"]),
+    ("membw", &["--runs=3", "--membw", "sleep 0.5"]),
     (
         "simd with counters and user scope",
         &[

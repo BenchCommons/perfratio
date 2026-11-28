@@ -156,6 +156,8 @@ pub struct BenchmarkRunner<'a> {
     pub resource_counters: Vec<Option<timing_result::ResourceCounters>>,
     /// Hardware counter totals per run (`--counters`), aligned with the times
     pub hw_counters: Vec<Option<crate::perf_counters::HwReading>>,
+    /// Memory bandwidth and NUMA placement per run (`--membw`), aligned with the times
+    pub membw_runs: Vec<Option<crate::membw::Run>>,
     /// Per-run parameter values of each run, as (name, value) pairs
     pub per_run_values: Vec<Vec<(String, String)>>,
     pub all_succeeded: bool,
@@ -349,6 +351,7 @@ impl<'a> BenchmarkRunner<'a> {
             leftover_processes: std::cell::Cell::new(false),
             resource_counters: vec![],
             hw_counters: vec![],
+            membw_runs: vec![],
             per_run_values: vec![],
             validity: vec![],
             validated_runs: 0,
@@ -1001,6 +1004,7 @@ impl<'a> BenchmarkRunner<'a> {
         self.push_instances(&res, run.ids());
         self.resource_counters.push(res.counters);
         self.hw_counters.push(res.hw_counters);
+        self.membw_runs.push(res.membw);
         self.per_run_values.push(
             self.command
                 .per_run_values(&BenchmarkIteration::Benchmark(0)),
@@ -1078,6 +1082,7 @@ impl<'a> BenchmarkRunner<'a> {
         self.push_instances(&res, ids);
         self.resource_counters.push(res.counters);
         self.hw_counters.push(res.hw_counters);
+        self.membw_runs.push(res.membw);
         self.per_run_values.push(
             self.command
                 .per_run_values(&BenchmarkIteration::Benchmark(iteration)),
@@ -1381,6 +1386,12 @@ impl<'a> BenchmarkRunner<'a> {
                 .map(|&index| self.hw_counters[index].clone())
                 .collect();
         }
+        if self.membw_runs.len() == run_count {
+            self.membw_runs = keep
+                .iter()
+                .map(|&index| self.membw_runs[index].clone())
+                .collect();
+        }
         if self.per_run_values.len() == run_count {
             self.per_run_values = keep
                 .iter()
@@ -1672,6 +1683,12 @@ impl<'a> BenchmarkRunner<'a> {
             let simd = config.simd.as_ref()?;
             crate::simd::export(simd, config.active.len(), &self.hw_counters)
         });
+
+        let membw_export = if self.options.membw && self.membw_runs.len() == self.times_real.len() {
+            crate::membw::export(&self.membw_runs, &self.times_real)
+        } else {
+            None
+        };
 
         let t_num = self.times_real.len();
         let (t_mean, t_stddev, t_median, t_min, t_max, user_mean, system_mean) =
@@ -2243,6 +2260,10 @@ impl<'a> BenchmarkRunner<'a> {
                     }
                 }
 
+                if let Some(e) = &membw_export {
+                    crate::outln!("{}", crate::membw::terminal_line(e).dimmed());
+                }
+
                 if self.options.show_resource_usage {
                     match self.resource_summary() {
                         Some(line) => crate::outln!("  Resources (mean):   {}", line.dimmed()),
@@ -2791,6 +2812,12 @@ impl<'a> BenchmarkRunner<'a> {
                 .as_ref()
                 .and_then(|e| e.frequency.as_ref())
                 .map(|f| f.basis.as_str().to_string()),
+            membw: membw_export.as_ref().and_then(|e| e.bandwidth.clone()),
+            membw_summary: membw_export
+                .as_ref()
+                .map(|e| e.summary.clone())
+                .filter(|s| !s.is_empty()),
+            numa: membw_export.as_ref().and_then(|e| e.numa.clone()),
             simd: simd_export.as_ref().map(|e| e.series.clone()),
             simd_summary: simd_export.as_ref().map(|e| e.summary.clone()),
             simd_scaling: simd_export
