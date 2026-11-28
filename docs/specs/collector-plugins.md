@@ -1,6 +1,6 @@
 # Spec: collector plugin protocol, `--collector-plugin` (#384)
 
-**Status:** Implemented, `schemaVersion` 1.37 (additive, MINOR). Part of the output contract of #240. Parent: #365.
+**Status:** Implemented, `schemaVersion` 1.44 (additive, MINOR). Part of the output contract of #240. Parent: #365.
 Related: #317 (`metric-descriptors.md`), #383 (`valgrind-collector.md`).
 
 ## Problem / Motivation
@@ -77,7 +77,7 @@ speaks another version is rejected.
 - A plugin is stopped when perfratio ends (`shutdown`, then stdin is closed, then it is killed
   after 0.5 s).
 
-### JSON export (`schemaVersion` 1.37)
+### JSON export (`schemaVersion` 1.44)
 Additive; files without the keys are unchanged and import as before.
 
 - `results[].collector_metrics`: object from `<name>.<id>` to an array with one entry per run
@@ -94,10 +94,8 @@ Additive; files without the keys are unchanged and import as before.
   `src/metric_registry.rs`).
 
 ### Versioning
-`SCHEMA_VERSION` 1.37. The open pull requests of the 1.x series (#393 to #400) already use
-1.37 for their own additive fields: whichever merges second needs a rebase that renumbers its
-version, `docs/schema/1.NN/` snapshot and the version sentences in the docs. The keys do not
-collide.
+`SCHEMA_VERSION` 1.44 (1.43 is reserved for another pull request of the 1.x series, merged
+before this one). The keys do not collide.
 
 ## Example collector
 `examples/collector_plugin.rs` is a complete plugin (`cargo build --example collector_plugin`).

@@ -482,6 +482,10 @@ pub const NON_METRIC_FIELDS: &[&str] = &[
     "effect",
     "classification",
     "equivalence_p_value",
+    "power",
+    "precision_metrics",
+    "hierarchy",
+    "paired",
     "relative_speed",
     "relative_speed_stddev",
     "relative_speed_ci",
@@ -511,6 +515,7 @@ pub const DYNAMIC_FIELDS: &[&str] = &[
     "collector_metrics",
     "collector_metrics_summary",
     "energy_domains_joules",
+    "gpu_utilization_percent",
     "regions",
 ];
 

@@ -92,6 +92,14 @@ const CASES: &[(&str, &[&str])] = &[
         ],
     ),
     (
+        "multi-metric stopping",
+        &[
+            "--target-precision=5%",
+            "--target-precision-metrics=wall,memory,energy",
+            "sleep 0.1",
+        ],
+    ),
+    (
         "randomized order",
         &[
             "--runs=3",
@@ -114,6 +122,19 @@ const CASES: &[(&str, &[&str])] = &[
             "1,2,4,8",
             "sleep {n}",
         ],
+    ),
+    (
+        "roofline",
+        &[
+            "--runs=2",
+            "--roofline",
+            "--roofline-peaks=1,0.1",
+            "sleep 0.1",
+        ],
+    ),
+    (
+        "roofline observed peaks",
+        &["--runs=2", "--roofline", "sleep 0.1", "sleep 0.2"],
     ),
     ("single run", &["--runs=1", "sleep 0.1"]),
     ("several commands", &["--runs=3", "sleep 0.1", "sleep 0.2"]),
@@ -185,6 +206,10 @@ const CASES: &[(&str, &[&str])] = &[
     (
         "energy domains",
         &["--runs=3", "--energy", "--energy-domains", "sleep 0.1"],
+    ),
+    (
+        "gpu",
+        &["--runs=3", "--energy", "--gpu", "sleep 0.1", "sleep 0.2"],
     ),
     (
         "energy baseline",
@@ -346,6 +371,17 @@ const CASES: &[(&str, &[&str])] = &[
     ),
     ("timeout", &["--runs=2", "--timeout=2s", "-i", "sleep 3"]),
     (
+        "paired rounds",
+        &[
+            "--runs=4",
+            "--schedule=balanced",
+            "--paired",
+            "--ci-method=hierarchical",
+            "sleep 0.1",
+            "sleep 0.2",
+        ],
+    ),
+    (
         "ignored failures",
         &["--runs=3", "-i", "--omit-failed-runs", "sleep 0.1"],
     ),
@@ -480,6 +516,16 @@ fn real_cases() -> Vec<(&'static str, Vec<String>)> {
                 "true",
                 "echo",
                 "pwd",
+            ]),
+        ),
+        (
+            "power analysis",
+            args(&[
+                "--runs=4",
+                "-N",
+                "--power=0.9",
+                "--target-effect=3%",
+                "true",
             ]),
         ),
         (
@@ -683,4 +729,36 @@ fn interference_matches_the_schema() {
     assert_eq!(interference["thermal"]["throttle_events"], 0);
     assert_eq!(interference["cgroup_oom_kills"], 0);
     assert_valid("interference", &document);
+}
+
+/// `--gpu` with the simulated backend of `--debug-mode`: `gpu:<index>` joules next to the host
+/// domains, utilization per run, and the strict schema accepts the new fields (#380).
+#[test]
+fn gpu_fields_match_the_schema() {
+    let document = export(&["--runs=3", "--energy", "--gpu", "sleep 0.1"]);
+    let result = &document["results"][0];
+    for key in ["gpu:0", "gpu:1"] {
+        assert_eq!(result["energy_domains_joules"][key], json!([2.0, 2.0, 2.0]));
+        assert_eq!(
+            result["gpu_utilization_percent"][key],
+            json!([60.0, 60.0, 60.0])
+        );
+    }
+    // the export metadata probes the real libraries: absent here, present on a GPU host
+    let gpu = &document["perfratio"]["gpu"];
+    assert!(
+        gpu["devices"].is_u64() && gpu["backends"].is_array(),
+        "{gpu}"
+    );
+    assert_valid("gpu", &document);
+}
+
+/// Without `--gpu` the new fields are absent: the 1.42 change is additive.
+#[test]
+fn gpu_fields_are_absent_without_the_flag() {
+    let document = export(&["--runs=2", "--energy", "sleep 0.1"]);
+    assert!(document["perfratio"].get("gpu").is_none());
+    assert!(document["results"][0]
+        .get("gpu_utilization_percent")
+        .is_none());
 }

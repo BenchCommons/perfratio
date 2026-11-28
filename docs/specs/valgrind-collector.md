@@ -1,6 +1,6 @@
 # Spec: Cachegrind/Callgrind adapter, `--collector cachegrind|callgrind` (#383)
 
-**Status:** Implemented, `schemaVersion` 1.37 (additive, MINOR). Part of the output contract of #240. Parent: #365.
+**Status:** Implemented, `schemaVersion` 1.44 (additive, MINOR). Part of the output contract of #240. Parent: #365.
 Related: #384 (`collector-plugins.md`), #317 (`metric-descriptors.md`).
 
 ## Problem / Motivation
@@ -60,12 +60,11 @@ All have `direction` `lower_is_better`, `scope` `process_tree`, `source` `valgri
 The simulated cache is Valgrind's model of the machine's cache, not the hardware: use the counts
 to compare two builds, not to predict time.
 
-### JSON export (`schemaVersion` 1.37)
+### JSON export (`schemaVersion` 1.44)
 The same keys as the plugin protocol (`collector-plugins.md`): `results[].collector_metrics`
 (`"cachegrind.instructions": [1000]`, one entry because the run is single and deterministic),
 `collector_metrics_summary` and descriptors `collector.cachegrind.instructions` and so on in
-`perfratio.metrics[]`. Additive; no existing field changes. Same version note as the plugin
-spec: #393 to #400 also use 1.37, so the second pull request to merge renumbers by rebase.
+`perfratio.metrics[]`. Additive; no existing field changes. Same version as the plugin spec (1.44).
 
 ## Why the adapter does not use the plugin protocol (#384)
 The issue allows the adapter to use the protocol if that fits. It does not:
