@@ -115,6 +115,19 @@ const CASES: &[(&str, &[&str])] = &[
             "sleep {n}",
         ],
     ),
+    (
+        "roofline",
+        &[
+            "--runs=2",
+            "--roofline",
+            "--roofline-peaks=1,0.1",
+            "sleep 0.1",
+        ],
+    ),
+    (
+        "roofline observed peaks",
+        &["--runs=2", "--roofline", "sleep 0.1", "sleep 0.2"],
+    ),
     ("single run", &["--runs=1", "sleep 0.1"]),
     ("several commands", &["--runs=3", "sleep 0.1", "sleep 0.2"]),
     ("labels", &["--runs=2", "--label", "lang=rust", "sleep 0.1"]),

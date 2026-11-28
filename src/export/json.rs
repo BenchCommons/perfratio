@@ -25,7 +25,7 @@ pub struct PrimaryMetricStats {
 }
 
 /// Version of the JSON output contract (`docs/specs/output-schema-contract.md`).
-pub const SCHEMA_VERSION: &str = "1.38";
+pub const SCHEMA_VERSION: &str = "1.39";
 
 #[derive(Serialize, Debug)]
 struct PerfratioSummary<'a> {
@@ -45,6 +45,9 @@ struct PerfratioSummary<'a> {
     /// Empirical complexity fits of `--complexity` (new in 1.33, #374)
     #[serde(skip_serializing_if = "Option::is_none")]
     complexity: Option<serde_json::Value>,
+    /// Roofline placement of `--roofline` (new in 1.39, #379)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    roofline: Option<serde_json::Value>,
     /// Pareto analysis of `--pareto` (new in 1.16, #326)
     #[serde(skip_serializing_if = "Option::is_none")]
     pareto: Option<Analysis>,
@@ -150,6 +153,8 @@ pub struct JsonExporter {
     pub optimize: std::sync::Mutex<Option<serde_json::Value>>,
     /// Result of `--complexity`
     pub complexity: std::sync::Mutex<Option<serde_json::Value>>,
+    /// Result of `--roofline`
+    pub roofline: std::sync::Mutex<Option<serde_json::Value>>,
     /// Pareto analysis of the results being serialized
     pub pareto: std::sync::Mutex<Option<Analysis>>,
     /// Runner floor measured by `--calibrate`
@@ -276,6 +281,11 @@ impl Exporter for JsonExporter {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .clone(),
+            roofline: self
+                .roofline
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .clone(),
             pareto: self
                 .pareto
                 .lock()
@@ -292,6 +302,10 @@ impl Exporter for JsonExporter {
 
     fn set_optimize(&self, value: Option<&serde_json::Value>) {
         *self.optimize.lock().unwrap_or_else(|e| e.into_inner()) = value.cloned();
+    }
+
+    fn set_roofline(&self, value: Option<&serde_json::Value>) {
+        *self.roofline.lock().unwrap_or_else(|e| e.into_inner()) = value.cloned();
     }
 
     fn set_complexity(&self, value: Option<&serde_json::Value>) {

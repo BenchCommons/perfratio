@@ -823,6 +823,18 @@ Collect Top\-down Microarchitecture Analysis level 1 per run (Linux x86_64): the
 .IP
 Collect a floating\-point scalar/vector breakdown per run (Linux, x86_64): retired scalar, 128\-, 256\- and 512\-bit packed floating\-point arithmetic and the vectorization ratio ('simd' and 'simd_summary' in JSON, one terminal block). Intel counts instructions, AMD Zen 4/5 counts uops, so compare ratios only within one vendor. Integer SIMD is not counted. Works with or without \fB\-\-counters\fR and honors \fB\-\-scope\fR (except split). Unsupported CPUs (including AArch64), hybrid Intel CPUs, VMs without a PMU, permissions and other platforms give one warning and status 'unavailable' in perfratio.measurements.simd.
 .HP
+\fB\-\-roofline\fR
+.IP
+Place every command on the roofline (Linux, x86_64): arithmetic intensity (FLOP per byte), GFLOP/s and GB/s, and whether the run is memory\- or compute\-bound. Enables \fB\-\-simd\fR and cache\-misses. FLOPs come from the \fB\-\-simd\fR counts; the bytes are last\-level cache misses times 64, a lower bound of the real traffic (it misses prefetches and write\-backs), so the intensity is an upper bound. Exported as 'roofline' in the JSON file. See \fBdocs/specs/roofline.md\fR.
+.HP
+\fB\-\-roofline\-peaks\fR \fIGFLOPS,GBPS\fP
+.IP
+The roofs of \fB\-\-roofline\fR: peak GFLOP/s and peak memory bandwidth in GB/s, e.g. 48,20. Or observed (default): the best values over the benchmarked commands, which needs two commands and is only a lower bound of the real ceilings.
+.HP
+\fB\-\-roofline\-precision\fR \fIPRECISION\fP
+.IP
+Element size of the packed floating\-point counts: double (default) or single (twice the FLOPs per packed instruction).
+.HP
 \fB\-\-first\-run\fR \fIMODE\fP
 .IP
 How to treat the first (cold) timing run of each command: include (default) keeps it in the statistics, separate shows it on its own line ("Cold (1st run)"), exports it as 'first_run' in the JSON and excludes it from all statistics, discard excludes it silently, like an extra warmup run. With separate and discard, one extra run is performed so that the requested number of runs is still measured. If \fB\-\-warmup\fR is used with separate, the first warmup run is the cold one: it is reported (wall-clock time only) and no timing run is excluded.

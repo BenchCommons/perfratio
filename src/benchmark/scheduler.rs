@@ -790,6 +790,28 @@ impl<'a> Scheduler<'a> {
         }
     }
 
+    /// `--roofline`: place every command on the roofline and hand the result to the JSON export.
+    pub fn print_roofline(&self) {
+        let Some(config) = &self.options.roofline else {
+            return;
+        };
+        let results: Vec<&BenchmarkResult> = self
+            .results
+            .iter()
+            .filter(|r| !(self.options.filter_failed && r.has_failure()))
+            .collect();
+        let inputs: Vec<crate::roofline::Input> = results
+            .iter()
+            .map(|r| crate::roofline::Input::from_result(r, config.precision))
+            .collect();
+        let roofline = crate::roofline::analyze(config, &inputs);
+        self.export_manager
+            .set_roofline(serde_json::to_value(&roofline).ok());
+        if self.options.output_style != OutputStyleOption::Disabled {
+            crate::out!("{}", crate::roofline::terminal(&roofline));
+        }
+    }
+
     /// `--complexity`: fit and print the growth models, and hand them to the JSON export.
     pub fn print_complexity(&self) {
         let Some(var) = &self.options.complexity else {

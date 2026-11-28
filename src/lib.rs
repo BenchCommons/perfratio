@@ -118,6 +118,8 @@ pub mod region;
 /// Region-scoped CPU time, energy and counters.
 pub mod region_scope;
 #[doc(hidden)]
+pub mod roofline;
+#[doc(hidden)]
 pub mod run_id;
 #[doc(hidden)]
 pub mod simd;

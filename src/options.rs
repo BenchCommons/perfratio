@@ -437,6 +437,8 @@ pub struct Options {
     pub work: Option<crate::efficiency::Work>,
     /// `--complexity VAR`: fit growth models over the values of the parameter VAR
     pub complexity: Option<String>,
+    /// `--roofline` (#379)
+    pub roofline: Option<crate::roofline::Config>,
 
     /// `--raw-ratios`: print only the relative values of the primary metric
     pub raw_ratios: bool,
@@ -590,6 +592,7 @@ impl Default for Options {
             optimize: None,
             work: None,
             complexity: None,
+            roofline: None,
             raw_ratios: false,
             pareto: None,
             measure_energy: false,
@@ -1166,7 +1169,21 @@ impl Options {
             .and_then(|value| crate::calibration::BelowFloorAction::parse(value))
             .unwrap_or_default();
         options.show_resource_usage = matches.get_flag("resource-usage");
-        let simd = matches.get_flag("simd");
+        let roofline = matches.get_flag("roofline") && !importing;
+        if roofline {
+            options.roofline = Some(crate::roofline::Config {
+                peaks: matches
+                    .get_one::<String>("roofline-peaks")
+                    .and_then(|v| crate::roofline::PeaksSetting::parse(v).ok())
+                    .unwrap_or(crate::roofline::PeaksSetting::Observed),
+                precision: matches
+                    .get_one::<String>("roofline-precision")
+                    .and_then(|v| crate::roofline::Precision::parse(v))
+                    .unwrap_or_default(),
+            });
+        }
+        // `--roofline` needs the FP counts and the last-level misses
+        let simd = matches.get_flag("simd") || roofline;
         // `--metric instructions|cycles` collects its own counter
         let counters_list = matches.get_one::<String>("counters").cloned().or_else(|| {
             (!importing)
@@ -1191,7 +1208,11 @@ impl Options {
                     .map_err(OptionsError::InvalidCounters)?,
                 None => Vec::new(),
             };
-            if let Some(kind) = metric_counter.filter(|_| !importing) {
+            let needed = metric_counter
+                .filter(|_| !importing)
+                .into_iter()
+                .chain(roofline.then_some(crate::perf_counters::CounterKind::CacheMisses));
+            for kind in needed {
                 let spec = crate::perf_counters::CounterSpec {
                     kind,
                     scope: mode.default_scope(),

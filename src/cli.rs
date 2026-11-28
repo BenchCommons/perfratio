@@ -46,7 +46,7 @@ pub fn build_command() -> Command {
         .next_line_help(true)
         .hide_possible_values(true)
         // `--scope` applies to both of these
-        .group(ArgGroup::new("pmu-request").args(["counters", "simd"]).multiple(true))
+        .group(ArgGroup::new("pmu-request").args(["counters", "simd", "roofline"]).multiple(true))
         .about("A multi-dimensional command-line benchmarking tool with Performance per Watt, Hardware Counter Ratios, and Deep Statistics.")
         .help_expected(true)
         .max_term_width(80)
@@ -1722,6 +1722,52 @@ pub fn build_command() -> Command {
                        permissions give one warning, never an error."),
         )
         .arg(
+            Arg::new("roofline")
+                .long("roofline")
+                .action(ArgAction::SetTrue)
+                .conflicts_with("import-json")
+                .help("Place every command on the roofline (Linux, x86_64): arithmetic intensity \
+                       (FLOP per byte), GFLOP/s and GB/s, and whether the run is memory- or \
+                       compute-bound. Enables '--simd' and 'cache-misses'. FLOPs come from the \
+                       '--simd' counts; the bytes are last-level cache misses × 64, a lower bound \
+                       of the real traffic (it misses prefetches and write-backs), so the \
+                       intensity is an upper bound. Exported as 'roofline' in the JSON file.")
+                .long_help("Place every command on the roofline (Williams et al., CACM 2009).\n\n\
+                       FLOPs come from '--simd': retired scalar and packed floating-point \
+                       arithmetic, with each packed count multiplied by its lanes ('--roofline-precision'). \
+                       Intel counts an FMA twice; AMD counts uops, so an FMA uop is one FLOP \
+                       there (a lower bound). Integer SIMD is not counted.\n\n\
+                       Memory traffic is the 'cache-misses' counter (last-level cache misses) × \
+                       64 bytes, until bandwidth counters exist (#378). It misses hardware \
+                       prefetches and write-backs: the bytes are a lower bound and the \
+                       arithmetic intensity an upper bound.\n\n\
+                       Enables '--simd' and the 'cache-misses' counter. Linux with a supported \
+                       PMU only; elsewhere the result is 'unavailable'.\n\n\
+                       Example:  perfratio --roofline --roofline-peaks 48,20 './stream'"),
+        )
+        .arg(
+            Arg::new("roofline-peaks")
+                .long("roofline-peaks")
+                .value_name("GFLOPS,GBPS")
+                .requires("roofline")
+                .value_parser(|v: &str| parse_roofline_peaks(v).map(|_| v.to_string()))
+                .help("The roofs of '--roofline': peak GFLOP/s and peak memory bandwidth in GB/s of \
+                       this machine, e.g. '48,20'. Or 'observed' (default): the best values over \
+                       the benchmarked commands, which needs two commands and is only a lower \
+                       bound of the real ceilings."),
+        )
+        .arg(
+            Arg::new("roofline-precision")
+                .long("roofline-precision")
+                .value_name("PRECISION")
+                .requires("roofline")
+                .value_parser(["single", "double"])
+                .default_value("double")
+                .help("Element size of the packed floating-point counts: 'double' (64-bit, \
+                       default) or 'single' (32-bit, twice the FLOPs per packed instruction). \
+                       '--simd' does not tell them apart."),
+        )
+        .arg(
             Arg::new("first-run")
                 .long("first-run")
                 .action(ArgAction::Set)
@@ -1831,6 +1877,8 @@ pub fn build_command() -> Command {
 fn verify_app() {
     build_command().debug_assert();
 }
+
+include!("roofline_peaks.rs");
 
 /// Validates `--metric`. Mirrors `Metric::from_str` (`src/metric.rs`), which this
 /// file cannot use because `build.rs` compiles it standalone.
