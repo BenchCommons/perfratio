@@ -128,7 +128,7 @@ Benchmark 1: sleep 0.1
   Energy:             RAPL unprivileged/unavailable on host
 ```
 
-`--energy-backend <auto|sysfs|perf|ioreport|emi>` (or `PERFRATIO_ENERGY_BACKEND`) picks the source (`ioreport` on macOS, `emi` on Windows; `auto` picks the native one). On Linux:
+`--energy-backend <auto|sysfs|perf|ioreport|emi|meter>` (or `PERFRATIO_ENERGY_BACKEND`) picks the source (`ioreport` on macOS, `emi` on Windows; `auto` picks the native one). On Linux:
 `auto`, the default, uses sysfs powercap and falls back to the perf power PMU
 (`power/energy-pkg`) when `energy_uj` is unreadable. `--energy-baseline <DURATION>` measures
 idle power first and also reports net energy (measured minus idle power times run time). It is
@@ -136,6 +136,7 @@ off by default so that `--energy` does not add a delay; `--energy-baseline 2s` i
 when you compare commands of different duration.
 `--metric energy` ranks by energy and turns on `--energy`.
 
+`--power-meter <COMMAND>` reads an external meter (smart plug, bench instrument) instead of RAPL: the command prints the power (`12.5 W`) or, with `--power-meter-mode counter`, a cumulative energy (`2.4 Wh`). The value is what the meter sees, usually the whole machine. `--energy-attribution cpu-time|cgroup` adds an *estimated* energy for the command or its container, from its CPU-time share of the host; it is labelled `kind: "estimated"` in the JSON and never replaces the measurement. See [docs/specs/energy-attribution-and-power-meter.md](docs/specs/energy-attribution-and-power-meter.md).
 `--gpu` (with `--energy`) also records NVIDIA (NVML) and AMD (AMD SMI) GPU energy as `gpu:<index>` domains and the GPU utilization. The vendor libraries are loaded at run time; without them perfratio warns and goes on. The GPU joules are not added to the host total ([spec](docs/specs/gpu-energy.md); not yet validated on GPU hardware).
 
 `--energy-domains` adds a per-run breakdown (`package`, `core`, `uncore`, `dram`, `psys`) to the

@@ -317,6 +317,7 @@ fn test_csv() {
             idle_watts: None,
             mean_net_energy_joules: None,
             energy_domains_joules: None,
+            energy_attribution: None,
             gpu_utilization_percent: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: {
@@ -368,6 +369,7 @@ fn test_csv() {
             idle_watts: None,
             mean_net_energy_joules: None,
             energy_domains_joules: None,
+            energy_attribution: None,
             gpu_utilization_percent: None,
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: {
@@ -446,6 +448,7 @@ fn test_csv_formula_injection_sanitization() {
         idle_watts: None,
         mean_net_energy_joules: None,
         energy_domains_joules: None,
+        energy_attribution: None,
         gpu_utilization_percent: None,
         exit_codes: vec![Some(0)],
         parameters: {
@@ -558,6 +561,7 @@ fn test_csv_with_reference_command() {
             idle_watts: None,
             mean_net_energy_joules: None,
             energy_domains_joules: None,
+            energy_attribution: None,
             gpu_utilization_percent: None,
             exit_codes: vec![Some(0)],
             parameters: BTreeMap::new(),
@@ -604,6 +608,7 @@ fn test_csv_with_reference_command() {
             idle_watts: None,
             mean_net_energy_joules: None,
             energy_domains_joules: None,
+            energy_attribution: None,
             gpu_utilization_percent: None,
             exit_codes: vec![Some(0)],
             parameters: {
@@ -682,6 +687,7 @@ fn test_csv_heterogeneous_parameters() {
             idle_watts: None,
             mean_net_energy_joules: None,
             energy_domains_joules: None,
+            energy_attribution: None,
             gpu_utilization_percent: None,
             exit_codes: vec![Some(0)],
             parameters: {
@@ -732,6 +738,7 @@ fn test_csv_heterogeneous_parameters() {
             idle_watts: None,
             mean_net_energy_joules: None,
             energy_domains_joules: None,
+            energy_attribution: None,
             gpu_utilization_percent: None,
             exit_codes: vec![Some(0)],
             parameters: {

@@ -485,6 +485,8 @@ pub struct Options {
     pub energy_gpu: bool,
     /// Which energy backend to use (`--energy-backend`)
     pub energy_backend: crate::energy::BackendPreference,
+    /// `--energy-attribution`: estimated share of the measured energy (#381)
+    pub energy_attribution: Option<crate::energy::attribution::Model>,
 
     /// Calculate deep statistics (confidence intervals, bootstrapping)
     pub deep_stats: bool,
@@ -589,6 +591,12 @@ pub struct Options {
 
     /// Extract `--output-metric` values from stderr instead of stdout
     pub output_metrics_stderr: bool,
+
+    /// `--collector`: built-in Valgrind adapter (`cachegrind`, `callgrind`)
+    pub valgrind: Option<crate::valgrind::Tool>,
+
+    /// `--collector-plugin`: executables that speak the collector protocol
+    pub collector_plugins: Vec<PathBuf>,
 }
 
 impl Default for Options {
@@ -636,6 +644,7 @@ impl Default for Options {
             energy_domains: false,
             energy_gpu: false,
             energy_backend: crate::energy::BackendPreference::Auto,
+            energy_attribution: None,
             deep_stats: false,
             filter_failed: false,
             suppress_outlier_warnings: false,
@@ -671,6 +680,8 @@ impl Default for Options {
             region_scope: false,
             output_metrics: Vec::new(),
             output_metrics_stderr: false,
+            valgrind: None,
+            collector_plugins: Vec::new(),
         }
     }
 }
@@ -688,6 +699,62 @@ pub enum PrecisionMetric {
 pub const DEFAULT_POWER: f64 = 0.8;
 
 impl Options {
+    /// `--power-meter`: selects the `meter` backend and stores the meter settings.
+    #[cfg(feature = "cli")]
+    fn apply_power_meter<'a>(
+        matches: &ArgMatches,
+        options: &mut Self,
+    ) -> Result<(), OptionsError<'a>> {
+        use crate::energy::{meter, BackendPreference};
+        let command = matches.get_one::<String>("power-meter");
+        match (command, options.energy_backend) {
+            (Some(_), BackendPreference::Auto | BackendPreference::Meter) => {
+                options.energy_backend = BackendPreference::Meter;
+            }
+            (Some(_), _) => {
+                return Err(OptionsError::InvalidPowerMeter(
+                    "'--power-meter' selects the 'meter' energy backend; it conflicts with \
+                     '--energy-backend' / PERFRATIO_ENERGY_BACKEND set to another backend"
+                        .into(),
+                ));
+            }
+            (None, BackendPreference::Meter) => {
+                return Err(OptionsError::InvalidPowerMeter(
+                    "The 'meter' energy backend needs '--power-meter COMMAND'".into(),
+                ));
+            }
+            (None, _) => return Ok(()),
+        }
+        let command = command.cloned().unwrap_or_default();
+        if command.trim().is_empty() {
+            return Err(OptionsError::InvalidPowerMeter(
+                "'--power-meter' needs a command".into(),
+            ));
+        }
+        let mode = match matches.get_one::<String>("power-meter-mode") {
+            Some(m) => meter::MeterMode::parse(m).ok_or_else(|| {
+                OptionsError::InvalidPowerMeter(format!(
+                    "Invalid '--power-meter-mode' '{m}': expected power or counter"
+                ))
+            })?,
+            None => meter::MeterMode::Power,
+        };
+        let interval = match matches.get_one::<String>("power-meter-interval") {
+            Some(v) => crate::util::units::parse_duration(v).map_err(|e| {
+                OptionsError::InvalidPowerMeter(format!(
+                    "Invalid duration '{v}' for '--power-meter-interval': {e}"
+                ))
+            })?,
+            None => meter::DEFAULT_INTERVAL,
+        };
+        meter::configure(meter::MeterConfig {
+            command,
+            mode,
+            interval,
+        });
+        Ok(())
+    }
+
     #[cfg(feature = "cli")]
     pub fn from_cli_arguments<'a>(matches: &ArgMatches) -> Result<Self, OptionsError<'a>> {
         let mut options = Self::default();
@@ -1109,6 +1176,30 @@ impl Options {
             );
         }
         options.output_metrics_stderr = matches.get_flag("output-metric-stderr");
+        options.valgrind = matches
+            .get_one::<String>("collector")
+            .and_then(|name| crate::valgrind::Tool::from_name(name));
+        options.collector_plugins = matches
+            .get_many::<String>("collector-plugin")
+            .into_iter()
+            .flatten()
+            .map(PathBuf::from)
+            .collect();
+        if options.valgrind.is_some() || !options.collector_plugins.is_empty() {
+            if options.concurrency > 1 || options.concurrency_template.is_some() {
+                return Err(OptionsError::InvalidCollector(
+                    "collectors measure one process per run and cannot be combined with \
+                     '--concurrency'"
+                        .into(),
+                ));
+            }
+            if options.jobs > 1 {
+                return Err(OptionsError::InvalidCollector(
+                    "collectors measure one run at a time and cannot be combined with '--jobs'"
+                        .into(),
+                ));
+            }
+        }
         if !options.output_metrics.is_empty()
             && options.command_output_policies.iter().any(|p| {
                 matches!(
@@ -1211,7 +1302,17 @@ impl Options {
                     .as_deref(),
             )
             .map_err(OptionsError::InvalidEnergyBackend)?;
+            Self::apply_power_meter(matches, &mut options)?;
+        } else if matches.get_one::<String>("power-meter").is_some()
+            || matches.get_one::<String>("energy-attribution").is_some()
+        {
+            return Err(OptionsError::InvalidPowerMeter(
+                "'--power-meter' and '--energy-attribution' need '--energy'".into(),
+            ));
         }
+        options.energy_attribution = matches
+            .get_one::<String>("energy-attribution")
+            .and_then(|m| crate::energy::attribution::Model::parse(m));
         options.deep_stats = matches.get_flag("deep-stats");
         options.filter_failed = matches.get_flag("filter-failed");
         options.suppress_outlier_warnings = matches.get_flag("suppress-outlier-warnings");

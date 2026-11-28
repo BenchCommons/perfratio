@@ -203,6 +203,17 @@ pub const REGISTRY: &[Spec] = &[
         Energy,
         &["mean_net_energy_joules"],
     ),
+    // Only listed with `--energy-attribution` (an estimate: model in `energy_attribution`)
+    spec(
+        "energy.attributed",
+        "J",
+        LowerIsBetter,
+        Scope::Process,
+        "energy_attribution",
+        Estimated,
+        Concurrency,
+        &["energy_attribution"],
+    ),
     spec(
         "power.average",
         "W",
@@ -512,6 +523,8 @@ pub const DYNAMIC_FIELDS: &[&str] = &[
     "counters_summary",
     "custom_metrics",
     "custom_metrics_summary",
+    "collector_metrics",
+    "collector_metrics_summary",
     "energy_domains_joules",
     "gpu_utilization_percent",
     "regions",
@@ -763,6 +776,45 @@ pub fn descriptors(
             },
             reason: missing.then(|| "no_match_in_some_runs".to_string()),
             fields: vec!["custom_metrics".into(), "custom_metrics_summary".into()],
+        });
+    }
+
+    // `--collector` and `--collector-plugin`: `collector.<name>.<id>`, declared by the collector
+    for key in keys_of(results, |r| {
+        r.collector_metrics
+            .as_ref()
+            .map(|c| c.keys().cloned().collect())
+            .unwrap_or_default()
+    }) {
+        let missing = results
+            .iter()
+            .filter_map(|r| r.collector_metrics.as_ref()?.get(&key))
+            .any(|runs| runs.iter().any(Option::is_none));
+        // Metrics of an imported file have no declaration in this run
+        let meta = crate::collector::meta(&key).unwrap_or_else(|| crate::collector::Meta {
+            unit: "unitless".into(),
+            direction: Neutral,
+            kind: Measured,
+            scope: Scope::Process,
+            source: "collector".into(),
+        });
+        out.push(MetricDescriptor {
+            id: format!("collector.{key}"),
+            unit: meta.unit,
+            direction: meta.direction,
+            scope: meta.scope,
+            source: meta.source,
+            kind: meta.kind,
+            status: if missing {
+                Status::Partial
+            } else {
+                Status::Available
+            },
+            reason: missing.then(|| "no_value_in_some_runs".to_string()),
+            fields: vec![
+                "collector_metrics".into(),
+                "collector_metrics_summary".into(),
+            ],
         });
     }
 
