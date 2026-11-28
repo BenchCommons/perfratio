@@ -112,7 +112,7 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   redaction option changes the export contract: version it and note it in the spec.
 - State: open, **master**. Partly mitigated: `--power-meter` is redacted, and `--evidence`
   and `--meta` warn. Corrigido em parte em #426: warning added to the `--export-json` help
-  and to the README (JSON export section). Redaction (recommendations 2 and 3) is still open.
+  and to the README (JSON export section). Redaction of `--meta` values by key segment (key split at `_`, `-`, `.` and camelCase; a segment such as token, secret, password, passwd, passphrase, credential(s) or apikey, or `key` after api/access/secret/private/ssh/auth/priv; off with `--no-redact-meta`): corrigido em #433 (string to string, no schema change). Redaction of the command line (recommendations 2 and 3) is still open: it needs an option and a contract note.
 
 ### M4. Text from the benchmarked program is printed unescaped (region protocol, persistent mode)
 
@@ -135,7 +135,7 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   for one iteration.
 - State: **master** (`src/region.rs`, `src/persistent.rs`): corrigido em #426 (PR aberto). Program text in error
   messages is escaped and cut to 64 characters, and the SDK id is validated (ASCII letters,
-  digits and `_-./+`, at most 64). Line-length bound in persistent mode remains open.
+  digits and `_-./+`, at most 64). Line-length bound in persistent mode: corrigido em #433 (64 KiB per protocol line; only protocol lines that are not `fail` above the limit are an error; `fail` is cut; other long lines are skipped).
 
 ## Low
 
@@ -189,7 +189,8 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   privileges, and in the `--collector` help.
 - Recommendation: print the resolved binary in verbose mode. Limit the profile read (`take`) and skip entries that are
   not regular files (`symlink_metadata`).
-- State: open, **PR aberto #403**.
+- State: **master**. Profile read limit and regular-file check corrigidos em #433 (256 MiB,
+  `MAX_PROFILE_BYTES`; symlinks refused). Printing the resolved binary in verbose mode is still open.
 
 ### L4. GPU backends: `dlopen` by soname follows the loader search path
 
@@ -228,7 +229,8 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   checked against kernel sources in this audit.   There is also a PID reuse window in `Sampler` (`/proc/{pid}/numa_maps`, `:291`) after the
   child is reaped, which can only give wrong placement data.
 - Recommendation: use `checked_mul` and `saturating_add`.
-- State: open, **PR aberto #404**.
+- State: **master**. Corrigido em #433: `checked_mul` and saturating sums; a sample that overflows is
+  dropped with a warning. The PID reuse window remains (wrong placement data only).
 
 ### L6. `--verdict-json`: stale file, baseline path, free text read by agents
 

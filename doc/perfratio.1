@@ -128,6 +128,7 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR DURATION ]
 .RB [ \-\-meta
 .IR KEY=VALUE|git ]
+.RB [ \-\-no\-redact\-meta ]
 .RB [ \-\-require\-compatible\-env ]
 .RB [ \-\-calibrate [ =auto|off ]]
 .RB [ \-\-evidence
@@ -583,7 +584,11 @@ Wait before every run (warmup and timed, outside the timed window), so between c
 How long until\-temp waits before it gives up (default 5m). Requires \fB\-\-cooldown\fR.
 \fB\-\-meta\fR \fIKEY=VALUE|git\fP
 .IP
-Record provenance of the benchmarked program under perfratio.meta in the JSON export (repeatable). KEY=VALUE is a string; git adds git_commit and git_dirty of the git repository in the current directory. The export contains no host name, user name, environment variables or working directory.
+Record provenance of the benchmarked program under perfratio.meta in the JSON export (repeatable). KEY=VALUE is a string; git adds git_commit and git_dirty of the git repository in the current directory. The export contains no host name, user name, environment variables or working directory. The value of a key that names a secret is exported as "[redacted]" and a warning names the key. The key is split into segments at _ \- . and camelCase; it is redacted if a segment is token, secret, password, passwd, passphrase, credential, credentials or apikey, or if a segment key follows api, access, secret, private, ssh, auth or priv (api_key, AccessKey). A lone key, cache_key or sort_key is kept.
+.HP
+\fB\-\-no\-redact\-meta\fR
+.IP
+Export every \fB\-\-meta\fR value as given, without redaction.
 .HP
 \fB\-\-evidence\fR \fIDIR\fP
 .IP

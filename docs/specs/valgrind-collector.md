@@ -42,6 +42,11 @@ Known deviations from the timed runs: `--prepare` ran once for the timed run, so
 consumes its input is run a second time on the state it left; the Valgrind run has no
 `--input`; affinity and priority are not applied.
 
+### Profile size limit (#22, L3)
+Each profile file is read only if it is a regular file (symlinks and devices are refused) of at
+most 256 MiB (`MAX_PROFILE_BYTES`). A larger file fails the run with a message that names the
+file. Real profiles are tens of MiB at most.
+
 ### Metrics
 Read from the totals of the profile (`summary:` of Cachegrind, `totals:` of Callgrind), summed
 over the process files. Events a profile lacks are left out, never written as `0`.

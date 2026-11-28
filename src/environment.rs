@@ -504,10 +504,86 @@ pub fn git_provenance() -> Option<(String, bool)> {
     )
 }
 
+/// Value written instead of a secret in `perfratio.meta`.
+pub const REDACTED: &str = "[redacted]";
+
+/// Split a `--meta` key into lowercase segments: at `_`, `-`, `.` (and any other
+/// non-alphanumeric character) and at camelCase boundaries (`AccessKey` -> access, key;
+/// `APIKey` -> api, key).
+fn key_segments(key: &str) -> Vec<String> {
+    let mut segments = vec![];
+    let mut current = String::new();
+    let chars: Vec<char> = key.chars().collect();
+    for (i, &c) in chars.iter().enumerate() {
+        if !c.is_alphanumeric() {
+            if !current.is_empty() {
+                segments.push(std::mem::take(&mut current));
+            }
+            continue;
+        }
+        let boundary = i > 0
+            && c.is_uppercase()
+            && (chars[i - 1].is_lowercase()
+                || chars[i - 1].is_ascii_digit()
+                || (chars[i - 1].is_uppercase()
+                    && chars.get(i + 1).is_some_and(|n| n.is_lowercase())));
+        if boundary && !current.is_empty() {
+            segments.push(std::mem::take(&mut current));
+        }
+        current.extend(c.to_lowercase());
+    }
+    if !current.is_empty() {
+        segments.push(current);
+    }
+    segments
+}
+
+/// `true` if a `--meta` key names a secret. The key is split into segments (see
+/// [`key_segments`]); it is a secret if a segment is exactly `token`, `secret`, `password`,
+/// `passwd`, `passphrase`, `credential`, `credentials` or `apikey`, or a segment `key` comes
+/// right after `api`, `access`, `secret`, `private`, `ssh`, `auth` or `priv`. A lone `key`,
+/// `cache_key`, `sort_key`, `monkey` or `keyboard` is not a secret.
+pub fn is_secret_key(key: &str) -> bool {
+    const WORDS: [&str; 8] = [
+        "token",
+        "secret",
+        "password",
+        "passwd",
+        "passphrase",
+        "credential",
+        "credentials",
+        "apikey",
+    ];
+    const KEY_PREFIXES: [&str; 7] = ["api", "access", "secret", "private", "ssh", "auth", "priv"];
+    let segments = key_segments(key);
+    segments.iter().any(|s| WORDS.contains(&s.as_str()))
+        || segments
+            .windows(2)
+            .any(|w| w[1] == "key" && KEY_PREFIXES.contains(&w[0].as_str()))
+}
+
 /// The `perfratio.meta` object for a request. Warns on stderr when `git` was
 /// asked for and the working directory is not a repository.
-pub fn resolve_meta(request: &MetaRequest) -> BTreeMap<String, String> {
+/// With `redact` (the default; `--no-redact-meta` turns it off) the values of secret-looking
+/// keys are replaced by [`REDACTED`].
+pub fn resolve_meta(request: &MetaRequest, redact: bool) -> BTreeMap<String, String> {
     let mut meta = request.pairs.clone();
+    let hidden: Vec<String> = meta
+        .iter_mut()
+        .filter(|(k, _)| redact && is_secret_key(k))
+        .map(|(k, v)| {
+            *v = REDACTED.to_string();
+            k.clone()
+        })
+        .collect();
+    if !hidden.is_empty() {
+        eprintln!(
+            "{} the value of '--meta' key(s) {} looks like a secret and is exported as \
+             \"{REDACTED}\". Rename the key, or use '--no-redact-meta', if this is not a secret.",
+            crate::output::colors::yellow("Warning:"),
+            crate::util::sanitize::escape_control_chars(&hidden.join(", "))
+        );
+    }
     if request.git {
         match git_provenance() {
             Some((commit, dirty)) => {
@@ -556,6 +632,68 @@ pub fn mismatch_message(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn secret_looking_meta_keys_are_redacted() {
+        let request = parse_meta([
+            "api_token=abc",
+            "DB_Password=x",
+            "ssh-key=k",
+            "compiler=gcc-14",
+        ])
+        .unwrap();
+        let meta = resolve_meta(&request, true);
+        assert_eq!(meta["api_token"], REDACTED);
+        assert_eq!(meta["DB_Password"], REDACTED);
+        assert_eq!(meta["ssh-key"], REDACTED);
+        assert_eq!(meta["compiler"], "gcc-14");
+        assert!(is_secret_key("client_SECRET"));
+        assert!(!is_secret_key("flags"));
+    }
+
+    #[test]
+    fn secret_keys_match_by_segment() {
+        for key in [
+            "api_key",
+            "AccessKey",
+            "db-password",
+            "passphrase",
+            "credentials",
+            "token",
+            "apikey",
+            "APIKey",
+            "ssh.key",
+            "privateKey",
+            "x_credential",
+        ] {
+            assert!(is_secret_key(key), "{key} should be redacted");
+        }
+        for key in [
+            "key",
+            "cache_key",
+            "sort_key",
+            "monkey",
+            "keyboard",
+            "turkey",
+            "flags",
+            "tokens",
+        ] {
+            assert!(!is_secret_key(key), "{key} should not be redacted");
+        }
+    }
+
+    #[test]
+    fn no_redact_meta_keeps_every_value() {
+        let request = parse_meta(["api_key=abc", "passphrase=x", "sort_key=n"]).unwrap();
+        let meta = resolve_meta(&request, false);
+        assert_eq!(meta["api_key"], "abc");
+        assert_eq!(meta["passphrase"], "x");
+        let meta = resolve_meta(&request, true);
+        assert_eq!(meta["api_key"], REDACTED);
+        assert_eq!(meta["passphrase"], REDACTED);
+        assert_eq!(meta["sort_key"], "n");
+    }
+
     use std::fs;
 
     fn write(root: &Path, path: &str, content: &str) {

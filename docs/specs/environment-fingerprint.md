@@ -39,7 +39,16 @@ Nothing is guessed.
 
 Privacy: never exported by default are the host name, user name, environment variables, the working
 directory and the full command line (`perfratio.command_line` keeps only the program's file name).
-Values of `--meta` and `--label` are what the user types: no secrets in them.
+Values of `--meta` and `--label` are what the user types: no secrets in them. As a safety net
+(#22, M3), the value of a `--meta` key that names a secret is exported as the string `"[redacted]"` and a
+warning names the key. The key is split into segments at `_`, `-`, `.` and camelCase boundaries
+and compared in lowercase. It is redacted if a segment is exactly `token`, `secret`, `password`,
+`passwd`, `passphrase`, `credential`, `credentials` or `apikey`, or if a segment `key` comes right
+after `api`, `access`, `secret`, `private`, `ssh`, `auth` or `priv` (`api_key`, `AccessKey`).
+A lone `key`, `cache_key`, `sort_key`, `monkey`, `keyboard` and `turkey` are not redacted.
+`--no-redact-meta` turns the redaction off. The type of `perfratio.meta` does not change (string
+to string), so the schema version stays the same.
+Values of other fields, `--label` and the command line are not redacted.
 
 ### 2.2 `perfratio.environment_fingerprint`
 

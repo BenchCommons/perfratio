@@ -1417,7 +1417,22 @@ pub fn build_command() -> Command {
                      git        'git_commit' and 'git_dirty' (uncommitted changes) of the git \
                                 repository in the current directory\n\n\
                      Nothing else about the host is exported by default: no host name, user name, \
-                     environment variables or working directory. Do not put secrets in values.",
+                     environment variables or working directory. Do not put secrets in values: the value of a key with a segment (split at _ - . and \
+                     camelCase) token, secret, password, passwd, passphrase, credential, \
+                     credentials or apikey, or key after api, access, secret, private, ssh, auth \
+                     or priv (api_key, AccessKey), is exported as \"[redacted]\". A lone 'key' \
+                     or cache_key is kept. Use --no-redact-meta to turn this off.",
+                ),
+        )
+        .arg(
+            Arg::new("no-redact-meta")
+                .long("no-redact-meta")
+                .action(ArgAction::SetTrue)
+                .help("Do not redact the values of secret-looking '--meta' keys.")
+                .long_help(
+                    "Export every '--meta' value as given. By default the value of a key that \
+                     names a secret (token, secret, password, passphrase, credential, api_key, \
+                     AccessKey, ...) is exported as \"[redacted]\".",
                 ),
         )
         .arg(

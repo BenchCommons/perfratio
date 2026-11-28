@@ -42,7 +42,9 @@ Privacy: the bundle has no host name, user name, environment variables or workin
 as for every export. The command line and the benchmarked commands are recorded exactly as
 typed, so a secret passed as an argument or inside a command string is in the bundle. Keep
 secrets out of benchmarked commands (read them from the environment of the command instead).
-`--label` and `--meta` values are recorded as given.
+`--label` values are recorded as given. The bundle takes `perfratio.meta` from the JSON export, so
+`--meta` values are redacted the same way (a secret-looking key gives `"[redacted]"`, see
+`environment-fingerprint.md` 2.1) unless `--no-redact-meta` is given.
 
 ### 2.2 `manifest.json`
 
