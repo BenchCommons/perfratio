@@ -179,12 +179,12 @@ produced a sample; `energy_joules` (per run) is present only if **every** run pr
   and `runner_up_point` (`{name: integer}`), `evaluated_points` (distinct points in evaluation
   order), `seed`, `cost` (`{benchmarks, points, runs, rungs?}`) and, with `--optimize-validate`,
   `validation` (`{status, value, search_value, drift, runner_up_value?, p_value?, runs}`;
-  `status` `confirmed`, `refuted` or `inconclusive`, open enum). A search over **several**
-  variables has no `var`, `min`, `max`, `best`, `runner_up`, `evaluated` or `unimodal_warning`
-  (they describe one variable); a search over one variable keeps them. Consumers that required
-  `var` and `best` read only files produced by the golden-section search, which still writes
-  them, so existing files and consumers are unaffected. `results[]` keeps one entry per point
-  (the last benchmark of that point).
+  `status` `confirmed`, `refuted` or `inconclusive`, open enum). The 1.44 `required` list of
+  `optimize` is unchanged (`var`, `min`, `max`, `best`, `evaluated`, `unimodal_warning` stay
+  required). For a search over **several** variables they describe the first declared variable
+  (`best` is its value in the best point, `evaluated` its value in every distinct point,
+  `unimodal_warning` is `false`); `vars`, `best_point` and `evaluated_points` carry all
+  variables. `results[]` keeps one entry per point (the last benchmark of that point).
 - `pareto` (object, optional, **new in 1.16**, #326): present with `--pareto`, `--constraint`
   or `--objective`. Fields: `metrics` (`[{metric, direction}]`, direction `lower_is_better` or
   `higher_is_better`), `frontier` (indices into `results`), `dominated` (`[{command_index, by}]`),

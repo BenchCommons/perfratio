@@ -47,8 +47,18 @@ fn two_variables_are_searched_and_every_point_is_a_result() {
     assert_eq!(o["vars"][0]["name"], "a");
     assert_eq!(o["evaluated_points"].as_array().unwrap().len(), 8);
     assert_eq!(json["results"].as_array().unwrap().len(), 8);
-    // the single-variable fields describe one variable only
-    assert!(o.get("var").is_none() && o.get("best").is_none());
+    // the required one-variable fields describe the first declared variable
+    assert_eq!(o["var"], "a");
+    assert_eq!((o["min"].as_i64(), o["max"].as_i64()), (Some(1), Some(6)));
+    assert_eq!(o["best"], o["best_point"]["a"]);
+    assert_eq!(o["unimodal_warning"], false);
+    let evaluated: Vec<_> = o["evaluated_points"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["a"].clone())
+        .collect();
+    assert_eq!(o["evaluated"].as_array().unwrap(), &evaluated);
     let best = &o["best_point"];
     let command = o["best_command"].as_str().unwrap();
     assert_eq!(
@@ -347,4 +357,33 @@ fn another_parameter_combines_with_the_search() {
     assert_eq!(searches.len(), 2);
     assert_eq!(searches[0]["fixed"]["c"], "0");
     assert_eq!(searches[1]["fixed"]["c"], "1");
+}
+
+/// A multi-variable export validates against the strict 1.45 schema, which still requires the
+/// fields 1.44 required.
+#[test]
+fn a_multi_variable_export_validates_against_the_1_45_schema() {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/docs/schema/1.45/perfratio-export.schema.json"
+    );
+    let schema: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let validator = jsonschema::validator_for(&schema).unwrap();
+    for extra in [
+        &["--optimize-budget", "8"][..],
+        &["--optimize-algorithm", "halving"],
+    ] {
+        let json = json_for(extra);
+        let errors: Vec<String> = validator
+            .iter_errors(&json)
+            .map(|e| format!("{e} at {}", e.instance_path()))
+            .collect();
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+    for key in ["var", "min", "max", "best", "unimodal_warning", "evaluated"] {
+        let mut json = json_for(&[]);
+        json["optimize"].as_object_mut().unwrap().remove(key);
+        assert!(!validator.is_valid(&json), "`{key}` must be required");
+    }
 }
