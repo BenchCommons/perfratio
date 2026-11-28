@@ -99,13 +99,16 @@ At most 10 points are listed.
 The `optimize` object keeps its fields. New: `vars`, `best_point`, `runner_up_point`,
 `evaluated_points`, `seed`, `cost`, `validation`; new `algorithm` values `random`,
 `successive-halving`, `bayesian`. The one-variable fields (`var`, `min`, `max`, `best`,
-`runner_up`, `evaluated`) are written for a one-variable search and omitted for several variables;
-`unimodal_warning` is not written by the new algorithms (it needs a one-dimensional curve).
-This is MINOR: no existing file changes, and a consumer that handles the golden-section output
-keeps working. A consumer of the new searches reads `best_point`, which is present for every
-search of 1.45 (golden-section keeps writing `best`).
-`docs/schema/perfratio-export.schema.json` makes `var`, `min`, `max`, `best`, `evaluated` and
-`unimodal_warning` optional; see `output-schema-contract.md`.
+`runner_up`, `evaluated`, `unimodal_warning`) stay as in 1.44: `var`, `min`, `max`, `best`,
+`unimodal_warning` and `evaluated` are always written, because they are required since 1.6 and
+dropping a required field is MAJOR. For several variables they describe the **first declared
+variable**: `var`, `min`, `max` are its name and range, `best` its value in the best point,
+`evaluated` its value in every distinct point (same order and length as `evaluated_points`,
+so values may repeat), `unimodal_warning` is `false` (not applicable). `runner_up` stays
+optional and is written only for one variable. `vars`, `best_point` and `evaluated_points` carry
+all variables; a consumer of the new searches reads those. This is MINOR: no existing file
+changes and no required field is removed. The schema keeps the 1.44 `required` list; see
+`output-schema-contract.md`.
 
 **Version note:** 1.45 is the version reserved for this change in the merge order of the schema PRs (#402=1.43, #403=1.44, #405=1.45); this change adds no field that depends on the others.
 
