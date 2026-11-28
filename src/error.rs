@@ -76,8 +76,14 @@ pub enum OptionsError<'a> {
     #[error("Invalid threshold '{0}' for '--discard-outliers': expected a positive number")]
     InvalidOutlierThreshold(String),
 
-    #[error("Invalid energy backend '{0}': expected auto, sysfs, perf, ioreport or emi")]
+    #[error("Invalid energy backend '{0}': expected auto, sysfs, perf, ioreport, emi or meter")]
     InvalidEnergyBackend(String),
+
+    #[error("{0}")]
+    InvalidPowerMeter(String),
+
+    #[error("{0}")]
+    InvalidEnergyAttribution(String),
 
     #[error("Invalid '--affinity': {0}")]
     InvalidAffinity(String),
@@ -115,6 +121,8 @@ pub enum OptionsError<'a> {
     InvalidRawRatios(&'static str),
     #[error("Invalid Pareto option: {0}")]
     InvalidPareto(String),
+    #[error("Invalid '--collector' or '--collector-plugin': {0}")]
+    InvalidCollector(String),
     #[error("Invalid '--region': {0}")]
     InvalidRegion(String),
     #[error("{0}")]

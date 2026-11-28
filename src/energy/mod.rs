@@ -1,5 +1,7 @@
+pub mod attribution;
 pub mod gpu;
 pub mod ioreport;
+pub mod meter;
 pub mod perf_rapl;
 pub mod rapl;
 pub mod windows_emi;
@@ -63,6 +65,8 @@ pub enum BackendPreference {
     Ioreport,
     /// Windows Energy Meter Interface
     Emi,
+    /// External power meter read through `--power-meter` (any OS)
+    Meter,
 }
 
 impl BackendPreference {
@@ -73,6 +77,7 @@ impl BackendPreference {
             "perf" => Some(Self::Perf),
             "ioreport" => Some(Self::Ioreport),
             "emi" => Some(Self::Emi),
+            "meter" => Some(Self::Meter),
             _ => None,
         }
     }
@@ -95,6 +100,8 @@ pub enum EnergyBackend {
     IoReport,
     /// Windows Energy Meter Interface
     WindowsEmi,
+    /// External wall-plug or system power meter (`--power-meter`)
+    ExternalMeter,
 }
 
 impl EnergyBackend {
@@ -105,6 +112,7 @@ impl EnergyBackend {
             Self::PerfPmu => "perf_pmu",
             Self::IoReport => "ioreport",
             Self::WindowsEmi => "windows_emi",
+            Self::ExternalMeter => "external_meter",
         }
     }
 }
@@ -128,6 +136,10 @@ pub enum Unavailable {
     EmiNotFound,
     /// Windows: EMI devices exist but cannot be opened or read (needs admin)
     EmiUnreadable,
+    /// `--energy-backend meter` without `--power-meter`
+    MeterNotConfigured,
+    /// The meter command failed, timed out or printed something that is not a reading
+    MeterUnreadable,
 }
 
 impl Unavailable {
@@ -141,6 +153,8 @@ impl Unavailable {
             Self::IoreportFrozen => "ioreport_frozen",
             Self::EmiNotFound => "emi_not_found",
             Self::EmiUnreadable => "emi_unreadable",
+            Self::MeterNotConfigured => "meter_not_configured",
+            Self::MeterUnreadable => "meter_unreadable",
         }
     }
 }
@@ -166,6 +180,10 @@ impl Unavailable {
             Self::EmiNotFound => "no Windows EMI energy meter device found",
             Self::EmiUnreadable => {
                 "Windows EMI energy meter devices cannot be read (try an administrator shell)"
+            }
+            Self::MeterNotConfigured => "no external power meter command configured",
+            Self::MeterUnreadable => {
+                "the external power meter command failed, timed out or printed no reading"
             }
         }
     }
@@ -213,6 +231,9 @@ pub(crate) fn select_with(
 /// Picks a working sampler for `pref`, or the reason no backend is usable.
 /// A backend that belongs to another OS is `unsupported_platform`.
 pub fn select_sampler_detailed(pref: BackendPreference) -> Result<Selected, Unavailable> {
+    if pref == BackendPreference::Meter {
+        return select_meter();
+    }
     #[cfg(target_os = "linux")]
     {
         if matches!(pref, BackendPreference::Ioreport | BackendPreference::Emi) {
@@ -263,6 +284,21 @@ pub fn select_sampler_detailed(pref: BackendPreference) -> Result<Selected, Unav
     {
         let _ = pref;
         Err(Unavailable::UnsupportedPlatform)
+    }
+}
+
+/// The external meter of `--power-meter`; it works on every OS.
+fn select_meter() -> Result<Selected, Unavailable> {
+    let config = meter::configured().ok_or(Unavailable::MeterNotConfigured)?;
+    match meter::build(&config, meter::command_reader(&config)) {
+        Ok(sampler) => Ok((sampler, EnergyBackend::ExternalMeter)),
+        Err(message) => {
+            static ONCE: std::sync::Once = std::sync::Once::new();
+            ONCE.call_once(|| {
+                eprintln!("Warning: the external power meter cannot be read: {message}")
+            });
+            Err(Unavailable::MeterUnreadable)
+        }
     }
 }
 

@@ -31,7 +31,7 @@ const ENDPOINT_BUDGET: usize = 5;
 /// Fewer evaluated points cannot show a violation of unimodality
 const MIN_POINTS_FOR_UNIMODALITY: usize = 4;
 const INV_PHI: f64 = 0.618_033_988_749_895;
-const ALPHA: f64 = 0.05;
+pub(crate) const ALPHA: f64 = 0.05;
 
 /// Validated `--optimize` options
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,6 +70,13 @@ impl OptimizeSpec {
             return Ok(None);
         };
         let values: Vec<&str> = values.map(String::as_str).collect();
+        // Several variables or another algorithm: `crate::search`
+        let golden = matches
+            .get_one::<String>("optimize-algorithm")
+            .is_none_or(|a| a == "golden");
+        if values.len() > 3 || !golden {
+            return Ok(None);
+        }
         let [var, min, max] = values[..] else {
             bail!("'--optimize' needs VAR, MIN and MAX");
         };
