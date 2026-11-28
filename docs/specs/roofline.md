@@ -55,7 +55,7 @@ are lower bounds of the real ceilings and need at least two such commands;
 otherwise `peaks` is absent and `peaks_note` says so (a single command would
 sit on its own roof).
 
-### JSON (MINOR, schemaVersion 1.37)
+### JSON (MINOR, schemaVersion 1.39)
 Top-level optional `roofline` object: `precision`, `bytes_source`,
 `cache_line_bytes`, `peaks?` (`gflops`, `gbytes_per_s`, `source`),
 `ridge_point?`, `peaks_note?`, `results[]` (`command`, `parameters?`,

@@ -101,7 +101,7 @@ fn json_and_markdown_exports() {
         .success();
     let doc: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&json).unwrap()).unwrap();
-    assert_eq!(doc["schemaVersion"], "1.37");
+    assert_eq!(doc["schemaVersion"], "1.39");
     assert_eq!(doc["pareto"]["metrics"][0]["metric"], "wall");
     assert!(doc["pareto"]["frontier"]
         .as_array()
@@ -132,4 +132,37 @@ fn json_has_no_pareto_object_without_the_flag() {
     let doc: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&json).unwrap()).unwrap();
     assert!(doc.get("pareto").is_none());
+}
+
+#[test]
+fn uncertainty_flags_add_json_fields_and_need_a_frontier() {
+    let dir = tempfile::tempdir().unwrap();
+    let json = dir.path().join("out.json");
+    debug()
+        .args([
+            "--runs=5",
+            "--pareto=wall,memory",
+            "--pareto-significance",
+            "--pareto-probability",
+            "--bootstrap-resamples=200",
+        ])
+        .arg(format!("--export-json={}", json.display()))
+        .args(["sleep 0.1", "sleep 0.1"])
+        .assert()
+        .success();
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&json).unwrap()).unwrap();
+    assert_eq!(doc["pareto"]["bootstrap"]["resamples"], 200);
+    assert_eq!(
+        doc["pareto"]["non_dominated_probability"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert!(doc["pareto"]["significance"]["tests"].is_u64());
+    debug()
+        .args(["--runs=3", "--pareto-significance", "sleep 0.1"])
+        .assert()
+        .failure();
 }

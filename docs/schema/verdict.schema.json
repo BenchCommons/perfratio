@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/BenchCommons/perfratio/docs/schema/verdict.schema.json",
+  "title": "perfratio verdict document",
+  "description": "Output of --verdict-json, verdictVersion 1.0 (docs/specs/verdict-json.md). Consumers must ignore unknown keys; the repository test validates against a strict copy so that a field missing here fails CI.",
+  "type": "object",
+  "properties": {
+    "verdictVersion": { "const": "1.0" },
+    "tool": {
+      "type": "object",
+      "properties": { "name": { "type": "string" }, "version": { "type": "string" } },
+      "required": ["name", "version"]
+    },
+    "baseline": { "type": "string", "description": "Path of the --compare baseline." },
+    "settings": {
+      "type": "object",
+      "properties": {
+        "estimator": { "type": "string" },
+        "confidence_level": { "type": "number" },
+        "significance_level": { "type": "number" },
+        "noise_threshold": { "type": "number", "description": "Fraction; changes below it are unchanged. 0.01 unless --noise-threshold is set." },
+        "equivalence_margin": { "type": "number" }
+      },
+      "required": ["estimator", "confidence_level", "significance_level", "noise_threshold"]
+    },
+    "verdict": { "$ref": "#/$defs/overall" },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "improved": { "type": "integer", "minimum": 0 },
+        "regressed": { "type": "integer", "minimum": 0 },
+        "trade_off": { "type": "integer", "minimum": 0 },
+        "unchanged": { "type": "integer", "minimum": 0 },
+        "inconclusive": { "type": "integer", "minimum": 0 },
+        "not_evaluated": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["improved", "regressed", "trade_off", "unchanged", "inconclusive", "not_evaluated"],
+      "description": "Number of commands per verdict."
+    },
+    "gate": {
+      "type": "object",
+      "properties": {
+        "verdict": { "type": "string", "description": "pass, fail or not_evaluated (open enum)." },
+        "failures": { "type": "integer", "minimum": 0 },
+        "on_unavailable": { "type": "string" },
+        "other_budgets": { "type": "array", "items": { "$ref": "#/$defs/budget" } }
+      },
+      "required": ["verdict", "failures", "on_unavailable"],
+      "description": "Present with --budget, --budget-file or --fail-if-regressed."
+    },
+    "commands": { "type": "array", "items": { "$ref": "#/$defs/command" } },
+    "new": { "type": "array", "items": { "type": "string" } },
+    "removed": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["verdictVersion", "tool", "baseline", "settings", "verdict", "summary", "commands", "new", "removed"],
+  "$defs": {
+    "overall": {
+      "type": "string",
+      "description": "improved, regressed, trade_off, unchanged, inconclusive or not_evaluated (open enum: treat an unknown value as inconclusive)."
+    },
+    "budget": {
+      "type": "object",
+      "properties": {
+        "command": { "type": "string" },
+        "metric": { "type": "string" },
+        "kind": { "type": "string" },
+        "op": { "type": "string" },
+        "limit": { "type": "number" },
+        "budget": { "type": "string" },
+        "baseline": { "type": "number" },
+        "current": { "type": "number" },
+        "change": { "type": "number" },
+        "p_value": { "type": "number" },
+        "verdict": { "type": "string" },
+        "reason": { "type": "string" }
+      },
+      "required": ["command", "metric", "kind", "op", "limit", "budget", "verdict"],
+      "description": "One entry of perfratio.compare.budgets[] of the measurement export (budgets.md)."
+    },
+    "command": {
+      "type": "object",
+      "properties": {
+        "command": { "type": "string" },
+        "verdict": { "$ref": "#/$defs/overall" },
+        "metrics": { "type": "array", "items": { "$ref": "#/$defs/metric" } },
+        "budgets": { "type": "array", "items": { "$ref": "#/$defs/budget" } }
+      },
+      "required": ["command", "verdict", "metrics"]
+    },
+    "metric": {
+      "type": "object",
+      "properties": {
+        "metric": { "type": "string" },
+        "direction": { "enum": ["lower_is_better", "higher_is_better"] },
+        "assessment": { "type": "string", "description": "improved, regressed, unchanged, equivalent, inconclusive or not_evaluated (open enum)." },
+        "baseline": { "type": "number" },
+        "current": { "type": "number" },
+        "change": { "type": "number", "description": "current / baseline - 1 of the estimator." },
+        "ci_low": { "type": "number" },
+        "ci_high": { "type": "number" },
+        "p_value": { "type": "number" },
+        "equivalence_p_value": { "type": "number" },
+        "runs": {
+          "type": "object",
+          "properties": { "baseline": { "type": "integer", "minimum": 0 }, "current": { "type": "integer", "minimum": 0 } },
+          "required": ["baseline", "current"]
+        },
+        "reason": { "type": "string", "description": "Why an assessment is inconclusive or not_evaluated." }
+      },
+      "required": ["metric", "direction", "assessment"]
+    }
+  }
+}

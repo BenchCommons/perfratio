@@ -25,7 +25,7 @@ pub struct PrimaryMetricStats {
 }
 
 /// Version of the JSON output contract (`docs/specs/output-schema-contract.md`).
-pub const SCHEMA_VERSION: &str = "1.37";
+pub const SCHEMA_VERSION: &str = "1.39";
 
 #[derive(Serialize, Debug)]
 struct PerfratioSummary<'a> {
@@ -45,7 +45,7 @@ struct PerfratioSummary<'a> {
     /// Empirical complexity fits of `--complexity` (new in 1.33, #374)
     #[serde(skip_serializing_if = "Option::is_none")]
     complexity: Option<serde_json::Value>,
-    /// Roofline placement of `--roofline` (new in 1.37, #379)
+    /// Roofline placement of `--roofline` (new in 1.39, #379)
     #[serde(skip_serializing_if = "Option::is_none")]
     roofline: Option<serde_json::Value>,
     /// Pareto analysis of `--pareto` (new in 1.16, #326)
@@ -92,6 +92,10 @@ struct ResultEntry<'a> {
     /// p-value of the equivalence test (TOST) for the mean (new in 1.33, #323)
     #[serde(skip_serializing_if = "Option::is_none")]
     equivalence_p_value: Option<f64>,
+    /// Paired comparison with the reference over the rounds of an interleaved
+    /// schedule (new in 1.37, #368); only with `--paired`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    paired: Option<crate::stats::hierarchical::PairedAnalysis>,
 }
 
 /// The `perfratio` object: the run metadata plus the descriptor of every metric (#317).
@@ -249,6 +253,15 @@ impl Exporter for JsonExporter {
                     effect: assessment.and_then(|a| a.verdict).map(|v| v.effect),
                     classification: assessment.and_then(|a| a.verdict).map(|v| v.classification),
                     equivalence_p_value: assessment.and_then(|a| a.verdict?.equivalence_p),
+                    paired: reference_result
+                        .filter(|_| settings.paired)
+                        .and_then(|reference| {
+                            crate::stats::hierarchical::paired_results(
+                                reference,
+                                result,
+                                settings.confidence_level,
+                            )
+                        }),
                 }
             })
             .collect();

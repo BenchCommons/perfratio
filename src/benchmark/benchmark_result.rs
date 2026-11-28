@@ -335,6 +335,11 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instance_run_ids: Option<Vec<Vec<u64>>>,
 
+    /// Structure of the sample (workers, runs, instances, region repetitions)
+    /// with the variance at each level (new in 1.37, #368)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hierarchy: Option<crate::stats::hierarchical::HierarchyReport>,
+
     /// Processes started by the command (or its prepare/conclude) outlived it
     /// in at least one run; they were killed (`docs/specs/process-tree.md`)
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]

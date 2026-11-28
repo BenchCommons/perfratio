@@ -75,6 +75,11 @@ pub fn wait_with_rusage(child: &Child) -> io::Result<(ExitStatus, ChildUsage)> {
     // pattern is a valid value.
     let mut usage: libc::rusage = unsafe { mem::zeroed() };
 
+    // macOS task counters must be read before the child is reaped (no-op
+    // unless `--counters` armed this thread)
+    #[cfg(target_os = "macos")]
+    crate::perf_counters::macos::snapshot_child(pid);
+
     loop {
         // SAFETY: `pid` refers to our own child, which has not been reaped yet
         // (the caller never calls `Child::wait`); `status` and `usage` are
