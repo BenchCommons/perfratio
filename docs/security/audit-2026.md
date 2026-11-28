@@ -112,7 +112,7 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   redaction option changes the export contract: version it and note it in the spec.
 - State: open, **master**. Partly mitigated: `--power-meter` is redacted, and `--evidence`
   and `--meta` warn. Corrigido em parte em #426: warning added to the `--export-json` help
-  and to the README (JSON export section). Redaction of `--meta` values whose key contains TOKEN, SECRET, PASSWORD or KEY: corrigido em #433 (string to string, no schema change). Redaction of the command line (recommendations 2 and 3) is still open: it needs an option and a contract note.
+  and to the README (JSON export section). Redaction of `--meta` values by key segment (key split at `_`, `-`, `.` and camelCase; a segment such as token, secret, password, passwd, passphrase, credential(s) or apikey, or `key` after api/access/secret/private/ssh/auth/priv; off with `--no-redact-meta`): corrigido em #433 (string to string, no schema change). Redaction of the command line (recommendations 2 and 3) is still open: it needs an option and a contract note.
 
 ### M4. Text from the benchmarked program is printed unescaped (region protocol, persistent mode)
 
@@ -135,7 +135,7 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   for one iteration.
 - State: **master** (`src/region.rs`, `src/persistent.rs`): corrigido em #426 (PR aberto). Program text in error
   messages is escaped and cut to 64 characters, and the SDK id is validated (ASCII letters,
-  digits and `_-./+`, at most 64). Line-length bound in persistent mode: corrigido em #433 (64 KiB per protocol line; longer protocol line is an error, other long lines are skipped).
+  digits and `_-./+`, at most 64). Line-length bound in persistent mode: corrigido em #433 (64 KiB per protocol line; only protocol lines that are not `fail` above the limit are an error; `fail` is cut; other long lines are skipped).
 
 ## Low
 

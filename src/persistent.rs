@@ -252,6 +252,27 @@ pub fn parse_response(lines: &[String], expected: u64) -> Result<Outcome> {
 /// Longest protocol line accepted from the program (bytes, newline included).
 pub const MAX_LINE: usize = 64 * 1024;
 
+/// Converts `bytes[..max]` to text, backing the cut up to a UTF-8 boundary so a multibyte
+/// character split by the limit is dropped instead of turned into U+FFFD. The result is at most
+/// `max` bytes: invalid bytes inside the text are replaced, then the text is cut again if needed.
+fn lossy_cut(bytes: &[u8], max: usize) -> String {
+    let mut end = max.min(bytes.len());
+    if let Err(e) = std::str::from_utf8(&bytes[..end]) {
+        if e.error_len().is_none() {
+            end = e.valid_up_to();
+        }
+    }
+    let mut text = String::from_utf8_lossy(&bytes[..end]).into_owned();
+    if text.len() > max {
+        let mut cut = max;
+        while !text.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        text.truncate(cut);
+    }
+    text
+}
+
 /// Reads the lines of the program's stdout and sends the protocol messages (the lines with
 /// [`LINE_PREFIX`]). Memory stays bounded: a `fail` line longer than [`MAX_LINE`] is
 /// cut to [`MAX_LINE`] bytes and accepted, any other protocol line that long is reported as an
@@ -274,7 +295,7 @@ fn read_protocol_lines<R: BufRead>(mut reader: R, tx: &mpsc::Sender<Result<Strin
             let fail = format!("{LINE_PREFIX}fail ");
             if buffer.starts_with(fail.as_bytes()) {
                 // a failure message is only text: keep the cut start, drop the rest
-                let text = String::from_utf8_lossy(&buffer[..MAX_LINE]).into_owned();
+                let text = lossy_cut(&buffer, MAX_LINE);
                 let message = text.strip_prefix(LINE_PREFIX).unwrap_or(&text).trim_end();
                 if tx.send(Ok(message.to_string())).is_err() {
                     return;
@@ -616,6 +637,28 @@ mod tests {
         assert!(message.starts_with("fail 3 aaa"));
         assert!(message.len() <= MAX_LINE);
         assert_eq!(got[1].as_ref().unwrap(), "done 4");
+    }
+
+    #[test]
+    fn a_fail_cut_inside_a_multibyte_char_backs_up() {
+        for ch in ["é", "😀"] {
+            for back in 1..ch.len() {
+                let head = format!("{LINE_PREFIX}fail 3 ");
+                let mut input = head.clone().into_bytes();
+                // place the char so the limit falls inside it
+                let pad = MAX_LINE - head.len() - back;
+                input.extend(std::iter::repeat_n(b'a', pad));
+                input.extend(ch.bytes());
+                input.extend(std::iter::repeat_n(b'b', 10));
+                input.extend(b"\n");
+                let got = read_all(&input);
+                let message = got[0].as_ref().unwrap();
+                assert!(message.len() <= MAX_LINE, "{}", message.len());
+                assert!(!message.contains('\u{FFFD}'));
+                assert!(!message.contains(ch));
+                assert!(message.ends_with('a'));
+            }
+        }
     }
 
     #[test]

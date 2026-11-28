@@ -41,7 +41,7 @@ perfratio sets `PERFRATIO_PERSISTENT_PROTOCOL=1` and `PERFRATIO_REGION_PROTOCOL=
 
 Input limit (#22, M4): a protocol line (starting with `@perfratio `) is at most 64 KiB (`MAX_LINE`,
 as in the collector protocol). A longer one ends the run with `persistent protocol: a line is longer
-than 65536 bytes`. A longer line that is not a protocol line is skipped without being stored.
+than 65536 bytes`. A longer line that is not a protocol line is skipped without being stored. A `fail` line over the limit is not an error: it is cut to at most 64 KiB, backing up to a UTF-8 character boundary.
 
 The program answers on **stdout**. Only lines that start with `@perfratio ` belong to the
 protocol; every other line is the program's own output and is ignored. After the prefix the
