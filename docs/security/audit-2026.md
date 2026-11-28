@@ -111,7 +111,8 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   table-driven (a list of option names) instead of one function per option. Adding a
   redaction option changes the export contract: version it and note it in the spec.
 - State: open, **master**. Partly mitigated: `--power-meter` is redacted, and `--evidence`
-  and `--meta` warn.
+  and `--meta` warn. Corrigido em parte em #426: warning added to the `--export-json` help
+  and to the README (JSON export section). Redaction (recommendations 2 and 3) is still open.
 
 ### M4. Text from the benchmarked program is printed unescaped (region protocol, persistent mode)
 
@@ -132,7 +133,9 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   rule of `is_valid_name` and limit it to 64 characters. In persistent mode read with a
   limited reader (as `collector::read_line_limited`), and bound the number of lines kept
   for one iteration.
-- State: open, **master** (`src/region.rs`) and **PR aberto #399** (`src/persistent.rs`).
+- State: **master** (`src/region.rs`, `src/persistent.rs`): corrigido em #426 (PR aberto). Program text in error
+  messages is escaped and cut to 64 characters, and the SDK id is validated (ASCII letters,
+  digits and `_-./+`, at most 64). Line-length bound in persistent mode remains open.
 
 ## Low
 
@@ -255,7 +258,9 @@ injection from untrusted data (M2, M4) and disclosure of secrets in shareable fi
   real machine. `PERFRATIO_ENERGY_BACKEND` is a user-facing variable and is fine.
 - Recommendation: build the hook only under `cfg(test)` or a `test-hooks` feature; if it
   must stay, record `fake_root: true` in the export and print a warning.
-- State: open, **master**. Recording it changes the export: version it.
+- State: open, **master**. Corrigido em #426 (PR aberto): the variable is read only with the `test-hooks` cargo
+  feature (`system_check::fake_root`); release builds ignore it. `cargo test` enables the
+  feature through a dev-dependency of the crate on itself. No export change.
 
 ### L8. `--import-json`: no size limit
 

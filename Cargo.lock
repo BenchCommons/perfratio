@@ -817,6 +817,7 @@ dependencies = [
  "libc",
  "nix",
  "once_cell",
+ "perfratio",
  "predicates",
  "rand 0.8.8",
  "regex",

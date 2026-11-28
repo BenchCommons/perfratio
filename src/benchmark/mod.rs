@@ -358,7 +358,7 @@ impl<'a> BenchmarkRunner<'a> {
             invalid_runs: 0,
             first_output_sha256: None,
             watch: if !matches!(options.executor_kind, ExecutorKind::Mock(_))
-                || std::env::var_os(crate::system_check::FAKE_ROOT_ENV).is_some()
+                || crate::system_check::fake_root().is_some()
             {
                 crate::environment_watch::Watch::new(
                     &crate::thermal::default_root(),
