@@ -223,6 +223,20 @@ fn binary() -> OsString {
         .unwrap_or_else(|| "valgrind".into())
 }
 
+/// A notice naming the binary when `PERFRATIO_VALGRIND` replaces `valgrind` from `PATH`
+/// (the environment, not the command line, chose the program that runs the benchmark).
+pub fn binary_override_notice() -> Option<String> {
+    notice_for(std::env::var_os(BINARY_ENV))
+}
+
+fn notice_for(value: Option<OsString>) -> Option<String> {
+    let value = value.filter(|v| !v.is_empty())?;
+    Some(format!(
+        "'--collector' runs {} (set by {BINARY_ENV}), not 'valgrind' from PATH",
+        crate::util::sanitize::escape_control_chars(&value.to_string_lossy())
+    ))
+}
+
 /// Fails with a clear message if Valgrind cannot be run. Returns its version line.
 pub fn check_available() -> Result<String> {
     let output = Command::new(binary())
@@ -387,6 +401,17 @@ pub fn measure(tool: Tool, command: &Command) -> Result<Outcome> {
 
 #[cfg(test)]
 mod tests {
+    use super::notice_for;
+
+    #[test]
+    fn override_notice_names_the_binary_and_escapes_it() {
+        assert_eq!(notice_for(None), None);
+        assert_eq!(notice_for(Some("".into())), None);
+        let n = notice_for(Some("/opt/vg\x1b[2J".into())).unwrap();
+        assert!(n.contains("/opt/vg") && n.contains("PERFRATIO_VALGRIND"));
+        assert!(!n.contains('\x1b'));
+    }
+
     use super::*;
 
     pub const CACHEGRIND: &str = "\

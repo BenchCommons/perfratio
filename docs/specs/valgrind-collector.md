@@ -14,7 +14,8 @@ load, so they can detect small regressions there (the approach of iai and gungra
 `--collector cachegrind` or `--collector callgrind`. One value. Needs Valgrind: perfratio runs
 `valgrind --version` at start and fails with an install hint if it cannot run. The binary is
 `valgrind` from `PATH`; `PERFRATIO_VALGRIND` replaces it (non-standard installs, tests). Like a
-plugin it is trusted code run with the user's privileges. Not combinable with `--concurrency N`
+plugin it is trusted code run with the user's privileges. When it is set, perfratio prints a `Note:` on
+stderr with the resolved binary (escaped). Not combinable with `--concurrency N`
 or `--jobs N` (N > 1).
 
 ### What runs
