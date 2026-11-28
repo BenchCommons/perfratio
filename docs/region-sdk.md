@@ -25,6 +25,23 @@ perfratio_region_stop("sort");
 { let _region = perfratio_region::region("sort"); sort(&mut data); }  // stops on drop and panic
 ```
 
+```js
+pr.region('sort', () => sort(data));                  // JavaScript and TypeScript; stops on throw
+```
+
+```go
+defer pr.Flush()                                      // Go: first line of main
+func() { defer pr.Region("sort")(); sort(data) }()
+```
+
+```java
+try (PerfratioRegion.Scope s = PerfratioRegion.region("sort")) { sort(data); }
+```
+
+```kotlin
+PerfratioRegion.region("sort") { sort(data) }
+```
+
 ```python
 with perfratio_region.region("sort"):
     sort(data)
@@ -75,8 +92,37 @@ none).
 - **Names** are 1 to 64 ASCII letters, digits or `_`. A client ignores an invalid name and prints
   one warning on stderr.
 - **Version.** Each client sends the protocol version it speaks and an id such as
-  `rust/1.0.0`. A client of another protocol version makes perfratio stop with a clear message;
+  `rust/1.1.0`. A client of another protocol version makes perfratio stop with a clear message;
   the id appears as `sdk` in the export.
+
+## Persistent mode
+
+`perfratio --persistent -w 0 -r 100 python3 program.py` starts the program once and sends it
+100 iterations; the program times each one itself, so imports, JIT warm-up and data loading
+are paid once and the JSON reports the warm-up phase and the steady state
+([specs/persistent-mode.md](specs/persistent-mode.md)). The Rust, Python, JavaScript, Go, Java
+and Kotlin clients give you the loop:
+
+```python
+pr.serve(handle_request)          # calls handle_request() once per iteration
+```
+
+```rust
+perfratio_region::serve(|| handle_request());
+```
+
+```js
+await pr.serve(handleRequest);      // JavaScript (also async functions)
+```
+
+Go `pr.Serve(handleRequest)`, Java `PerfratioRegion.serve(runnable)`, Kotlin
+`PerfratioRegion.serve { handleRequest() }`.
+
+Without perfratio `serve` calls the function once, so the program still runs on its own. A
+client for another language reads `run <n>` / `quit` lines on stdin, runs the work, and
+answers with `@perfratio start iteration <t_ns>`, `@perfratio stop iteration <t_ns>` and
+`@perfratio done <n>` (`fail <n> <message>` on error) after a first `@perfratio hello 1 <id>`
+line; see the wire format in the spec.
 
 ## Write a client for another language
 

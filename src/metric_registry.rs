@@ -466,6 +466,8 @@ pub const REGISTRY: &[Spec] = &[
 /// `$defs/result` in the JSON Schema.
 pub const NON_METRIC_FIELDS: &[&str] = &[
     "command",
+    "mode",
+    "iterations",
     "command_with_unused_parameters",
     "parameters",
     "per_run_parameters",

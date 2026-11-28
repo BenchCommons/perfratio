@@ -648,6 +648,17 @@ impl<'a> BenchmarkRunner<'a> {
         Some((clamped, total))
     }
 
+    /// Real times of the runs that succeeded. In persistent mode with `-i`, a failed
+    /// iteration is recorded as 0 s and must not enter the warm-up analysis.
+    fn successful_times_real(&self) -> Vec<Second> {
+        self.times_real
+            .iter()
+            .zip(&self.exit_codes)
+            .filter(|(_, code)| **code == Some(0))
+            .map(|(&t, _)| t)
+            .collect()
+    }
+
     /// The run times that count for `--target-precision`: without a first run
     /// that `--first-run` excludes.
     fn measured_times(&self) -> &[Second] {
@@ -2167,6 +2178,33 @@ impl<'a> BenchmarkRunner<'a> {
                     }
                 }
 
+                if self.options.persistent {
+                    let report = crate::persistent::IterationsReport::from_times(
+                        &self.successful_times_real(),
+                        self.region_sdk.clone(),
+                    );
+                    let line = match (&report.steady_state, report.status) {
+                        (Some(steady), _) => format!(
+                            "{} warm-up iterations, then {} steady (mean {} ± {})",
+                            report.warmup_iterations.unwrap_or(0),
+                            steady.count,
+                            format_duration(steady.mean, Some(time_unit)),
+                            steady
+                                .stddev
+                                .map_or("n/a".to_string(), |sd| format_duration(
+                                    sd,
+                                    Some(time_unit)
+                                )),
+                        ),
+                        (None, crate::persistent::SteadyStatus::TooFewIterations) => format!(
+                            "no analysis, fewer than {} iterations",
+                            crate::persistent::MIN_ITERATIONS
+                        ),
+                        (None, _) => "no steady state reached".to_string(),
+                    };
+                    crate::outln!("  Persistent:         {}", line.dimmed());
+                }
+
                 if let Some(warmup) = self.warmup.filter(|w| w.auto) {
                     crate::outln!(
                         "  Warmup (auto):      {}",
@@ -2495,7 +2533,8 @@ impl<'a> BenchmarkRunner<'a> {
                     > 0,
             };
 
-            if !self.options.suppress_off_cpu_warnings {
+            // persistent mode collects no CPU time, and the warm-up is the first slow iterations
+            if !self.options.suppress_off_cpu_warnings && !self.options.persistent {
                 let total_cpu = user_mean + system_mean;
                 if t_mean >= 0.1 && (total_cpu <= 0.0 || t_mean >= 5.0 * total_cpu) {
                     let ratio = if total_cpu > 0.0 {
@@ -2510,7 +2549,7 @@ impl<'a> BenchmarkRunner<'a> {
             let diag = Diagnostics::compute(&metric_samples, OUTLIER_THRESHOLD);
 
             if !self.options.suppress_outlier_warnings {
-                if scores[0] > OUTLIER_THRESHOLD {
+                if scores[0] > OUTLIER_THRESHOLD && !self.options.persistent {
                     warnings.push(Warnings::SlowInitialRun(
                         metric_samples[0],
                         outlier_warning_options,
@@ -2607,6 +2646,12 @@ impl<'a> BenchmarkRunner<'a> {
             None
         };
 
+        let iterations = self.options.persistent.then(|| {
+            crate::persistent::IterationsReport::from_times(
+                &self.successful_times_real(),
+                self.region_sdk.clone(),
+            )
+        });
         let total_runs = self.times_real.len();
         let mean_net_energy = self.net_energy_mean();
         let energy_domains = domains_series(&self.domain_measurements, total_runs);
@@ -2794,6 +2839,8 @@ impl<'a> BenchmarkRunner<'a> {
             collector_metrics,
             collector_metrics_summary,
             regions,
+            mode: self.options.persistent.then(|| "persistent".to_string()),
+            iterations,
         };
         let quality = crate::quality::QualityReport::assess(
             &result,
@@ -3453,6 +3500,20 @@ mod tests {
             .map(|i| if i % 2 == 0 { 0.99 } else { 1.01 })
             .collect();
         assert!(effect_runner_answer(quiet));
+    }
+
+    #[test]
+    fn test_successful_times_real_skips_failed_iterations() {
+        let cmd = Command::new(None, "true");
+        let options = Options {
+            command_output_policies: vec![CommandOutputPolicy::Null],
+            ..Default::default()
+        };
+        let executor = MockExecutor::new(None, None);
+        let mut runner = BenchmarkRunner::new(0, 0, &cmd, &options, &executor);
+        runner.times_real = vec![0.1, 0.0, 0.2];
+        runner.exit_codes = vec![Some(0), Some(1), Some(0)];
+        assert_eq!(runner.successful_times_real(), vec![0.1, 0.2]);
     }
 
     #[test]

@@ -374,7 +374,9 @@ fn a_multi_variable_export_validates_against_the_1_45_schema() {
         &["--optimize-budget", "8"][..],
         &["--optimize-algorithm", "halving"],
     ] {
-        let json = json_for(extra);
+        let mut json = json_for(extra);
+        // The export carries the current version; the older snapshot pins its own.
+        json["schemaVersion"] = schema["properties"]["schemaVersion"]["const"].clone();
         let errors: Vec<String> = validator
             .iter_errors(&json)
             .map(|e| format!("{e} at {}", e.instance_path()))
@@ -383,6 +385,8 @@ fn a_multi_variable_export_validates_against_the_1_45_schema() {
     }
     for key in ["var", "min", "max", "best", "unimodal_warning", "evaluated"] {
         let mut json = json_for(&[]);
+        json["schemaVersion"] = schema["properties"]["schemaVersion"]["const"].clone();
+        assert!(validator.is_valid(&json), "baseline must validate");
         json["optimize"].as_object_mut().unwrap().remove(key);
         assert!(!validator.is_valid(&json), "`{key}` must be required");
     }
