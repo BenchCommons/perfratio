@@ -225,6 +225,14 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .RB [ \-\-gpu ]
 .RB [ \-\-energy\-backend
 .IR BACKEND ]
+.RB [ \-\-power\-meter
+.IR COMMAND ]
+.RB [ \-\-power\-meter\-mode
+.IR MODE ]
+.RB [ \-\-power\-meter\-interval
+.IR DURATION ]
+.RB [ \-\-energy\-attribution
+.IR MODEL ]
 .RB [ \-\-metric
 .IR METRIC ]
 .RB [ \-\-subtract
@@ -621,7 +629,23 @@ Also record GPU energy and utilization (requires \fB\-\-energy\fR): NVIDIA throu
 .HP
 \fB\-\-energy\-backend\fR \fIBACKEND\fP
 .IP
-Energy backend for \fB\-\-energy\fR (Linux): auto (default) uses sysfs powercap and falls back to the perf power PMU when energy_uj is unreadable, sysfs and perf force one. Can also be set with PERFRATIO_ENERGY_BACKEND.
+Energy backend for \fB\-\-energy\fR (Linux): auto (default) uses sysfs powercap and falls back to the perf power PMU when energy_uj is unreadable, sysfs and perf force one, meter reads an external power meter (see \fB\-\-power\-meter\fR). Can also be set with PERFRATIO_ENERGY_BACKEND.
+.HP
+\fB\-\-power\-meter\fR \fICOMMAND\fP
+.IP
+Measure energy with an external power meter (wall plug, smart plug, bench instrument) instead of RAPL. COMMAND runs through the shell and prints one number: the power ("12.5", "12.5 W", "800 mW") or, with \fB\-\-power\-meter\-mode\fR counter, a cumulative energy ("2.4 Wh", "8640 J"). Needs \fB\-\-energy\fR. The value covers the whole machine behind the meter. The command is never exported.
+.HP
+\fB\-\-power\-meter\-mode\fR \fIMODE\fP
+.IP
+What \fB\-\-power\-meter\fR prints: power (default, integrated over each run) or counter (read before and after each run).
+.HP
+\fB\-\-power\-meter\-interval\fR \fIDURATION\fP
+.IP
+How often the power meter command runs in power mode (default: 500ms).
+.HP
+\fB\-\-energy\-attribution\fR \fIMODEL\fP
+.IP
+Also report an ESTIMATE of the energy of the command (cpu\-time) or of its cgroup (cgroup) next to the measured energy, by splitting each run's energy by a CPU\-time share of the host (needs /proc/stat, Linux). The measured energy stays the primary value. Needs \fB\-\-energy\fR.
 .HP
 \fB\-\-deep\-stats\fR
 .IP

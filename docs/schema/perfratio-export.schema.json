@@ -141,7 +141,7 @@
         },
         "energy_unavailable_reason": {
           "type": "string",
-          "description": "Why energy is unavailable. Open enum: unsupported_platform, rapl_not_found, rapl_unreadable, unsupported_cpu, ioreport_not_found, ioreport_frozen, emi_not_found, emi_unreadable, other."
+          "description": "Why energy is unavailable. Open enum: unsupported_platform, rapl_not_found, rapl_unreadable, unsupported_cpu, ioreport_not_found, ioreport_frozen, emi_not_found, emi_unreadable, meter_not_configured, meter_unreadable, other."
         },
         "resources": {
           "$ref": "#/$defs/status"
@@ -252,7 +252,7 @@
         },
         "energy_backend": {
           "type": "string",
-          "description": "Backend that produced the energy samples. Open enum: sysfs_powercap, perf_pmu, ioreport, windows_emi."
+          "description": "Backend that produced the energy samples. Open enum: sysfs_powercap, perf_pmu, ioreport, windows_emi, external_meter (1.43, #382: the values then cover the machine behind the meter, e.g. wall-plug energy)."
         },
         "gpu": {
           "type": "object",
@@ -1758,6 +1758,51 @@
         "energy_per_instance_joules": {
           "type": "number",
           "description": "No longer written since 1.19: package energy is not divided per instance."
+        },
+        "energy_attribution": {
+          "type": "object",
+          "description": "New in 1.43 (#381): ESTIMATED energy of the command or its cgroup, from a CPU-time share model (--energy-attribution). Never a measurement: mean_energy_joules stays the primary value.",
+          "properties": {
+            "kind": {
+              "const": "estimated"
+            },
+            "model": {
+              "type": "string",
+              "description": "Open enum: cpu-time-share, cgroup-cpu-share."
+            },
+            "scope": {
+              "type": "string",
+              "description": "Open enum: process, cgroup."
+            },
+            "samples": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Runs with an estimate."
+            },
+            "clamped_runs": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Runs whose share exceeded 1 and was clamped to 1."
+            },
+            "mean_share": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "mean_joules": {
+              "type": "number",
+              "minimum": 0
+            },
+            "joules": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "minimum": 0
+              },
+              "description": "Estimate per run; only when every run has one."
+            }
+          },
+          "required": ["kind", "model", "scope", "samples", "clamped_runs", "mean_share", "mean_joules"]
         },
         "energy_scope": {
           "type": "string",

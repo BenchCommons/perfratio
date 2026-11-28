@@ -245,6 +245,23 @@ impl Cgroup {
         Some(snapshot)
     }
 
+    /// CPU time consumed by the own cgroup and its descendants so far, in seconds.
+    /// v2: `usage_usec` of `cpu.stat`; v1: `cpuacct.usage` (ns), when `cpuacct` shares the
+    /// `cpu` directory. `None` when the file is missing (controller off), never 0.
+    pub fn cpu_usage_seconds(&self) -> Option<f64> {
+        let dir = self.cpu_dirs.first()?;
+        match self.version {
+            Version::V2 => {
+                field(&read(&dir.join("cpu.stat"))?, "usage_usec").map(|u| u as f64 / 1e6)
+            }
+            Version::V1 => read(&dir.join("cpuacct.usage"))?
+                .trim()
+                .parse::<u64>()
+                .ok()
+                .map(|ns| ns as f64 / 1e9),
+        }
+    }
+
     fn oom_kills(&self) -> Option<u64> {
         let mut total = None;
         for dir in &self.memory_dirs {
@@ -356,6 +373,22 @@ mod tests {
         let limits = cgroup.limits();
         assert_eq!((limits.cpu_quota, limits.memory_limit), (None, None));
         assert_eq!(cgroup.snapshot(), None);
+    }
+
+    #[test]
+    fn cpu_usage_is_read_from_cpu_stat_v2_and_cpuacct_v1() {
+        let dir = v2_fixture();
+        let cgroup = locate(dir.path()).unwrap();
+        assert_eq!(cgroup.cpu_usage_seconds(), Some(0.0005));
+
+        let dir = tempfile::tempdir().unwrap();
+        let r = dir.path();
+        write(r, "proc/self/cgroup", "4:cpu,cpuacct:/docker/abc\n");
+        let cpu = "sys/fs/cgroup/cpu,cpuacct/docker/abc";
+        write(r, &format!("{cpu}/cpu.stat"), "nr_periods 1\n");
+        assert_eq!(locate(r).unwrap().cpu_usage_seconds(), None);
+        write(r, &format!("{cpu}/cpuacct.usage"), "2500000000\n");
+        assert_eq!(locate(r).unwrap().cpu_usage_seconds(), Some(2.5));
     }
 
     #[test]

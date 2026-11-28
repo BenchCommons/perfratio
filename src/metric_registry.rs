@@ -203,6 +203,17 @@ pub const REGISTRY: &[Spec] = &[
         Energy,
         &["mean_net_energy_joules"],
     ),
+    // Only listed with `--energy-attribution` (an estimate: model in `energy_attribution`)
+    spec(
+        "energy.attributed",
+        "J",
+        LowerIsBetter,
+        Scope::Process,
+        "energy_attribution",
+        Estimated,
+        Concurrency,
+        &["energy_attribution"],
+    ),
     spec(
         "power.average",
         "W",
