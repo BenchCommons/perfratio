@@ -21,6 +21,10 @@ pub enum Warnings {
     EnergyBaselineUnavailable,
     /// Runs (clamped, total) whose net energy was clamped to 0
     NetEnergyClamped(usize, usize),
+    /// `--energy-attribution`: runs (coarse, total) whose host CPU window was below 50 ms
+    AttributionCoarse(usize, usize),
+    /// `--energy-attribution`: runs (clamped, total) whose share was clamped to 100%
+    AttributionClamped(usize, usize),
     NonZeroExitCode,
     SlowInitialRun(Second, OutlierWarningOptions),
     OutliersDetected(OutlierWarningOptions),
@@ -96,6 +100,17 @@ impl fmt::Display for Warnings {
                 "Net energy was clamped to 0 J in {clamped} of {total} runs because the \
                  idle power estimate exceeds the measured energy; net energy is biased high \
                  and the idle baseline may be too noisy."
+            ),
+            Warnings::AttributionCoarse(coarse, total) => write!(
+                f,
+                "The estimated energy of {coarse} of {total} runs rests on less than 50 ms of \
+                 host CPU time; /proc/stat counts 10 ms ticks, so the share is coarse. Use longer \
+                 runs or treat the estimate as an order of magnitude."
+            ),
+            Warnings::AttributionClamped(clamped, total) => write!(
+                f,
+                "The CPU share of {clamped} of {total} runs exceeded 100% of the host CPU time \
+                 and was clamped to 100%; the estimate is the whole window energy there."
             ),
             Warnings::ShortEnergyRuns => write!(
                 f,

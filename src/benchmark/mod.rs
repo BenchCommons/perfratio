@@ -43,6 +43,42 @@ use colored::Colorize as _;
 
 use self::executor::Executor;
 
+/// The `--energy-attribution` tracker, or `None` (with one warning) when the host counters
+/// the model needs cannot be read on this machine. `--debug-mode` uses a simulated host.
+fn make_attribution_tracker(options: &Options) -> Option<crate::energy::attribution::Tracker> {
+    use crate::energy::attribution::{LinuxHostCpu, MockHostCpu, Tracker};
+    let model = options
+        .energy_attribution
+        .filter(|_| options.measure_energy)?;
+    let source: Box<dyn crate::energy::attribution::HostCpu> =
+        if matches!(options.executor_kind, ExecutorKind::Mock(_)) {
+            Box::new(MockHostCpu::default())
+        } else {
+            Box::new(LinuxHostCpu::new())
+        };
+    let tracker = Tracker::new(model, source);
+    if matches!(options.executor_kind, ExecutorKind::Mock(_)) || tracker.is_supported() {
+        return Some(tracker);
+    }
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        eprintln!(
+            "Warning: '--energy-attribution {}' needs /proc/stat{} (Linux); it is unavailable \
+             here, so no estimated energy is reported. The measured energy is unaffected.",
+            match model {
+                crate::energy::attribution::Model::CpuTime => "cpu-time",
+                crate::energy::attribution::Model::Cgroup => "cgroup",
+            },
+            if model == crate::energy::attribution::Model::Cgroup {
+                " and a readable cgroup cpu.stat / cpuacct.usage"
+            } else {
+                ""
+            }
+        )
+    });
+    None
+}
+
 /// Threshold for warning about fast execution time
 /// Per-domain series for the export: only when every run has a reading of the same domains.
 fn domains_series(
@@ -91,6 +127,14 @@ pub struct BenchmarkRunner<'a> {
     pub domain_measurements: Vec<Option<Vec<(String, f64)>>>,
     /// Breakdown of the run being recorded, moved to `domain_measurements` with its time
     pending_domains: Option<Vec<(String, f64)>>,
+    /// `--energy-attribution`: host CPU counters around each energy window
+    attribution: Option<crate::energy::attribution::Tracker>,
+    /// Estimated energy of each run, aligned with `energy_measurements`
+    attribution_runs: Vec<Option<crate::energy::attribution::Estimate>>,
+    /// Estimate of the run being recorded, moved to `attribution_runs` with its time
+    pending_attribution: Option<crate::energy::attribution::Estimate>,
+    /// Energy of the whole window of the last `stop_energy`, before the child-time alignment
+    last_window_energy: Option<f64>,
     /// GPU utilization of each run (`--gpu`), aligned with `energy_measurements`
     pub gpu_util_measurements: Vec<Option<Vec<(String, f64)>>>,
     pending_gpu_util: Option<Vec<(String, f64)>>,
@@ -137,6 +181,8 @@ pub struct BenchmarkRunner<'a> {
     pub pending_worker: Option<usize>,
     /// Extracted custom metrics per run
     pub custom_metrics: std::collections::BTreeMap<String, Vec<Option<f64>>>,
+    /// Collector metrics (`<collector>.<id>`) per run
+    pub collector_metrics: std::collections::BTreeMap<String, Vec<Option<f64>>>,
     /// `--region`: SDK identifier the program reported
     pub region_sdk: Option<String>,
     /// Output validation of each run (`--expect-output-sha256`, `--validate`):
@@ -243,6 +289,7 @@ impl<'a> BenchmarkRunner<'a> {
             None
         };
 
+        let attribution = make_attribution_tracker(options);
         let energy_sampler = match energy_sampler {
             Some(inner) if options.energy_gpu => {
                 Some(if matches!(options.executor_kind, ExecutorKind::Mock(_)) {
@@ -290,6 +337,10 @@ impl<'a> BenchmarkRunner<'a> {
             energy_measurements: vec![],
             domain_measurements: vec![],
             pending_domains: None,
+            attribution,
+            attribution_runs: vec![],
+            pending_attribution: None,
+            last_window_energy: None,
             gpu_util_measurements: vec![],
             pending_gpu_util: None,
             exit_codes: vec![],
@@ -327,6 +378,7 @@ impl<'a> BenchmarkRunner<'a> {
             run_workers: vec![],
             pending_worker: None,
             custom_metrics: std::collections::BTreeMap::new(),
+            collector_metrics: std::collections::BTreeMap::new(),
             region_sdk: None,
         }
     }
@@ -530,6 +582,7 @@ impl<'a> BenchmarkRunner<'a> {
     fn stop_energy(&mut self, time_real: f64, window: f64) -> Option<f64> {
         let sampler = self.energy_sampler.as_mut()?;
         let energy = sampler.stop();
+        self.last_window_energy = energy;
         let domains = sampler.domain_energy().map(|d| {
             d.into_iter()
                 .map(|(n, j)| (n, align_to_child(j, time_real, window)))
@@ -542,6 +595,22 @@ impl<'a> BenchmarkRunner<'a> {
             self.pending_gpu_util = sampler.gpu_utilization();
         }
         energy.map(|e| align_to_child(e, time_real, window))
+    }
+
+    /// `--energy-attribution`: estimate the share of the window energy that belongs to the
+    /// command. Call right after `stop_energy`, with the run's CPU time before `--subtract`.
+    fn attribute(&mut self, res: &TimingResult) {
+        let window_energy = self.last_window_energy.take();
+        self.pending_attribution = self
+            .attribution
+            .as_mut()
+            .and_then(|t| t.end(window_energy, res.time_user + res.time_system));
+    }
+
+    fn begin_attribution(&mut self) {
+        if let Some(tracker) = self.attribution.as_mut() {
+            tracker.begin();
+        }
     }
 
     /// `--subtract`: subtract the baseline's mean energy from a run (clamped to 0).
@@ -580,6 +649,17 @@ impl<'a> BenchmarkRunner<'a> {
             }
         }
         Some((clamped, total))
+    }
+
+    /// Real times of the runs that succeeded. In persistent mode with `-i`, a failed
+    /// iteration is recorded as 0 s and must not enter the warm-up analysis.
+    fn successful_times_real(&self) -> Vec<Second> {
+        self.times_real
+            .iter()
+            .zip(&self.exit_codes)
+            .filter(|(_, code)| **code == Some(0))
+            .map(|(&t, _)| t)
+            .collect()
     }
 
     /// The run times that count for `--target-precision`: without a first run
@@ -849,6 +929,7 @@ impl<'a> BenchmarkRunner<'a> {
         let preparation_overhead =
             preparation_result.map_or(0.0, |res| res.time_total + self.executor.time_overhead());
 
+        self.begin_attribution();
         if let Some(sampler) = self.energy_sampler.as_mut() {
             sampler.start();
         }
@@ -863,6 +944,7 @@ impl<'a> BenchmarkRunner<'a> {
         let window = window_start.elapsed().as_secs_f64();
         self.watch.end(watch_before);
         let energy_initial = self.stop_energy(res.time_real, window);
+        self.attribute(&res);
         let success = status.success();
         self.note_leftovers(&res);
 
@@ -915,6 +997,7 @@ impl<'a> BenchmarkRunner<'a> {
         self.energy_measurements
             .push(self.subtract_baseline_energy(energy_initial));
         self.domain_measurements.push(self.pending_domains.take());
+        self.attribution_runs.push(self.pending_attribution.take());
         self.gpu_util_measurements
             .push(self.pending_gpu_util.take());
         self.exit_codes.push(extract_exit_code(status));
@@ -927,6 +1010,7 @@ impl<'a> BenchmarkRunner<'a> {
                 .per_run_values(&BenchmarkIteration::Benchmark(0)),
         );
         self.push_custom_metrics(&res.custom_metrics);
+        self.push_collector_metrics(&res.collector_metrics);
         if res.region_sdk.is_some() {
             self.region_sdk.clone_from(&res.region_sdk);
         }
@@ -940,6 +1024,7 @@ impl<'a> BenchmarkRunner<'a> {
         let run = crate::run_id::enter(self.concurrency());
         self.run_preparation(BenchmarkIteration::Benchmark(iteration))?;
 
+        self.begin_attribution();
         if let Some(sampler) = self.energy_sampler.as_mut() {
             sampler.start();
         }
@@ -954,6 +1039,7 @@ impl<'a> BenchmarkRunner<'a> {
         let window = window_start.elapsed().as_secs_f64();
         self.watch.end(watch_before);
         let energy = self.stop_energy(res.time_real, window);
+        self.attribute(&res);
         self.note_leftovers(&res);
 
         if res.timed_out {
@@ -989,6 +1075,7 @@ impl<'a> BenchmarkRunner<'a> {
         self.energy_measurements
             .push(self.subtract_baseline_energy(energy));
         self.domain_measurements.push(self.pending_domains.take());
+        self.attribution_runs.push(self.pending_attribution.take());
         self.gpu_util_measurements
             .push(self.pending_gpu_util.take());
         self.exit_codes.push(extract_exit_code(status));
@@ -1001,6 +1088,7 @@ impl<'a> BenchmarkRunner<'a> {
                 .per_run_values(&BenchmarkIteration::Benchmark(iteration)),
         );
         self.push_custom_metrics(&res.custom_metrics);
+        self.push_collector_metrics(&res.collector_metrics);
         if res.region_sdk.is_some() {
             self.region_sdk.clone_from(&res.region_sdk);
         }
@@ -1178,6 +1266,28 @@ impl<'a> BenchmarkRunner<'a> {
         self.push_derived_metrics();
     }
 
+    /// Records the collector metrics of the run that was just recorded. A series is aligned
+    /// with `times` (gaps are `null`); the Valgrind run happens once, so its series has one
+    /// entry.
+    fn push_collector_metrics(&mut self, extracted: &std::collections::BTreeMap<String, f64>) {
+        let runs = self.times_real.len();
+        for (key, value) in extracted {
+            let series = self.collector_metrics.entry(key.clone()).or_default();
+            if crate::valgrind::is_key(key) {
+                series.push(Some(*value));
+            } else {
+                series.resize(runs - 1, None);
+                series.push(Some(*value));
+            }
+        }
+        // A plugin that had no value this run leaves a gap
+        for key in crate::collector::plugin_keys() {
+            if let Some(series) = self.collector_metrics.get_mut(&key) {
+                series.resize(runs, None);
+            }
+        }
+    }
+
     /// Efficiency metrics (#373) of the run that was just recorded
     fn push_derived_metrics(&mut self) {
         let Some(&time) = self.times_real.last() else {
@@ -1227,6 +1337,9 @@ impl<'a> BenchmarkRunner<'a> {
         self.memory_usage_byte = select(&self.memory_usage_byte, keep);
         if self.energy_measurements.len() == run_count {
             self.energy_measurements = select(&self.energy_measurements, keep);
+        }
+        if self.attribution_runs.len() == run_count {
+            self.attribution_runs = select(&self.attribution_runs, keep);
         }
         if self.gpu_util_measurements.len() == run_count {
             self.gpu_util_measurements = keep
@@ -1749,6 +1862,23 @@ impl<'a> BenchmarkRunner<'a> {
             (None, None)
         };
 
+        let (collector_metrics, collector_metrics_summary) = if self.collector_metrics.is_empty() {
+            (None, None)
+        } else {
+            let summary = self
+                .collector_metrics
+                .iter()
+                .filter_map(|(name, values)| {
+                    let present: Vec<f64> = values.iter().flatten().copied().collect();
+                    Some((
+                        name.clone(),
+                        benchmark_result::MetricSummary::from_values(&present)?,
+                    ))
+                })
+                .collect();
+            (Some(self.collector_metrics.clone()), Some(summary))
+        };
+
         // --concurrency: per-instance statistics (the primary series is the makespan)
         let concurrency = (self.concurrency() > 1 && !self.instance_times.is_empty())
             .then_some(self.concurrency());
@@ -2065,6 +2195,33 @@ impl<'a> BenchmarkRunner<'a> {
                     }
                 }
 
+                if self.options.persistent {
+                    let report = crate::persistent::IterationsReport::from_times(
+                        &self.successful_times_real(),
+                        self.region_sdk.clone(),
+                    );
+                    let line = match (&report.steady_state, report.status) {
+                        (Some(steady), _) => format!(
+                            "{} warm-up iterations, then {} steady (mean {} ± {})",
+                            report.warmup_iterations.unwrap_or(0),
+                            steady.count,
+                            format_duration(steady.mean, Some(time_unit)),
+                            steady
+                                .stddev
+                                .map_or("n/a".to_string(), |sd| format_duration(
+                                    sd,
+                                    Some(time_unit)
+                                )),
+                        ),
+                        (None, crate::persistent::SteadyStatus::TooFewIterations) => format!(
+                            "no analysis, fewer than {} iterations",
+                            crate::persistent::MIN_ITERATIONS
+                        ),
+                        (None, _) => "no steady state reached".to_string(),
+                    };
+                    crate::outln!("  Persistent:         {}", line.dimmed());
+                }
+
                 if let Some(warmup) = self.warmup.filter(|w| w.auto) {
                     crate::outln!(
                         "  Warmup (auto):      {}",
@@ -2152,6 +2309,20 @@ impl<'a> BenchmarkRunner<'a> {
                             colors::yellow(format!("{watts:.2} W")),
                             idle_str
                         );
+                        if let Some(a) = self.attribution.as_ref().and_then(|t| {
+                            crate::energy::attribution::EnergyAttribution::from_runs(
+                                t.model(),
+                                &self.attribution_runs,
+                            )
+                        }) {
+                            crate::outln!(
+                                "  Energy (estimated):  {:>14}    [{}, {} scope, share {:.1}%]",
+                                colors::yellow(format!("{:.3} J", a.mean_joules)).bold(),
+                                a.model,
+                                a.scope,
+                                a.mean_share * 100.0
+                            );
+                        }
                         if let Some(domains) =
                             domains_series(&self.domain_measurements, self.times_real.len())
                         {
@@ -2298,6 +2469,18 @@ impl<'a> BenchmarkRunner<'a> {
                 }
             }
 
+            if self.attribution.is_some() {
+                let runs: Vec<_> = self.attribution_runs.iter().flatten().collect();
+                let coarse = runs.iter().filter(|e| e.coarse).count();
+                if coarse > 0 {
+                    warnings.push(Warnings::AttributionCoarse(coarse, runs.len()));
+                }
+                let clamped = runs.iter().filter(|e| e.clamped).count();
+                if clamped > 0 {
+                    warnings.push(Warnings::AttributionClamped(clamped, runs.len()));
+                }
+            }
+
             // Check program exit codes
             if !self.all_succeeded {
                 warnings.push(Warnings::NonZeroExitCode);
@@ -2371,7 +2554,8 @@ impl<'a> BenchmarkRunner<'a> {
                     > 0,
             };
 
-            if !self.options.suppress_off_cpu_warnings {
+            // persistent mode collects no CPU time, and the warm-up is the first slow iterations
+            if !self.options.suppress_off_cpu_warnings && !self.options.persistent {
                 let total_cpu = user_mean + system_mean;
                 if t_mean >= 0.1 && (total_cpu <= 0.0 || t_mean >= 5.0 * total_cpu) {
                     let ratio = if total_cpu > 0.0 {
@@ -2386,7 +2570,7 @@ impl<'a> BenchmarkRunner<'a> {
             let diag = Diagnostics::compute(&metric_samples, OUTLIER_THRESHOLD);
 
             if !self.options.suppress_outlier_warnings {
-                if scores[0] > OUTLIER_THRESHOLD {
+                if scores[0] > OUTLIER_THRESHOLD && !self.options.persistent {
                     warnings.push(Warnings::SlowInitialRun(
                         metric_samples[0],
                         outlier_warning_options,
@@ -2483,9 +2667,21 @@ impl<'a> BenchmarkRunner<'a> {
             None
         };
 
+        let iterations = self.options.persistent.then(|| {
+            crate::persistent::IterationsReport::from_times(
+                &self.successful_times_real(),
+                self.region_sdk.clone(),
+            )
+        });
         let total_runs = self.times_real.len();
         let mean_net_energy = self.net_energy_mean();
         let energy_domains = domains_series(&self.domain_measurements, total_runs);
+        let energy_attribution = self.attribution.as_ref().and_then(|t| {
+            crate::energy::attribution::EnergyAttribution::from_runs(
+                t.model(),
+                &self.attribution_runs,
+            )
+        });
         let gpu_utilization = domains_series(&self.gpu_util_measurements, total_runs);
         let valid_energy: Vec<f64> = self.energy_measurements.into_iter().flatten().collect();
         let energy_samples = self.energy_sampler.is_some().then_some(valid_energy.len());
@@ -2553,6 +2749,7 @@ impl<'a> BenchmarkRunner<'a> {
             idle_watts: self.idle_watts,
             mean_net_energy_joules: mean_net_energy,
             energy_domains_joules: energy_domains,
+            energy_attribution,
             gpu_utilization_percent: gpu_utilization,
             exit_codes: if concurrency.is_some() {
                 // N exit codes per run, row-major (docs/specs/concurrency.md)
@@ -2666,7 +2863,11 @@ impl<'a> BenchmarkRunner<'a> {
             },
             custom_metrics,
             custom_metrics_summary,
+            collector_metrics,
+            collector_metrics_summary,
             regions,
+            mode: self.options.persistent.then(|| "persistent".to_string()),
+            iterations,
         };
         let quality = crate::quality::QualityReport::assess(
             &result,
@@ -3326,6 +3527,20 @@ mod tests {
             .map(|i| if i % 2 == 0 { 0.99 } else { 1.01 })
             .collect();
         assert!(effect_runner_answer(quiet));
+    }
+
+    #[test]
+    fn test_successful_times_real_skips_failed_iterations() {
+        let cmd = Command::new(None, "true");
+        let options = Options {
+            command_output_policies: vec![CommandOutputPolicy::Null],
+            ..Default::default()
+        };
+        let executor = MockExecutor::new(None, None);
+        let mut runner = BenchmarkRunner::new(0, 0, &cmd, &options, &executor);
+        runner.times_real = vec![0.1, 0.0, 0.2];
+        runner.exit_codes = vec![Some(0), Some(1), Some(0)];
+        assert_eq!(runner.successful_times_real(), vec![0.1, 0.2]);
     }
 
     #[test]

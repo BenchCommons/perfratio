@@ -1,4 +1,4 @@
-//! Client of the perfratio region timing protocol (protocol 1, SDK 1.0.0).
+//! Client of the perfratio region timing protocol (protocol 1, SDK 1.1.0).
 //!
 //! Bracket the code to measure and run the program with
 //! `perfratio --region=sort ./program`:
@@ -23,6 +23,11 @@
 //! digits or `_`; invalid names are ignored with one warning on stderr. Wire format:
 //! `docs/specs/region-protocol.md` in the perfratio repository.
 //!
+//! Persistent mode (`perfratio --persistent ./program`): [`serve`] calls a closure once per
+//! iteration perfratio requests and reports the time of every call, so start-up and warm-up
+//! are paid once. Without perfratio the closure runs once. Protocol:
+//! `docs/specs/persistent-mode.md`.
+//!
 //! Single file, no dependencies, `MIT OR Apache-2.0`: copy `src/lib.rs` into your project
 //! as a module, or depend on the crate.
 
@@ -36,9 +41,9 @@ use std::time::Instant;
 /// Protocol version this client speaks.
 pub const PROTOCOL: u32 = 1;
 /// Version of this client.
-pub const SDK_VERSION: &str = "1.0.0";
+pub const SDK_VERSION: &str = "1.1.0";
 /// Identifier sent in the `hello` line.
-pub const SDK_ID: &str = "rust/1.0.0";
+pub const SDK_ID: &str = "rust/1.1.0";
 /// Region measured when no name is given.
 pub const DEFAULT_REGION: &str = "default";
 
@@ -216,6 +221,67 @@ impl Drop for Region {
     }
 }
 
+/// Environment variable perfratio sets for `--persistent`.
+pub const PERSISTENT_ENV: &str = "PERFRATIO_PERSISTENT_PROTOCOL";
+const LINE_PREFIX: &str = "@perfratio ";
+
+/// Persistent mode: call `work` once per `run <n>` request on stdin and answer on stdout.
+/// Returns at `quit` or when stdin closes. A panic inside `work` is a failed iteration and
+/// the loop goes on. Without `--persistent` ([`PERSISTENT_ENV`] unset) `work` runs once.
+pub fn serve<F: FnMut()>(mut work: F) {
+    if std::env::var_os(PERSISTENT_ENV).is_none() {
+        work();
+        return;
+    }
+    let stdin = std::io::stdin();
+    let stdout = std::io::stdout();
+    let _ = serve_with(stdin.lock(), stdout.lock(), work);
+}
+
+/// [`serve`] over any reader and writer (for tests and embedding).
+pub fn serve_with<R: std::io::BufRead, W: std::io::Write, F: FnMut()>(
+    input: R,
+    mut output: W,
+    mut work: F,
+) -> std::io::Result<()> {
+    let epoch = Instant::now();
+    writeln!(output, "{LINE_PREFIX}hello {PROTOCOL} {SDK_ID}")?;
+    output.flush()?;
+    for request in input.lines() {
+        let request = request?;
+        let mut words = request.split_whitespace();
+        match (words.next(), words.next(), words.next()) {
+            (Some("quit"), _, _) => break,
+            (Some("run"), Some(number), None) => {
+                let t0 = epoch.elapsed();
+                let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(&mut work));
+                let t1 = epoch.elapsed();
+                match outcome {
+                    Ok(()) => write!(
+                        output,
+                        "{LINE_PREFIX}start iteration {}\n{LINE_PREFIX}stop iteration {}\n\
+                         {LINE_PREFIX}done {number}\n",
+                        t0.as_nanos(),
+                        t1.as_nanos()
+                    )?,
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<&str>()
+                            .map(|m| m.to_string())
+                            .or_else(|| payload.downcast_ref::<String>().cloned())
+                            .unwrap_or_else(|| "panic".to_string());
+                        let message = message.split_whitespace().collect::<Vec<_>>().join(" ");
+                        writeln!(output, "{LINE_PREFIX}fail {number} panic: {message}")?
+                    }
+                }
+                output.flush()?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,7 +346,7 @@ mod tests {
         r.flush(); // nothing new: no change
         let text = std::fs::read_to_string(&path).unwrap();
         let lines: Vec<&str> = text.lines().collect();
-        assert_eq!(lines[0], "hello 1 rust/1.0.0");
+        assert_eq!(lines[0], "hello 1 rust/1.1.0");
         assert_eq!(lines.len(), 5, "{text}");
         assert_eq!(text.matches("hello").count(), 1);
         assert!(lines[1].starts_with("start a "));
@@ -293,7 +359,10 @@ mod tests {
         let (_dir, path) = file();
         let mut r = Recorder::new(Some(path.clone()));
         r.flush();
-        assert_eq!(std::fs::read_to_string(&path).unwrap(), "hello 1 rust/1.0.0\n");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "hello 1 rust/1.1.0\n"
+        );
     }
 
     #[test]
@@ -339,5 +408,45 @@ mod tests {
         start("b");
         stop("b");
         flush();
+    }
+
+    #[test]
+    fn serve_answers_every_run_with_an_iteration_interval() {
+        let mut calls = 0;
+        let mut out = Vec::new();
+        serve_with("run 0\n\nrun 1\nquit\nrun 2\n".as_bytes(), &mut out, || {
+            calls += 1;
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        })
+        .unwrap();
+        assert_eq!(calls, 2);
+        let text = String::from_utf8(out).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines[0], "@perfratio hello 1 rust/1.1.0");
+        assert_eq!(lines.len(), 7, "{text}");
+        let t = |line: &str| line.rsplit(' ').next().unwrap().parse::<u128>().unwrap();
+        assert!(lines[1].starts_with("@perfratio start iteration "));
+        assert!(lines[2].starts_with("@perfratio stop iteration "));
+        assert!(t(lines[2]) - t(lines[1]) >= 19_000_000);
+        assert_eq!(lines[3], "@perfratio done 0");
+        assert_eq!(lines[6], "@perfratio done 1");
+    }
+
+    #[test]
+    fn serve_reports_a_panic_as_a_failed_iteration_and_goes_on() {
+        let mut out = Vec::new();
+        let mut first = true;
+        serve_with("run 0\nrun 1\n".as_bytes(), &mut out, || {
+            if std::mem::take(&mut first) {
+                panic!("bad\ninput");
+            }
+        })
+        .unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.contains("@perfratio fail 0 panic: bad input\n"),
+            "{text}"
+        );
+        assert!(text.contains("@perfratio done 1\n"), "{text}");
     }
 }

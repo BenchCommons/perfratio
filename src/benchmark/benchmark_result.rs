@@ -116,6 +116,10 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub energy_domains_joules: Option<std::collections::BTreeMap<String, Vec<f64>>>,
 
+    /// Estimated energy of the command or its cgroup (`--energy-attribution`, new in 1.43).
+    /// A model output labelled `kind: estimated`; `mean_energy_joules` stays the measurement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub energy_attribution: Option<crate::energy::attribution::EnergyAttribution>,
     /// GPU utilization in percent per device (`gpu:<index>`) and run, from `--gpu`. Sampled
     /// when the run ends, so it describes the driver's last sample window (NVML: 1/6 s to
     /// 1 s), not exactly the run. Only present when every run has it.
@@ -304,11 +308,30 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_metrics_summary: Option<BTreeMap<String, MetricSummary>>,
 
+    /// Metrics of the collectors (`--collector`, `--collector-plugin`) by `<collector>.<id>`:
+    /// one entry per run for a plugin (`null` where it had no value), a single entry for the
+    /// deterministic Valgrind run. See `docs/specs/collector-plugins.md` (new in 1.44).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collector_metrics: Option<BTreeMap<String, Vec<Option<f64>>>>,
+
+    /// Statistical summary of `collector_metrics` (new in 1.44)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collector_metrics_summary: Option<BTreeMap<String, MetricSummary>>,
+
     /// `--region`: time inside each instrumented region, see
     /// `docs/specs/region-protocol.md`. `mean`, `times` and `time` fields above
     /// keep measuring the whole process.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub regions: Option<Vec<RegionResult>>,
+
+    /// `--persistent`: `persistent` when the command ran as one long-lived process
+    /// (`docs/specs/persistent-mode.md`). Absent otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+
+    /// `--persistent`: warm-up phase and steady-state statistics of the iterations
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iterations: Option<crate::persistent::IterationsReport>,
 
     /// `--concurrency N` (only when N > 1): instances started simultaneously per
     /// run. With it present, `times` holds the makespan of each run.

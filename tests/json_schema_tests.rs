@@ -6,7 +6,7 @@
 //! its `properties`), so a field the exporter writes but the schema does not describe fails.
 
 mod common;
-use common::perfratio;
+use common::{example_collector, perfratio};
 
 use serde_json::{json, Value};
 
@@ -74,6 +74,14 @@ fn export(args: &[&str]) -> Value {
 /// understands `sleep <seconds> [user] [system] [memory]`.
 const CASES: &[(&str, &[&str])] = &[
     ("default", &["--runs=3", "sleep 0.1"]),
+    (
+        "persistent mode",
+        &["--persistent", "--warmup=0", "--runs=20", "sleep 0.1"],
+    ),
+    (
+        "persistent mode too few iterations",
+        &["--persistent", "--warmup=0", "--runs=4", "sleep 0.1"],
+    ),
     (
         "absolute budgets",
         &[
@@ -208,6 +216,16 @@ const CASES: &[(&str, &[&str])] = &[
         &["--runs=3", "--energy", "--energy-domains", "sleep 0.1"],
     ),
     (
+        "energy attribution",
+        &[
+            "--runs=3",
+            "--energy",
+            "--energy-attribution",
+            "cpu-time",
+            "sleep 0.1 0.2 0.05",
+        ],
+    ),
+    (
         "gpu",
         &["--runs=3", "--energy", "--gpu", "sleep 0.1", "sleep 0.2"],
     ),
@@ -326,6 +344,43 @@ const CASES: &[(&str, &[&str])] = &[
             "1",
             "40",
             "sleep {n}",
+        ],
+    ),
+    (
+        "optimize two variables",
+        &[
+            "--runs=3",
+            "--optimize",
+            "a",
+            "1",
+            "6",
+            "--optimize",
+            "b",
+            "1",
+            "6",
+            "--optimize-budget",
+            "6",
+            "--optimize-validate",
+            "sleep 0.0{a}{b}",
+        ],
+    ),
+    (
+        "optimize with successive halving",
+        &[
+            "--runs=3",
+            "--optimize",
+            "a",
+            "1",
+            "6",
+            "--optimize",
+            "b",
+            "1",
+            "6",
+            "--optimize-algorithm",
+            "halving",
+            "--optimize-budget",
+            "6",
+            "sleep 0.0{a}{b}",
         ],
     ),
     (
@@ -465,7 +520,12 @@ fn real_cases() -> Vec<(&'static str, Vec<String>)> {
     let version = format!("\"{binary}\" --version");
     let failing = format!("\"{binary}\" --no-such-flag");
     let args = |list: &[&str]| list.iter().map(ToString::to_string).collect::<Vec<_>>();
+    let plugin = example_collector().display().to_string();
     vec![
+        (
+            "collector plugin",
+            args(&["--runs=3", "-N", "--collector-plugin", &plugin, "true"]),
+        ),
         (
             "output metric",
             [

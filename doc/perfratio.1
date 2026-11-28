@@ -185,6 +185,10 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR VAR
 .IR MIN
 .IR MAX ]
+.RB [ \-\-collector
+.IR TOOL ]
+.RB [ \-\-collector\-plugin
+.IR PATH ]
 .RB [ \-\-work
 .IR N[UNIT] ]
 .RB [ \-\-complexity
@@ -193,6 +197,9 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR VAR
 .IR MIN
 .IR MAX ]
+.RB [ \-\-optimize\-algorithm
+.IR ALGORITHM ]
+.RB [ \-\-optimize\-validate ]
 .RB [ \-\-optimize\-budget
 .IR N ]
 .RB [ \-\-optimize\-confirm
@@ -221,6 +228,14 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .RB [ \-\-gpu ]
 .RB [ \-\-energy\-backend
 .IR BACKEND ]
+.RB [ \-\-power\-meter
+.IR COMMAND ]
+.RB [ \-\-power\-meter\-mode
+.IR MODE ]
+.RB [ \-\-power\-meter\-interval
+.IR DURATION ]
+.RB [ \-\-energy\-attribution
+.IR MODEL ]
 .RB [ \-\-metric
 .IR METRIC ]
 .RB [ \-\-subtract
@@ -458,6 +473,14 @@ Execute CMD after the completion of all benchmarking runs for each individual co
 .IP
 Perform benchmark runs for each value in the range MIN..MAX. Replaces the string '{VAR}' in each command by the current parameter value. The option can be specified multiple times and combined with \fB\-\-parameter\-list\fR or \fB\-\-parameter\-file\fR to run benchmarks for all possible parameter combinations.
 .HP
+\fB\-\-collector\fR \fIcachegrind|callgrind\fP
+.IP
+Run the command once more under Valgrind (after the first timed run, before \fB\-\-conclude\fR) and export the simulated, deterministic event counts as \fBresults[].collector_metrics\fR with kind simulated: \fBTOOL.instructions\fR, cache misses and an estimated cycle count. The extra run is not timed, is 20 to 50 times slower than a normal run and has no stdin. Children of the command are counted too (use \fB\-\-shell\fR=none to leave the shell out). Needs Valgrind; set PERFRATIO_VALGRIND to use another binary. Conflicts with \fB\-\-concurrency\fR and \fB\-\-jobs\fR. See \fBdocs/specs/valgrind-collector.md\fR.
+.HP
+\fB\-\-collector\-plugin\fR \fIPATH\fP
+.IP
+Measure extra metrics with an external collector plugin, an executable that speaks the JSON-lines collector protocol. perfratio starts it once, without a shell and without arguments, and brackets every timed run with start, stop and read. Its metrics are exported in \fBresults[].collector_metrics\fR and described by \fBcollector.NAME.ID\fR descriptors. Can be specified multiple times. The plugin runs with your privileges and sees your environment: only use programs you trust. Conflicts with \fB\-\-concurrency\fR and \fB\-\-jobs\fR. See \fBdocs/specs/collector-plugins.md\fR.
+.HP
 \fB\-\-work\fR \fIN[UNIT]\fP
 .IP
 The amount of work one run does, e.g. 1000000 or 4096ops (unit defaults to op). Adds metrics per unit of work, marked kind derived in the metric descriptors: time_per_op, energy_per_op, ops_per_second, ops_per_joule, instructions_per_op, cycles_per_op, edp_per_op and ed2p_per_op (the energy ones need \fB\-\-energy\fR, the counter ones \fB\-\-counters\fR). With \fB\-\-energy\fR the energy-delay products edp (E*t) and ed2p (E*t^2) are always added. Select them with \fB\-\-metric\fR custom:NAME, \fB\-\-pareto\fR or \fB\-\-budget\fR.
@@ -468,6 +491,14 @@ Fit O(1), O(log n), O(n), O(n log n), O(n^2) and O(n^3) by least squares to the 
 \fB\-\-optimize\fR \fIVAR\fP \fIMIN\fP \fIMAX\fP
 .IP
 Search the parameter VAR in MIN..MAX (integers, or fractional values in steps of \fB\-D\fR) for the value that minimizes the primary metric (see \fB\-\-metric\fR) instead of benchmarking every value. Replaces '{VAR}' in the command by the current value. Uses a golden-section search and assumes that the metric is unimodal in VAR; perfratio warns if the evaluated points suggest otherwise. Other parameters are combined with the search: one search runs per combination.
+.HP
+\fB\-\-optimize\-algorithm\fR \fIALGORITHM\fP
+.IP
+Search algorithm of \fB\-\-optimize\fR: golden (default for one variable), random, halving (successive halving: the best third of the points get three times as many runs, until two are left) or bayes (Gaussian process, expected improvement). Give \fB\-\-optimize\fR several times to search several integer variables; random is then the default. Random choices follow \fB\-\-seed\fR.
+.HP
+\fB\-\-optimize\-validate\fR
+.IP
+After a random, halving or bayes search, benchmark the winner and the runner-up again in a fresh round and report whether the winner holds up (confirmed, refuted or inconclusive) and how far its value drifted.
 .HP
 \fB\-\-optimize\-budget\fR \fIN\fP
 .IP
@@ -609,7 +640,23 @@ Also record GPU energy and utilization (requires \fB\-\-energy\fR): NVIDIA throu
 .HP
 \fB\-\-energy\-backend\fR \fIBACKEND\fP
 .IP
-Energy backend for \fB\-\-energy\fR (Linux): auto (default) uses sysfs powercap and falls back to the perf power PMU when energy_uj is unreadable, sysfs and perf force one. Can also be set with PERFRATIO_ENERGY_BACKEND.
+Energy backend for \fB\-\-energy\fR (Linux): auto (default) uses sysfs powercap and falls back to the perf power PMU when energy_uj is unreadable, sysfs and perf force one, meter reads an external power meter (see \fB\-\-power\-meter\fR). Can also be set with PERFRATIO_ENERGY_BACKEND.
+.HP
+\fB\-\-power\-meter\fR \fICOMMAND\fP
+.IP
+Measure energy with an external power meter (wall plug, smart plug, bench instrument) instead of RAPL. COMMAND runs through the shell and prints one number: the power ("12.5", "12.5 W", "800 mW") or, with \fB\-\-power\-meter\-mode\fR counter, a cumulative energy ("2.4 Wh", "8640 J"). Needs \fB\-\-energy\fR. The value covers the whole machine behind the meter. The command is never exported.
+.HP
+\fB\-\-power\-meter\-mode\fR \fIMODE\fP
+.IP
+What \fB\-\-power\-meter\fR prints: power (default, integrated over each run) or counter (read before and after each run).
+.HP
+\fB\-\-power\-meter\-interval\fR \fIDURATION\fP
+.IP
+How often the power meter command runs in power mode (default: 500ms).
+.HP
+\fB\-\-energy\-attribution\fR \fIMODEL\fP
+.IP
+Also report an ESTIMATE of the energy of the command (cpu\-time) or of its cgroup (cgroup) next to the measured energy, by splitting each run's energy by a CPU\-time share of the host (needs /proc/stat, Linux). The measured energy stays the primary value. Needs \fB\-\-energy\fR.
 .HP
 \fB\-\-deep\-stats\fR
 .IP
@@ -690,6 +737,10 @@ Match the pattern specified by \fB\-\-until\fR against stderr instead of stdout.
 \fB\-\-region\fR[=\fINAME\fR]
 .IP
 Measure only the region(s) the program brackets with the perfratio region SDK (see \fBsdk/\fR and \fBdocs/specs/region-protocol.md\fR). Without NAME the region \fBdefault\fR is measured. Can be given several times. perfratio passes the path of an event file in \fBPERFRATIO_REGION_FILE\fR and the protocol version in \fBPERFRATIO_REGION_PROTOCOL\fR; the SDK appends start and stop events with monotonic timestamps. The JSON export lists \fBregions\fR next to the whole-process times and \fB\-\-metric region:\fINAME\fR\fR ranks on one. CPU time, memory, counters and energy still cover the whole process. A command that reports no region fails. Conflicts with \fB\-\-concurrency\fR and \fB\-\-subtract\fR.
+.HP
+\fB\-\-persistent\fR
+.IP
+Start every command once and drive the runs as iterations of that one process through the persistent protocol (see \fBsdk/\fR and \fBdocs/specs/persistent-mode.md\fR). The program times each iteration itself, so JIT runtimes reach steady state and services can be measured. The JSON export gains \fBmode: persistent\fR and \fBiterations\fR with the detected warm\-up phase and the steady\-state statistics. The command runs without a shell. CPU time and memory are not collected. Use \fB\-w 0\fR and many runs to see the warm\-up. Conflicts with \fB\-\-concurrency\fR, \fB\-\-jobs\fR, \fB\-\-region\fR, \fB\-\-until\fR, \fB\-\-subtract\fR, \fB\-\-energy\fR and the counter options.
 .HP
 \fB\-\-region\-scope\fR
 .IP
