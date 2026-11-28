@@ -312,7 +312,10 @@ fn windows_counts_cycles_with_no_shell() {
     assert_eq!(v["perfratio"]["measurements"]["counters"], "partial");
     let runs = v["results"][0]["counters"]["cycles"].as_array().unwrap();
     assert_eq!(runs.len(), 2);
-    assert!(runs.iter().all(|x| x.as_u64().unwrap() > 0));
+    assert!(
+        runs.iter().all(|x| x.as_u64().unwrap() > 0),
+        "cycles per run: {runs:?}"
+    );
     assert!(v["results"][0]["counters"].get("instructions").is_none());
 }
 
