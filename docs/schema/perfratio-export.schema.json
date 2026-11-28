@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/BenchCommons/perfratio/blob/master/docs/schema/perfratio-export.schema.json",
   "title": "perfratio --export-json output",
-  "description": "Schema of the JSON export, schemaVersion 1.43 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
+  "description": "Schema of the JSON export, schemaVersion 1.44 (docs/specs/output-schema-contract.md). Unknown keys are allowed, as the contract requires of consumers; the repository test validates against a strict copy so that a field missing here fails CI. Regenerate by hand together with SCHEMA_VERSION.",
   "type": "object",
   "properties": {
     "schemaVersion": {
-      "const": "1.43",
+      "const": "1.44",
       "description": "MAJOR.MINOR of the contract; first key of the document."
     },
     "metric": {
@@ -1518,6 +1518,26 @@
           "additionalProperties": {
             "$ref": "#/$defs/summary"
           }
+        },
+        "collector_metrics": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "description": "Metrics of collectors (`--collector`, `--collector-plugin`) by `<collector>.<id>` (new in 1.44). A plugin has one entry per run (null where it had no value); the Valgrind run is deterministic and has one entry."
+        },
+        "collector_metrics_summary": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/summary"
+          },
+          "description": "Summary of `collector_metrics` (new in 1.44)."
         },
         "parameters": {
           "type": "object",

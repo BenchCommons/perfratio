@@ -121,6 +121,8 @@ pub enum OptionsError<'a> {
     InvalidRawRatios(&'static str),
     #[error("Invalid Pareto option: {0}")]
     InvalidPareto(String),
+    #[error("Invalid '--collector' or '--collector-plugin': {0}")]
+    InvalidCollector(String),
     #[error("Invalid '--region': {0}")]
     InvalidRegion(String),
     #[error("{0}")]

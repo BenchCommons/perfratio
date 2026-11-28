@@ -185,6 +185,10 @@ perfratio \- command\-line benchmarking tool with energy, hardware telemetry, an
 .IR VAR
 .IR MIN
 .IR MAX ]
+.RB [ \-\-collector
+.IR TOOL ]
+.RB [ \-\-collector\-plugin
+.IR PATH ]
 .RB [ \-\-work
 .IR N[UNIT] ]
 .RB [ \-\-complexity
@@ -465,6 +469,14 @@ Execute CMD after the completion of all benchmarking runs for each individual co
 \fB\-P\fR, \fB\-\-parameter\-scan\fR \fIVAR\fP \fIMIN\fP \fIMAX\fP
 .IP
 Perform benchmark runs for each value in the range MIN..MAX. Replaces the string '{VAR}' in each command by the current parameter value. The option can be specified multiple times and combined with \fB\-\-parameter\-list\fR or \fB\-\-parameter\-file\fR to run benchmarks for all possible parameter combinations.
+.HP
+\fB\-\-collector\fR \fIcachegrind|callgrind\fP
+.IP
+Run the command once more under Valgrind (after the first timed run, before \fB\-\-conclude\fR) and export the simulated, deterministic event counts as \fBresults[].collector_metrics\fR with kind simulated: \fBTOOL.instructions\fR, cache misses and an estimated cycle count. The extra run is not timed, is 20 to 50 times slower than a normal run and has no stdin. Children of the command are counted too (use \fB\-\-shell\fR=none to leave the shell out). Needs Valgrind; set PERFRATIO_VALGRIND to use another binary. Conflicts with \fB\-\-concurrency\fR and \fB\-\-jobs\fR. See \fBdocs/specs/valgrind-collector.md\fR.
+.HP
+\fB\-\-collector\-plugin\fR \fIPATH\fP
+.IP
+Measure extra metrics with an external collector plugin, an executable that speaks the JSON-lines collector protocol. perfratio starts it once, without a shell and without arguments, and brackets every timed run with start, stop and read. Its metrics are exported in \fBresults[].collector_metrics\fR and described by \fBcollector.NAME.ID\fR descriptors. Can be specified multiple times. The plugin runs with your privileges and sees your environment: only use programs you trust. Conflicts with \fB\-\-concurrency\fR and \fB\-\-jobs\fR. See \fBdocs/specs/collector-plugins.md\fR.
 .HP
 \fB\-\-work\fR \fIN[UNIT]\fP
 .IP

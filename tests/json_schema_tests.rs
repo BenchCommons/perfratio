@@ -6,7 +6,7 @@
 //! its `properties`), so a field the exporter writes but the schema does not describe fails.
 
 mod common;
-use common::perfratio;
+use common::{example_collector, perfratio};
 
 use serde_json::{json, Value};
 
@@ -474,7 +474,12 @@ fn real_cases() -> Vec<(&'static str, Vec<String>)> {
     let version = format!("\"{binary}\" --version");
     let failing = format!("\"{binary}\" --no-such-flag");
     let args = |list: &[&str]| list.iter().map(ToString::to_string).collect::<Vec<_>>();
+    let plugin = example_collector().display().to_string();
     vec![
+        (
+            "collector plugin",
+            args(&["--runs=3", "-N", "--collector-plugin", &plugin, "true"]),
+        ),
         (
             "output metric",
             [

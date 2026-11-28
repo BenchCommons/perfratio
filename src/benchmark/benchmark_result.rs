@@ -295,6 +295,16 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_metrics_summary: Option<BTreeMap<String, MetricSummary>>,
 
+    /// Metrics of the collectors (`--collector`, `--collector-plugin`) by `<collector>.<id>`:
+    /// one entry per run for a plugin (`null` where it had no value), a single entry for the
+    /// deterministic Valgrind run. See `docs/specs/collector-plugins.md` (new in 1.44).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collector_metrics: Option<BTreeMap<String, Vec<Option<f64>>>>,
+
+    /// Statistical summary of `collector_metrics` (new in 1.44)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collector_metrics_summary: Option<BTreeMap<String, MetricSummary>>,
+
     /// `--region`: time inside each instrumented region, see
     /// `docs/specs/region-protocol.md`. `mean`, `times` and `time` fields above
     /// keep measuring the whole process.

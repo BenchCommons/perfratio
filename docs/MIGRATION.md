@@ -55,7 +55,7 @@ New:
 ## JSON export
 
 
-The current `schemaVersion` is `"1.43"`. perfratio writes run metadata under a top-level `perfratio` key, with `version`, `command_line`, `started_at`, `labels` and `system`. Files from hyperfine have no such key. `--import-json` reads hyperfine and perfratio files.
+The current `schemaVersion` is `"1.44"`. perfratio writes run metadata under a top-level `perfratio` key, with `version`, `command_line`, `started_at`, `labels` and `system`. Files from hyperfine have no such key. `--import-json` reads hyperfine and perfratio files.
 
 | Change | Since |
 |---|---|
