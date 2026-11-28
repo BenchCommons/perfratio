@@ -6,7 +6,11 @@ Migrating from hyperfine: see [docs/MIGRATION.md](docs/MIGRATION.md). Measuring 
 
 ## 1.1.0 - 2026-11-28
 
-Generated from the 59 pull requests merged after v1.0.0 (#340 to #429). Pull requests that bump dependencies or GitHub Actions are listed under Internal. The JSON export goes from `schemaVersion` 1.15 to 1.48; every change is additive (MINOR), see [docs/specs/output-schema-contract.md](docs/specs/output-schema-contract.md).
+Generated from the 63 pull requests merged after v1.0.0 (#340 to #433). Pull requests that bump dependencies or GitHub Actions are listed under Internal. The JSON export goes from `schemaVersion` 1.15 to 1.48; every change is additive (MINOR), see [docs/specs/output-schema-contract.md](docs/specs/output-schema-contract.md).
+
+### Behavior changes
+
+- `--meta`: the value of a key that names a secret is now exported as `"[redacted]"`. Keys are split into segments at `_`, `-`, `.` and camelCase; a segment `token`, `secret`, `password`, `passwd`, `passphrase`, `credential`, `credentials` or `apikey`, or `key` after `api`, `access`, `secret`, `private`, `ssh`, `auth` or `priv`, triggers it (`api_key`, `AccessKey`). A lone `key` or `cache_key` is kept. Use `--no-redact-meta` to export every value as given. The type of `perfratio.meta` does not change ([#433](https://github.com/BenchCommons/perfratio/pull/433), issue [#22](https://github.com/BenchCommons/perfratio/issues/22))
 
 ### Features
 
@@ -54,6 +58,8 @@ Generated from the 59 pull requests merged after v1.0.0 (#340 to #429). Pull req
 - GPU loader errors, power meter read timeout and a size limit for `--import-json` ([#427](https://github.com/BenchCommons/perfratio/pull/427), issue [#22](https://github.com/BenchCommons/perfratio/issues/22))
 - Escape text provided by the benchmarked program, warn about secrets, restrict the check-system test root to tests ([#426](https://github.com/BenchCommons/perfratio/pull/426), issue [#22](https://github.com/BenchCommons/perfratio/issues/22))
 - `--persistent -i`: a failed iteration no longer enters the statistics as 0.0; a process group is killed when the program exits alone during shutdown (Unix); a Windows failure to read the priority class is a warning; roofline schema description fix ([#429](https://github.com/BenchCommons/perfratio/pull/429))
+- Security input limits for `--persistent`, Valgrind and `--membw` inputs ([#433](https://github.com/BenchCommons/perfratio/pull/433), issue [#22](https://github.com/BenchCommons/perfratio/issues/22)); see Behavior changes for `--meta` redaction
+- `--import-json` rejects a mean or median outside [min, max] ([#431](https://github.com/BenchCommons/perfratio/pull/431), issue [#425](https://github.com/BenchCommons/perfratio/issues/425))
 
 ### Internal
 
@@ -62,7 +68,7 @@ Generated from the 59 pull requests merged after v1.0.0 (#340 to #429). Pull req
 - Make timing-sensitive and sequential tests deterministic ([#407](https://github.com/BenchCommons/perfratio/pull/407), [#421](https://github.com/BenchCommons/perfratio/pull/421))
 - Per-version JSON schema archive with a compatibility check and a release asset; perf-stat parity harness and child-tree accounting checks ([#350](https://github.com/BenchCommons/perfratio/pull/350), [#352](https://github.com/BenchCommons/perfratio/pull/352); issues [#319](https://github.com/BenchCommons/perfratio/issues/319), [#312](https://github.com/BenchCommons/perfratio/issues/312))
 - Bump cargo-deny-action from 2.1.2 to 2.1.3 ([#395](https://github.com/BenchCommons/perfratio/pull/395))
-- Documentation: distribution status, cross-language requirements status, platform parity matrix, security audit 2026, status after the November merges ([#409](https://github.com/BenchCommons/perfratio/pull/409), [#410](https://github.com/BenchCommons/perfratio/pull/410), [#416](https://github.com/BenchCommons/perfratio/pull/416), [#417](https://github.com/BenchCommons/perfratio/pull/417), [#423](https://github.com/BenchCommons/perfratio/pull/423); issues [#93](https://github.com/BenchCommons/perfratio/issues/93), [#240](https://github.com/BenchCommons/perfratio/issues/240), [#291](https://github.com/BenchCommons/perfratio/issues/291), [#22](https://github.com/BenchCommons/perfratio/issues/22))
+- Documentation: distribution status, cross-language requirements status, platform parity matrix, security audit 2026, status after the November merges, three stale spec statements, platform parity matrix after the November merges ([#409](https://github.com/BenchCommons/perfratio/pull/409), [#410](https://github.com/BenchCommons/perfratio/pull/410), [#416](https://github.com/BenchCommons/perfratio/pull/416), [#417](https://github.com/BenchCommons/perfratio/pull/417), [#423](https://github.com/BenchCommons/perfratio/pull/423), [#430](https://github.com/BenchCommons/perfratio/pull/430), [#432](https://github.com/BenchCommons/perfratio/pull/432); issues [#93](https://github.com/BenchCommons/perfratio/issues/93), [#240](https://github.com/BenchCommons/perfratio/issues/240), [#291](https://github.com/BenchCommons/perfratio/issues/291), [#22](https://github.com/BenchCommons/perfratio/issues/22), [#424](https://github.com/BenchCommons/perfratio/issues/424))
 
 ## 1.0.0 - 2026-11-26
 
