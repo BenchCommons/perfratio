@@ -37,7 +37,7 @@ perfratio sets `PERFRATIO_PERSISTENT_PROTOCOL=1` and `PERFRATIO_REGION_PROTOCOL=
 | Request | Meaning |
 |---|---|
 | `run <n>` | Run iteration `n` (0, 1, 2, ... including warm-up) and answer. |
-| `quit` | Exit. Closing stdin has the same meaning. |
+| `quit` | Exit. Closing stdin has the same meaning. | After `quit`, perfratio waits up to 2 s; whether the program exits by itself or not, its process group (grandchildren) is then killed (Unix).
 
 The program answers on **stdout**. Only lines that start with `@perfratio ` belong to the
 protocol; every other line is the program's own output and is ignored. After the prefix the
@@ -60,7 +60,7 @@ errors). Other region names in an answer are validated and ignored.
 | No `hello` within 60 s, or the process exits first | Error "did not say 'hello'". |
 | `hello <n>` with `n` different from 1 | Error "region protocol mismatch ...". |
 | `done` without an `iteration` interval, or a different `n` | Error naming the iteration. |
-| `fail <n> <message>` | Error "failed iteration: <message>", unless `-i` ignores failures. |
+| `fail <n> <message>` | Error "failed iteration: <message>", unless `-i` ignores failures. With `-i` the iteration keeps a measured time in `times` and in all statistics, like a failing normal command: the `iteration` interval if the program sent one before `fail`, else the wall time of the request/answer round trip. Never `0.0` (before, `0.0` was recorded and lowered mean, min and stddev). `--omit-failed-runs` drops it as usual. |
 | The process exits mid-benchmark | Error "the persistent process exited ... before it answered". |
 | No answer within `--timeout` | The process is killed; error "did not answer in time". |
 
@@ -113,6 +113,8 @@ warnings are not issued in this mode.
   persistent process with fabricated time stamps (Unix): one start, exact times, warm-up
   count, version mismatch, uninstrumented command, missing interval, failure and `-i`, death,
   timeout.
+- `tests/persistent_tests.rs` also covers a failed iteration under `-i` (time > 0) and the kill of
+  grandchildren when the program exits by itself within the 2 s quit grace (Unix).
 - `tests/sdk_tests.rs`: the Python and Rust examples under real `perfratio --persistent`.
 - `tests/json_schema_tests.rs`: exports validated against the schema.
 

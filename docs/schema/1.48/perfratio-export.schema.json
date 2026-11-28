@@ -51,7 +51,7 @@
     },
     "roofline": {
       "$ref": "#/$defs/roofline",
-      "description": "Present with --roofline: arithmetic intensity and placement of every command (docs/specs/roofline.md). New in 1.37 (#379)."
+      "description": "Present with --roofline: arithmetic intensity and placement of every command (docs/specs/roofline.md). New in 1.39 (#379)."
     }
   },
   "required": [

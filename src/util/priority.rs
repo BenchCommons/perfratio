@@ -210,11 +210,7 @@ pub fn priority_downgrade_warning(
 /// Windows: read the class back after `SetPriorityClass` and warn (once per
 /// process) if it is not the requested one. NOT TESTED LOCALLY: needs Windows.
 #[cfg(windows)]
-pub fn warn_if_downgraded(
-    child: &std::process::Child,
-    priority: Priority,
-    requested: u32,
-) -> std::io::Result<()> {
+pub fn warn_if_downgraded(child: &std::process::Child, priority: Priority, requested: u32) {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Foundation::HANDLE;
     use windows_sys::Win32::System::Threading::GetPriorityClass;
@@ -224,12 +220,15 @@ pub fn warn_if_downgraded(
     // (suspended) at this point.
     let effective = unsafe { GetPriorityClass(child.as_raw_handle() as HANDLE) };
     if effective == 0 {
-        return Err(std::io::Error::last_os_error());
+        let error = std::io::Error::last_os_error();
+        ONCE.call_once(|| {
+            eprintln!("Warning: could not read back the priority class to verify it: {error}")
+        });
+        return;
     }
     if let Some(message) = priority_downgrade_warning(priority, requested, effective) {
         ONCE.call_once(|| eprintln!("Warning: {message}"));
     }
-    Ok(())
 }
 
 #[cfg(test)]
