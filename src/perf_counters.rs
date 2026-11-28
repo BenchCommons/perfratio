@@ -21,10 +21,12 @@
 use crate::counters::{CounterSample, Efficiency};
 use crate::frequency::{self, Basis};
 use crate::pmu::{self, PmuStatus};
+use crate::pmu_events::{self, RawEvent};
 use crate::pmu_scaling::{multiplex_warning, ScaledCounter};
 use crate::simd::{self, SimdState};
 use crate::stats::basic;
 use std::collections::BTreeMap;
+use std::path::Path;
 
 /// Names accepted by `--counters`, in the order of the default list.
 pub const DEFAULT_COUNTERS: &str =
@@ -45,6 +47,8 @@ pub enum CounterKind {
     /// Nanoseconds the task tree was on a CPU. Also the divisor of the
     /// effective frequency (#222)
     TaskClock,
+    /// A raw or PMU-qualified event (#377): `raw:r01c2`, `cpu/event=0x3c/`
+    Raw(RawEvent),
 }
 
 impl CounterKind {
@@ -85,11 +89,15 @@ impl CounterKind {
             CounterKind::ContextSwitches => "context-switches",
             CounterKind::PageFaults => "page-faults",
             CounterKind::TaskClock => "task-clock",
+            CounterKind::Raw(raw) => raw.name,
         }
     }
 
     /// Short name for the terminal line.
     fn short(self) -> &'static str {
+        if let CounterKind::Raw(raw) = self {
+            return raw.name;
+        }
         match self {
             CounterKind::Instructions => "instr",
             CounterKind::Cycles => "cycles",
@@ -101,19 +109,24 @@ impl CounterKind {
             CounterKind::ContextSwitches => "ctx-sw",
             CounterKind::PageFaults => "page-faults",
             CounterKind::TaskClock => "task-clock",
+            CounterKind::Raw(raw) => raw.name,
         }
     }
 
     /// `PERF_TYPE_HARDWARE` (0) or `PERF_TYPE_SOFTWARE` (1)
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     fn perf_type(self) -> u32 {
-        u32::from(self.is_software())
+        match self {
+            CounterKind::Raw(raw) => raw.perf_type,
+            _ => u32::from(self.is_software()),
+        }
     }
 
     /// `PERF_COUNT_HW_*` or `PERF_COUNT_SW_*` value, depending on [`Self::perf_type`]
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     fn hw_config(self) -> u64 {
         match self {
+            CounterKind::Raw(raw) => raw.config,
             CounterKind::TaskClock => 1,
             CounterKind::PageFaults => 2,
             CounterKind::ContextSwitches => 3,
@@ -124,6 +137,15 @@ impl CounterKind {
             CounterKind::CacheMisses => 3,
             CounterKind::Branches => 4,
             CounterKind::BranchMisses => 5,
+        }
+    }
+
+    /// `config1` and `config2` of `perf_event_attr` (raw events only)
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    fn extra_config(self) -> (u64, u64) {
+        match self {
+            CounterKind::Raw(raw) => (raw.config1, raw.config2),
+            _ => (0, 0),
         }
     }
 }
@@ -222,19 +244,31 @@ impl CounterSpec {
 /// automatically). The software events cannot be scoped: they are counted
 /// from kernel context and are always user + kernel.
 pub fn parse_list(list: &str, mode: ScopeMode) -> Result<Vec<CounterSpec>, String> {
+    parse_list_in(list, mode, Path::new(pmu_events::SYSFS_DEVICES))
+}
+
+/// [`parse_list`] with the PMUs read from `sysfs` (`/sys/bus/event_source/devices`).
+pub fn parse_list_in(
+    list: &str,
+    mode: ScopeMode,
+    sysfs: &Path,
+) -> Result<Vec<CounterSpec>, String> {
     let mut specs: Vec<CounterSpec> = Vec::new();
     let mut push = |spec: CounterSpec| {
         if !specs.contains(&spec) {
             specs.push(spec);
         }
     };
-    for item in list.split(',') {
+    for item in pmu_events::split_items(list) {
         let item = item.trim();
-        let (name, modifier) = match item.split_once(':') {
-            Some((n, m)) => (n, Some(m)),
-            None => (item, None),
+        let raw = pmu_events::parse_item(item, sysfs)?;
+        let (name, modifier) = match (&raw, item.split_once(':')) {
+            (Some((_, m)), _) => ("", m.as_deref()),
+            (None, Some((n, m))) => (n, Some(m)),
+            (None, None) => (item, None),
         };
         let expanded: Vec<CounterKind> = match name {
+            _ if raw.is_some() => raw.iter().map(|(e, _)| CounterKind::Raw(*e)).collect(),
             "default" | "sw" | "frequency" if modifier.is_some() => {
                 return Err(format!(
                     "the shorthand '{name}' cannot take a modifier (in '{item}')"
@@ -247,6 +281,7 @@ pub fn parse_list(list: &str, mode: ScopeMode) -> Result<Vec<CounterSpec>, Strin
                 .into_iter()
                 .chain(CounterKind::SOFTWARE)
                 .find(|k| k.name() == name)
+                .or_else(|| pmu_events::resolve_bare_name(sysfs, name).map(CounterKind::Raw))
                 .ok_or_else(|| {
                     let valid: Vec<&str> = CounterKind::ALL
                         .iter()
@@ -255,7 +290,8 @@ pub fn parse_list(list: &str, mode: ScopeMode) -> Result<Vec<CounterSpec>, Strin
                         .collect();
                     format!(
                         "unknown counter '{name}' for '--counters' (valid: {}; shorthands: \
-                         default, sw, frequency)",
+                         default, sw, frequency; raw events: 'raw:rXXXX', 'pmu/event=0x3c/', \
+                         see 'perfratio --list-events')",
                         valid.join(", ")
                     )
                 })?],
@@ -751,6 +787,7 @@ pub fn mock_reading(config: &CounterConfig, time_real: f64) -> HwReading {
             CounterKind::PageFaults => 1_000.0,
             // nanoseconds: with 1e9 cycles/s the mock clock runs at 1 GHz
             CounterKind::TaskClock => 1_000_000_000.0,
+            CounterKind::Raw(_) => 1_000_000.0,
         };
         let all = (per_second * time_real) as u64;
         // user is a quarter of everything, so user + kernel = all
@@ -1317,14 +1354,17 @@ pub fn open(config: &CounterConfig) -> Option<OpenCounters> {
     }
     #[cfg(target_os = "linux")]
     {
-        let events: Vec<(u32, u64, Scope)> = config
+        let events: Vec<(u32, u64, u64, u64, Scope)> = config
             .active
             .iter()
-            .map(|s| (s.kind.perf_type(), s.kind.hw_config(), s.scope))
+            .map(|s| {
+                let (c1, c2) = s.kind.extra_config();
+                (s.kind.perf_type(), s.kind.hw_config(), c1, c2, s.scope)
+            })
             .chain(config.simd.iter().flat_map(|s| {
                 s.events
                     .iter()
-                    .map(move |&(_, raw)| (simd::PERF_TYPE_RAW, raw, s.scope))
+                    .map(move |&(_, raw)| (simd::PERF_TYPE_RAW, raw, 0, 0, s.scope))
             }))
             .collect();
         Some(OpenCounters {
@@ -1353,10 +1393,13 @@ pub fn open_for_pid(config: &CounterConfig, pid: u32) -> Option<OpenCounters> {
     }
     #[cfg(target_os = "linux")]
     {
-        let events: Vec<(u32, u64, Scope)> = config
+        let events: Vec<(u32, u64, u64, u64, Scope)> = config
             .active
             .iter()
-            .map(|s| (s.kind.perf_type(), s.kind.hw_config(), s.scope))
+            .map(|s| {
+                let (c1, c2) = s.kind.extra_config();
+                (s.kind.perf_type(), s.kind.hw_config(), c1, c2, s.scope)
+            })
             .collect();
         Some(OpenCounters {
             inner: linux::open_pid(&events, pid),
@@ -1638,10 +1681,20 @@ mod linux {
 
     /// `struct perf_event_attr` as 16 words: type/size, config,
     /// sample_period, sample_type, read_format, flags.
-    fn attr(type_: u32, config: u64, scope: Scope, for_run: bool, member: bool) -> [u64; 16] {
+    fn attr(
+        type_: u32,
+        config: u64,
+        extra: (u64, u64),
+        scope: Scope,
+        for_run: bool,
+        member: bool,
+    ) -> [u64; 16] {
         let mut attr = [0u64; 16];
         attr[0] = u64::from(type_) | (u64::from(std::mem::size_of_val(&attr) as u32) << 32);
         attr[1] = config;
+        // config1 and config2 follow wakeup_events/bp_type
+        attr[7] = extra.0;
+        attr[8] = extra.1;
         attr[4] = READ_FORMAT;
         let mut flags = super::attr_flags(scope, for_run);
         if member {
@@ -1686,7 +1739,14 @@ mod linux {
     /// Tries to open one event and closes it again.
     pub fn probe(kind: CounterKind, scope: Scope) -> Result<(), i32> {
         open_fd(
-            &attr(kind.perf_type(), kind.hw_config(), scope, true, false),
+            &attr(
+                kind.perf_type(),
+                kind.hw_config(),
+                kind.extra_config(),
+                scope,
+                true,
+                false,
+            ),
             -1,
         )
         .map(drop)
@@ -1695,7 +1755,14 @@ mod linux {
     /// Same for a raw event (`PERF_TYPE_RAW`).
     pub fn probe_raw(config: u64, scope: Scope) -> Result<(), i32> {
         open_fd(
-            &attr(crate::simd::PERF_TYPE_RAW, config, scope, true, false),
+            &attr(
+                crate::simd::PERF_TYPE_RAW,
+                config,
+                (0, 0),
+                scope,
+                true,
+                false,
+            ),
             -1,
         )
         .map(drop)
@@ -1708,12 +1775,12 @@ mod linux {
     /// Events on the running process `pid`, counting from now on (no `inherit`: the
     /// kernel only rolls the counts of children into an inherited event when they exit,
     /// so a mid-run read would not see them anyway).
-    pub fn open_pid(events: &[(u32, u64, Scope)], pid: u32) -> Open {
+    pub fn open_pid(events: &[(u32, u64, u64, u64, Scope)], pid: u32) -> Open {
         Open {
             fds: events
                 .iter()
-                .map(|&(t, c, scope)| {
-                    let mut attr = attr(t, c, scope, false, false);
+                .map(|&(t, c, c1, c2, scope)| {
+                    let mut attr = attr(t, c, (c1, c2), scope, false, false);
                     attr[5] &= !1; // not disabled
                     open_fd_for(&attr, -1, pid as libc::pid_t).ok()
                 })
@@ -1721,12 +1788,14 @@ mod linux {
         }
     }
 
-    /// `events` are `(perf type, config, scope)` triples.
-    pub fn open_events(events: &[(u32, u64, Scope)]) -> Open {
+    /// `events` are `(perf type, config, config1, config2, scope)`.
+    pub fn open_events(events: &[(u32, u64, u64, u64, Scope)]) -> Open {
         Open {
             fds: events
                 .iter()
-                .map(|&(t, c, scope)| open_fd(&attr(t, c, scope, true, false), -1).ok())
+                .map(|&(t, c, c1, c2, scope)| {
+                    open_fd(&attr(t, c, (c1, c2), scope, true, false), -1).ok()
+                })
                 .collect(),
         }
     }
@@ -1740,7 +1809,10 @@ mod linux {
                 .first()
                 .and_then(|f| f.as_ref())
                 .map_or(-1, |f| f.as_raw_fd());
-            fds.push(Some(open_fd(&attr(t, c, scope, true, i > 0), leader)?));
+            fds.push(Some(open_fd(
+                &attr(t, c, (0, 0), scope, true, i > 0),
+                leader,
+            )?));
         }
         Ok(Open { fds })
     }
@@ -1776,7 +1848,13 @@ mod linux {
         /// enable_on_exec + inherit mechanism that the hardware events use.
         #[test]
         fn counts_the_child_and_not_the_spawning_thread() {
-            let events = [(PERF_TYPE_SOFTWARE, PERF_COUNT_SW_TASK_CLOCK, Scope::User)];
+            let events = [(
+                PERF_TYPE_SOFTWARE,
+                PERF_COUNT_SW_TASK_CLOCK,
+                0,
+                0,
+                Scope::User,
+            )];
             let open = open_events(&events);
             if open.fds[0].is_none() {
                 eprintln!("skipped: perf_event_open is not permitted here");
@@ -1803,7 +1881,7 @@ mod linux {
             if std::env::var_os("PERFRATIO_TEST_PERF").is_none() {
                 return;
             }
-            let open = open_events(&[(0, 1, Scope::User)]);
+            let open = open_events(&[(0, 1, 0, 0, Scope::User)]);
             let mut child = Command::new("sh").args(["-c", "true"]).spawn().unwrap();
             child.wait().unwrap();
             let c = open.read()[0].expect("instructions counter");

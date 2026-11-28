@@ -83,6 +83,16 @@ fn run() -> Result<()> {
         return Ok(());
     }
 
+    if cli_arguments.get_flag("list-events") {
+        perfratio::out!(
+            "{}",
+            perfratio::pmu_events::render_list(std::path::Path::new(
+                perfratio::pmu_events::SYSFS_DEVICES
+            ))
+        );
+        return Ok(());
+    }
+
     if let Some(dir) = cli_arguments.get_one::<String>("verify-evidence") {
         let report = perfratio::evidence::verify(std::path::Path::new(dir));
         for file in &report.verified {

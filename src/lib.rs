@@ -110,6 +110,8 @@ pub mod perf_counters;
 #[doc(hidden)]
 pub mod pmu;
 #[doc(hidden)]
+pub mod pmu_events;
+#[doc(hidden)]
 pub mod pmu_scaling;
 #[doc(hidden)]
 pub mod quality;

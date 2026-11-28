@@ -58,7 +58,13 @@ pub fn build_command() -> Command {
                        '--shell=none'. If multiple commands are given, perfratio will show a \
                        comparison of the respective runtimes. A single '-' reads one command per line from \
                        stdin (blank lines and lines starting with '#' are ignored).")
-                .required_unless_present_any(["generate-completions", "verify-evidence", "import-json", "argv"])
+                .required_unless_present_any([
+                    "generate-completions",
+                    "verify-evidence",
+                    "import-json",
+                    "argv",
+                    "list-events",
+                ])
                 .action(ArgAction::Append)
                 .value_hint(ValueHint::CommandString)
                 .value_parser(NonEmptyStringValueParser::new()),
@@ -1671,7 +1677,10 @@ pub fn build_command() -> Command {
                 .help("Collect performance counters per run (Linux). LIST is \
                        comma-separated: instructions, cycles, cache-references, cache-misses, \
                        branches, branch-misses (default: all), plus the software events \
-                       cpu-migrations, context-switches, page-faults and task-clock. Use \
+                       cpu-migrations, context-switches, page-faults and task-clock, and raw \
+                       PMU events: 'raw:r01c2' (hex config), 'cpu/event=0x3c,umask=0x01/' \
+                       (terms placed by the PMU's sysfs format) and named events such as \
+                       'cpu/mem-loads/' (see '--list-events'). Use \
                        '--counters=cycles' to give a list. Shorthands: 'default' (hardware \
                        list), 'sw' (cpu-migrations, context-switches), 'frequency' (cycles). \
                        An event takes a ':u' (user) or ':k' (kernel) modifier, e.g. \
@@ -1683,6 +1692,14 @@ pub fn build_command() -> Command {
                        (perf_event_paranoid <= 1) and are otherwise reported as unavailable. \
                        Unavailable counters give one warning, never an error. Not available on \
                        macOS and Windows."),
+        )
+        .arg(
+            Arg::new("list-events")
+                .long("list-events")
+                .action(ArgAction::SetTrue)
+                .help("List the events '--counters' accepts and exit: the built-in names, the \
+                       raw syntax and the named events and terms of the PMUs the kernel \
+                       exposes under /sys/bus/event_source/devices (Linux), like 'perf list'."),
         )
         .arg(
             Arg::new("scope")
